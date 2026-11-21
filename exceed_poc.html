@@ -416,6 +416,10 @@
   <div class="char-select" id="diffSelect" style="display:none;">
     <h1>Choose CPU Difficulty</h1>
     <p class="opponent-line" id="opponentLine"></p>
+    <p style="max-width:520px;color:var(--text-dim);font-size:13px;margin:0 auto 8px;">
+      CPU engine: <button class="cancel-btn" style="display:inline;padding:4px 9px;min-height:0;" onclick="toggleCpuEngine()" id="cpuEngineButton">Classic JS</button>
+      <span id="cpuEngineNote">The native planner is unavailable until its verified WASM build is loaded.</span>
+    </p>
     <!-- Ordered easiest-first (Student, Warrior, Champion) rather than the AI_DIFFICULTIES
          key order (champion:0, warrior:0.20, student:0.40) — a first-time player scanning
          top-to-bottom should land on the recommended tier first, not last. The keys passed
@@ -9600,6 +9604,96 @@ class Engine {
 }
 
 
+// Native CPU bridge. It is intentionally synchronous at the decision boundary: the
+// WASM module is loaded before a match starts, and a missing/failed module always
+// falls straight through to the battle-tested JS planner.
+//
+// The backend contract is deliberately tiny so the browser, native CLI, and fuzz
+// harness share a protocol without leaking mutable Engine/Player objects across it.
+const NativeCpuAI = (() => {
+  const PROTOCOL_VERSION = 1;
+  let mode = 'classic';
+  let backend = null;
+  let lastError = null;
+
+  const validActions = new Set(['strike', 'exceed', 'burst', 'action', 'changecards', 'move', 'boost', 'prepare', 'reshuffle']);
+
+  function setMode(nextMode) {
+    if (nextMode !== 'classic' && nextMode !== 'modern') throw new Error(`Unknown CPU mode: ${nextMode}`);
+    mode = nextMode;
+    return status();
+  }
+
+  function registerBackend(candidate) {
+    if (!candidate || candidate.protocolVersion !== PROTOCOL_VERSION || typeof candidate.chooseNeutralAction !== 'function') {
+      throw new Error(`Native CPU backend must implement protocol v${PROTOCOL_VERSION}`);
+    }
+    backend = candidate;
+    lastError = null;
+    return status();
+  }
+
+  function status() {
+    return Object.freeze({ mode, ready: !!backend, protocolVersion: PROTOCOL_VERSION, lastError });
+  }
+
+  function chooseNeutralAction(snapshot) {
+    if (mode !== 'modern' || !backend) return null;
+    try {
+      const action = backend.chooseNeutralAction(snapshot);
+      if (!action || !validActions.has(action.type)) throw new Error('backend returned an invalid neutral action');
+      return action;
+    } catch (error) {
+      // The fallback is intentional product behavior, not an exceptional game state.
+      lastError = String(error && error.message || error);
+      return null;
+    }
+  }
+
+  function decisionSnapshot(me, opp, canExceed) {
+    return Object.freeze({
+      protocolVersion: PROTOCOL_VERSION,
+      actor: {
+        characterKey: me.characterKey, life: me.life, maxLife: me.maxLife || 30,
+        pos: me.pos, handCount: me.hand.length, handKeys: me.hand.map(card => card.key),
+        deckCount: me.deck.length, gaugeKeys: me.gauge.map(card => card.key),
+        discardKeys: me.discard.map(card => card.key), boostKeys: me.boostsInPlay.map(entry => entry.card.key),
+        exceeded: !!me.exceeded, reshuffleUsed: !!me.reshuffleUsed,
+      },
+      opponent: {
+        characterKey: opp.characterKey, life: opp.life, maxLife: opp.maxLife || 30,
+        pos: opp.pos, handCount: opp.handCount, deckCount: opp.deckCount,
+        gaugeKeys: opp.gauge.slice(), discardKeys: opp.discard.slice(), boostKeys: opp.boostsInPlay.slice(),
+        exceeded: !!opp.exceeded, reshuffleUsed: !!opp.reshuffleUsed,
+      },
+      canExceed: !!canExceed,
+    });
+  }
+
+  // Canonical state traces are the only input to differential fuzzing. They contain
+  // public state plus the acting player's private cards, never the opponent's hand.
+  function canonicalize(value) {
+    if (Array.isArray(value)) return value.map(canonicalize);
+    if (value && typeof value === 'object') {
+      const out = {};
+      for (const key of Object.keys(value).sort()) out[key] = canonicalize(value[key]);
+      return out;
+    }
+    return value;
+  }
+
+  function canonicalTraceHash(trace) {
+    const json = JSON.stringify(canonicalize(trace));
+    let hash = 0xcbf29ce484222325n;
+    for (let i = 0; i < json.length; i++) {
+      hash ^= BigInt(json.charCodeAt(i));
+      hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+    }
+    return hash.toString(16).padStart(16, '0');
+  }
+
+  return Object.freeze({ PROTOCOL_VERSION, setMode, registerBackend, status, decisionSnapshot, chooseNeutralAction, canonicalize, canonicalTraceHash });
+})();
 // ===== ai.js =====
 // ============================================================
 // AI — heuristic action policy + Monte Carlo strike selection
@@ -12144,7 +12238,24 @@ function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) 
 
 // `usePlanner` defaults to the global switch; a caller can force it off for one side to
 // A/B the three-turn planner against the legacy one-turn heuristic in the same game.
+function isNativeActionLegal(action, me, canExceed) {
+  if (!action || !action.type) return false;
+  if (action.type === 'exceed') return !!canExceed;
+  if (action.type === 'boost') return typeof action.uid === 'string' && me.hand.some(card => card.uid === action.uid && card.boost);
+  if (action.type === 'move') return Number.isInteger(action.target) && action.target >= 1 && action.target <= 8;
+  if (action.type === 'changecards') return Number.isInteger(action.n) && action.n >= 1 && action.n <= me.hand.length;
+  if (action.type === 'burst') return typeof action.boostUid === 'string' && me.boostsInPlay.some(entry => entry.card.uid === action.boostUid);
+  return ['strike', 'action', 'prepare', 'reshuffle'].includes(action.type);
+}
+
 function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness = 0, myBoostMods, usePlanner = PLAN_CONFIG.enabled }) {
+  // Native/WASM planning is opt-in until it clears the differential promotion gate.
+  // It receives a detached, canonical snapshot only; a bad or unavailable backend
+  // returns null and this established JS policy remains the safe fallback.
+  if (typeof NativeCpuAI !== 'undefined') {
+    const nativeAction = NativeCpuAI.chooseNeutralAction(NativeCpuAI.decisionSnapshot(mePublicFull, oppPublic, canExceed));
+    if (nativeAction && isNativeActionLegal(nativeAction, mePublicFull, canExceed)) return nativeAction;
+  }
   if (rng() < randomness) return pickRandomLegalAction({ mePublicFull, canExceed, rng });
 
   const dist = Math.abs(mePublicFull.pos - oppPublic.pos);
@@ -15702,6 +15813,21 @@ function paint() {
 <script>
 let pendingChar = null;
 let pendingAiChar = null;
+let pendingCpuMode = 'classic';
+function refreshCpuEngineChoice(){
+  const state = NativeCpuAI.status();
+  const button = document.getElementById('cpuEngineButton');
+  const note = document.getElementById('cpuEngineNote');
+  if (button) button.textContent = pendingCpuMode === 'modern' ? 'Modern native' : 'Classic JS';
+  if (note) note.textContent = state.ready
+    ? 'Modern uses the verified native planner; Classic always uses the established JS planner.'
+    : 'The native planner is unavailable until its verified WASM build is loaded; Modern safely falls back to Classic.';
+}
+function toggleCpuEngine(){
+  pendingCpuMode = pendingCpuMode === 'classic' ? 'modern' : 'classic';
+  NativeCpuAI.setMode(pendingCpuMode);
+  refreshCpuEngineChoice();
+}
 // Shared by both fighter-select screens (human's own pick, then CPU's pick) so the
 // two never drift out of sync with each other's markup. `hasPhoto` branches the
 // background between a full-bleed photo (Cammy, currently) and the enlarged
@@ -15819,6 +15945,7 @@ function selectAiCharacter(charKey){
   oppLine.textContent = `Your opponent: ${CHARACTERS[pendingAiChar].name}`;
   document.getElementById('aiCharSelect').style.display = 'none';
   document.getElementById('diffSelect').style.display = 'flex';
+  refreshCpuEngineChoice();
 }
 function backToOwnCharSelect(){
   document.getElementById('aiCharSelect').style.display = 'none';
@@ -15833,6 +15960,7 @@ function startGame(difficultyKey, opts){
   // opts is optional (contract: `startGame(difficultyKey, opts)`, opts = {beginner:true}
   // or omitted) — every pre-existing onclick="startGame('champion')" call site must
   // keep working with no 2nd argument, so default to {} rather than trusting callers.
+  NativeCpuAI.setMode((opts && opts.cpuMode) || pendingCpuMode);
   G = new GameController(pendingChar, pendingAiChar, difficultyKey, opts || {});
   render();
 }

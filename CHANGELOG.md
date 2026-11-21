@@ -11,6 +11,24 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-21 — Native CPU AI foundation and safe browser integration
+
+- Added `native/`, a dependency-free Rust core with strict conserved `BeliefState`
+  validation and exact hand/EX probability queries (Layer 1), canonical
+  minimum-cost Force payments and regret-matching+ zero-sum solving (Layer 2), and
+  availability-normalized PUCT selection (Layer 3). Its deterministic CLI and unit
+  suite are available through `npm run native:test` / `cargo ... self-test`.
+- Added the versioned public-only native protocol (`src/ai/native-protocol.ts`) and
+  matching FNV-1a canonical trace hash in Rust and browser code. Added a data-only
+  Card DSL exporter derived from the checked-in `game/cards.js`; generated exports
+  and Rust build output remain reproducible, ignored artifacts.
+- Added an opt-in **Classic JS / Modern native** CPU selector and a guarded native
+  bridge. Until a protocol-compatible WASM planner has been registered and passes
+  the full differential promotion gate, Modern safely delegates every decision to
+  the existing JS planner. Added bundle and protocol regression coverage.
+- Updated the npm dependency range for `esbuild` to satisfy Vite 8's peer contract,
+  and added native build/test/export/WASM scripts.
+
 ## 2026-11-21 — Modular source split, bundler, critical rules/AI/UI fixes, tests & win-rate ratings
 
 - **Completed full 4-layer AI architecture documentation with Layer 3 (`docs/exceed-ai-layer3-neutral-ismcts.md`) and Layer 4 + Roadmap (`docs/exceed-ai-layer4-meta-learning-roadmap.md`).** Specified Single-Observer IS-MCTS with availability-normalized PUCT, canonical min-MRV Force-spend factoring (`ForcePruner`), dual-mode Layer 2 Strike coupling, $H_{\text{neutral}}(s)$ evaluation (nonlinear life, Cycle-1 deck fatigue, EX-pair threshold, corner escape, initiative discipline), character-agnostic Set-Transformer + Pointer-Attention Boost + Auxiliary Belief Head neural architecture, 3-phase AlphaZero/PFSP League curriculum, 5-point engineering failure-mode matrix, 4-milestone execution roadmap with quantitative gates, typed PyTorch/Python blueprints, and 6 strategic/generalization test scenarios. Cross-linked all four layer specs.

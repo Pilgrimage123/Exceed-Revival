@@ -84,6 +84,29 @@ test('bundled exceed_poc.html contains no alert(), dead NORMAL_KEYS, Windows pat
   assert.equal(/player\.armor\s*=/.test(html), false, 'Should not write non-existent player.armor property');
 });
 
+test('native CPU bridge is opt-in, validates its protocol, and falls back cleanly', () => {
+  const { evalExpr } = loadGameSandbox();
+  const result = evalExpr<{
+    initiallyReady: boolean;
+    fallbackWasNull: boolean;
+    registeredAction: string;
+    hash: string;
+  }>(`
+    (() => {
+      const initiallyReady = NativeCpuAI.status().ready;
+      NativeCpuAI.setMode('modern');
+      const fallbackWasNull = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }) === null;
+      NativeCpuAI.registerBackend({ protocolVersion: 1, chooseNeutralAction: () => ({ type: 'prepare' }) });
+      const registeredAction = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }).type;
+      return { initiallyReady, fallbackWasNull, registeredAction, hash: NativeCpuAI.canonicalTraceHash({ a: 1 }) };
+    })()
+  `);
+  assert.equal(result.initiallyReady, false);
+  assert.equal(result.fallbackWasNull, true);
+  assert.equal(result.registeredAction, 'prepare');
+  assert.equal(result.hash, '9c3e82dd6fcae8b1');
+});
+
 test('AI deckKeysForCharacter matches Engine buildDeck identically for all 41 fighters', () => {
   const { evalExpr } = loadGameSandbox();
   const mismatches = evalExpr<string[]>(`

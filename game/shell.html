@@ -416,6 +416,10 @@
   <div class="char-select" id="diffSelect" style="display:none;">
     <h1>Choose CPU Difficulty</h1>
     <p class="opponent-line" id="opponentLine"></p>
+    <p style="max-width:520px;color:var(--text-dim);font-size:13px;margin:0 auto 8px;">
+      CPU engine: <button class="cancel-btn" style="display:inline;padding:4px 9px;min-height:0;" onclick="toggleCpuEngine()" id="cpuEngineButton">Classic JS</button>
+      <span id="cpuEngineNote">The native planner is unavailable until its verified WASM build is loaded.</span>
+    </p>
     <!-- Ordered easiest-first (Student, Warrior, Champion) rather than the AI_DIFFICULTIES
          key order (champion:0, warrior:0.20, student:0.40) — a first-time player scanning
          top-to-bottom should land on the recommended tier first, not last. The keys passed
@@ -460,6 +464,21 @@
 <script>
 let pendingChar = null;
 let pendingAiChar = null;
+let pendingCpuMode = 'classic';
+function refreshCpuEngineChoice(){
+  const state = NativeCpuAI.status();
+  const button = document.getElementById('cpuEngineButton');
+  const note = document.getElementById('cpuEngineNote');
+  if (button) button.textContent = pendingCpuMode === 'modern' ? 'Modern native' : 'Classic JS';
+  if (note) note.textContent = state.ready
+    ? 'Modern uses the verified native planner; Classic always uses the established JS planner.'
+    : 'The native planner is unavailable until its verified WASM build is loaded; Modern safely falls back to Classic.';
+}
+function toggleCpuEngine(){
+  pendingCpuMode = pendingCpuMode === 'classic' ? 'modern' : 'classic';
+  NativeCpuAI.setMode(pendingCpuMode);
+  refreshCpuEngineChoice();
+}
 // Shared by both fighter-select screens (human's own pick, then CPU's pick) so the
 // two never drift out of sync with each other's markup. `hasPhoto` branches the
 // background between a full-bleed photo (Cammy, currently) and the enlarged
@@ -577,6 +596,7 @@ function selectAiCharacter(charKey){
   oppLine.textContent = `Your opponent: ${CHARACTERS[pendingAiChar].name}`;
   document.getElementById('aiCharSelect').style.display = 'none';
   document.getElementById('diffSelect').style.display = 'flex';
+  refreshCpuEngineChoice();
 }
 function backToOwnCharSelect(){
   document.getElementById('aiCharSelect').style.display = 'none';
@@ -591,6 +611,7 @@ function startGame(difficultyKey, opts){
   // opts is optional (contract: `startGame(difficultyKey, opts)`, opts = {beginner:true}
   // or omitted) — every pre-existing onclick="startGame('champion')" call site must
   // keep working with no 2nd argument, so default to {} rather than trusting callers.
+  NativeCpuAI.setMode((opts && opts.cpuMode) || pendingCpuMode);
   G = new GameController(pendingChar, pendingAiChar, difficultyKey, opts || {});
   render();
 }

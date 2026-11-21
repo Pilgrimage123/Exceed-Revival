@@ -1,0 +1,18 @@
+[package]
+name = "exceed-ai-core"
+version = "0.1.0"
+edition = "2024"
+description = "Deterministic native core for Exceed CPU planning"
+license = "UNLICENSED"
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "exceed-ai"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"

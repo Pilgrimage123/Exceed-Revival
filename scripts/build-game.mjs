@@ -10,7 +10,7 @@ const gameDir = path.join(rootDir, 'game');
 
 const PLACEHOLDER = '<!-- EXCEED_BUNDLE_SCRIPTS -->';
 
-const CORE_MODULES = ['cards.js', 'engine.js', 'ai.js'];
+const CORE_MODULES = ['cards.js', 'engine.js', 'native-ai.js', 'ai.js'];
 const UI_MODULES = ['ui.js', 'render.js'];
 
 function readGameFile(name) {

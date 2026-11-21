@@ -2542,7 +2542,24 @@ function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) 
 
 // `usePlanner` defaults to the global switch; a caller can force it off for one side to
 // A/B the three-turn planner against the legacy one-turn heuristic in the same game.
+function isNativeActionLegal(action, me, canExceed) {
+  if (!action || !action.type) return false;
+  if (action.type === 'exceed') return !!canExceed;
+  if (action.type === 'boost') return typeof action.uid === 'string' && me.hand.some(card => card.uid === action.uid && card.boost);
+  if (action.type === 'move') return Number.isInteger(action.target) && action.target >= 1 && action.target <= 8;
+  if (action.type === 'changecards') return Number.isInteger(action.n) && action.n >= 1 && action.n <= me.hand.length;
+  if (action.type === 'burst') return typeof action.boostUid === 'string' && me.boostsInPlay.some(entry => entry.card.uid === action.boostUid);
+  return ['strike', 'action', 'prepare', 'reshuffle'].includes(action.type);
+}
+
 function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness = 0, myBoostMods, usePlanner = PLAN_CONFIG.enabled }) {
+  // Native/WASM planning is opt-in until it clears the differential promotion gate.
+  // It receives a detached, canonical snapshot only; a bad or unavailable backend
+  // returns null and this established JS policy remains the safe fallback.
+  if (typeof NativeCpuAI !== 'undefined') {
+    const nativeAction = NativeCpuAI.chooseNeutralAction(NativeCpuAI.decisionSnapshot(mePublicFull, oppPublic, canExceed));
+    if (nativeAction && isNativeActionLegal(nativeAction, mePublicFull, canExceed)) return nativeAction;
+  }
   if (rng() < randomness) return pickRandomLegalAction({ mePublicFull, canExceed, rng });
 
   const dist = Math.abs(mePublicFull.pos - oppPublic.pos);
