@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Exceed Fighting System</title>
+<style>
+  :root{
+    --bg:#0f1218; --panel:#1c2330; --panel-2:#26304a; --line:#4a5a7f;
+    --text:#f5f7fc; --text-dim:#b7c0d6;
+    --you:#4de6d1; --you-dim:#164a44;
+    --cpu:#ff9270; --cpu-dim:#5a2a1a;
+    --normal:#6b7db3; --special:#ab8ff2; --ultra:#ff6f8f;
+    --good:#4ade80; --bad:#f87171;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
+    font-family:'Segoe UI',Roboto,-apple-system,sans-serif;font-size:16px;}
+  #app{max-width:900px;margin:0 auto;padding:14px 14px 40px;}
+  /* A full 7-card hand is ~1090px of card tiles, so at 900px the last two cards sit
+     outside the .hand-row and can only be reached by scrolling it — even on a 1920px
+     screen with a third of the window empty. Widen the column when there's room. */
+  @media (min-width:1220px){ #app{max-width:1180px;} }
+  #app.screen-shake{animation:screenShake 0.45s cubic-bezier(.36,.07,.19,.97) both;}
+  @keyframes screenShake{
+    0%{transform:translate(0,0);} 10%{transform:translate(-8px,2px);} 20%{transform:translate(7px,-3px);}
+    30%{transform:translate(-6px,3px);} 40%{transform:translate(6px,2px);} 50%{transform:translate(-5px,-2px);}
+    60%{transform:translate(5px,2px);} 70%{transform:translate(-3px,-2px);} 80%{transform:translate(3px,2px);}
+    90%{transform:translate(-1px,0);} 100%{transform:translate(0,0);}
+  }
+
+  h1,h2,h3,h4{margin:8px 0 10px;font-weight:800;}
+  h3{font-size:16px;color:var(--text);text-transform:uppercase;letter-spacing:.04em;}
+  h4{font-size:13px;color:var(--you);text-transform:uppercase;letter-spacing:.05em;margin-top:16px;border-top:1px solid var(--line);padding-top:10px;}
+  h3.thinking{color:var(--cpu);}
+
+  /* Life panels: horizontal — You on the left, CPU on the right (see render.js's
+     lifeBar() call order in the .top-bar). Each panel is a flex child sharing the
+     row equally; internal content (name/badge, resource counts, boost list) is
+     sized to stay legible at roughly half the old full-width layout, with a
+     tighter media-query pass below for small phone widths. */
+  .top-bar{display:flex;flex-direction:row;align-items:stretch;gap:8px;margin-bottom:10px;}
+  .life-panel{background:var(--panel);border-radius:12px;padding:10px 11px;border:2px solid var(--line);cursor:pointer;flex:1 1 0;min-width:0;}
+  .life-panel:hover{border-color:var(--you);}
+  .life-panel.you-accent{border-color:var(--you-dim);}
+  .life-panel.cpu-accent{border-color:var(--cpu-dim);}
+  .life-top-row{display:flex;align-items:center;gap:8px;}
+  .life-main{flex:1;min-width:0;}
+  .life-header{display:flex;justify-content:space-between;align-items:baseline;font-weight:800;font-size:15px;flex-wrap:wrap;gap:4px;}
+  .pname{flex:1 1 auto;min-width:0;overflow-wrap:break-word;}
+  .cpu-accent .pname{color:var(--cpu);}
+  .you-accent .pname{color:var(--you);}
+  .exceeded-badge{font-size:10.5px;font-weight:800;background:#4a2f8b;color:#e3d6ff;padding:2px 6px;border-radius:6px;margin-left:5px;vertical-align:middle;display:inline-block;}
+  .life-num{font-variant-numeric:tabular-nums;font-weight:800;font-size:15px;flex-shrink:0;}
+  .life-bar-track{height:11px;border-radius:6px;background:#05070a;margin:7px 0;overflow:hidden;border:1px solid var(--line);}
+  .life-bar-fill{height:100%;background:linear-gradient(90deg,#f87171,#facc15,#4ade80);}
+  .you-accent .life-bar-fill{background:linear-gradient(90deg,#0f766e,var(--you));}
+  .cpu-accent .life-bar-fill{background:linear-gradient(90deg,#7c2d12,var(--cpu));}
+  .resource-row{display:flex;gap:8px 10px;font-size:12px;color:var(--text-dim);flex-wrap:wrap;font-weight:600;}
+  .innate-line{margin-top:6px;font-size:11.5px;color:#d6d0ff;background:#241a42;border-radius:6px;padding:5px 7px;}
+  .boosts-active{margin-top:5px;display:flex;flex-direction:column;gap:3px;}
+  .boost-active-item{font-size:11.5px;color:#e3d6ff;background:#241a42;border-radius:6px;padding:4px 7px;line-height:1.35;}
+  .boost-active-item b{color:#fff;}
+  .boost-expiry{color:#b9a8e8;font-weight:400;font-size:11px;}
+  .tap-hint{margin-top:6px;font-size:10.5px;color:var(--text-dim);text-align:right;}
+
+  .life-panel .fighter-silhouette{width:36px;}
+  .fighter-silhouette{width:44px;height:auto;flex-shrink:0;}
+  .fighter-silhouette.accent-you{color:var(--you);}
+  .fighter-silhouette.accent-cpu{color:var(--cpu);}
+  .fighter-silhouette.neutral{color:var(--text-dim);}
+  .fighter-photo{object-fit:cover;border-radius:8px;display:block;}
+  .token .fighter-photo{border-radius:3px;}
+  .modal-silhouette-wrap{text-align:center;margin-bottom:10px;}
+  .modal-silhouette-wrap .fighter-silhouette{width:80px;}
+
+  .board{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;margin:10px 0 4px;overflow:visible;}
+  .cell{background:var(--panel-2);border:1px solid var(--line);border-radius:7px;height:50px;
+    display:flex;align-items:center;justify-content:center;gap:2px;position:relative;overflow:visible;}
+  .token{border-radius:6px;padding:3px;display:flex;align-items:center;justify-content:center;position:relative;}
+  .token.you{background:var(--you);color:#02231f;}
+  .token.cpu{background:var(--cpu);color:#2a1206;}
+  .token .fighter-silhouette{width:20px;height:auto;display:block;}
+  /* Eddie (Zato-1's token): deliberately NOT styled like a fighter token — he is not
+     a character, shares spaces freely, and only marks where Zato's Specials/Ultras
+     are measured from. */
+  .token.eddie{background:transparent;border:1px dashed #a78bfa;color:#c4b5fd;font-size:14px;line-height:1;padding:2px 3px;}
+  .range-readout{text-align:center;color:var(--text-dim);font-size:14px;margin-bottom:10px;font-weight:600;position:relative;}
+  .range-readout b{color:var(--text);}
+
+  /* ---- FX badges (see engine.js's FX_ICONS/fxQueue) ---- */
+  .fx-badge{position:absolute;left:50%;bottom:100%;transform:translateX(-50%);
+    margin-bottom:3px;display:flex;align-items:center;gap:2px;white-space:nowrap;
+    background:#0b0e16;border:1px solid var(--line);border-radius:8px;padding:2px 6px;
+    font-size:15px;line-height:1.3;box-shadow:0 3px 10px rgba(0,0,0,.5);z-index:5;
+    font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
+    animation:fxPop .18s ease-out;}
+  .fx-badge .fx-amt{font-size:13px;font-weight:800;color:#fff;font-family:inherit;}
+  .fx-badge.fx-hit{border-color:#ff5d5d;}
+  .fx-badge.fx-miss{border-color:#7a8296;}
+  .fx-badge.fx-stun{border-color:#ffd35c;}
+  .fx-badge.fx-heal{border-color:#5cffb0;}
+  @keyframes fxPop{from{transform:translateX(-50%) scale(.5);opacity:0;}to{transform:translateX(-50%) scale(1);opacity:1;}}
+  .fx-skip-btn{margin-left:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--text-dim);
+    border-radius:6px;padding:2px 9px;font-size:12.5px;cursor:pointer;}
+  .fx-skip-btn:hover{color:var(--text);border-color:var(--text-dim);}
+
+  .mid-row{margin:8px 0;}
+  .log-panel{background:#05070a;border:1px solid var(--line);border-radius:10px;padding:8px;
+    max-height:280px;overflow-y:auto;font-size:13.5px;color:#c7cfe4;
+    font-family:'Segoe UI',Roboto,-apple-system,"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;}
+  .log-line{padding:3px 4px;}
+  .log-line.plain{color:#9aa5c0;}
+  .round-card{background:#141a28;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;padding:8px 10px;}
+  .round-header{font-weight:800;color:var(--you);font-size:12.5px;text-transform:uppercase;letter-spacing:.03em;margin-bottom:4px;}
+  .round-body .log-line{padding:2px 0;}
+  .round-hp{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-weight:700;color:#ffe9b0;font-size:13px;}
+
+  .section-label{font-size:12.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);margin:12px 0 4px;font-weight:700;}
+  .hand-row{display:flex;gap:8px;overflow-x:auto;padding:4px 2px 14px;scrollbar-width:auto;}
+  .hand-row::-webkit-scrollbar{height:14px;}
+  .hand-row::-webkit-scrollbar-track{background:#141a28;border-radius:8px;}
+  .hand-row::-webkit-scrollbar-thumb{background:var(--you-dim);border:2px solid #141a28;border-radius:8px;}
+  .card-tile{flex:0 0 148px;background:var(--panel);border:2px solid var(--normal);border-radius:12px;
+    padding:9px;cursor:pointer;transition:transform .1s, border-color .1s;}
+  .card-tile.special{border-color:var(--special);}
+  .card-tile.ultra{border-color:var(--ultra);}
+  .card-tile.ex-tile{border-style:dashed;border-color:#ffd166;}
+  .card-tile:hover{transform:translateY(-3px);}
+  .card-tile.selected{outline:3px solid var(--you);}
+  .card-tile.disabled{cursor:default;opacity:.9;}
+  .card-tile.disabled:hover{transform:none;}
+  .card-name{font-weight:800;font-size:14px;margin-bottom:4px;}
+  .card-headline{font-weight:800;text-transform:uppercase;letter-spacing:.03em;}
+  .boost-headline{font-size:13px;color:var(--special);margin-bottom:4px;}
+  .boost-continuous-tag{font-size:10px;font-weight:700;text-transform:none;letter-spacing:0;color:var(--text-dim);}
+  .cancelable-tag{font-size:10px;font-weight:800;text-transform:none;letter-spacing:0;color:var(--ultra);
+    background:rgba(255,111,143,.12);border-radius:4px;padding:1px 5px;margin-left:2px;}
+  .gauge-cost{color:var(--ultra);font-weight:700;}
+  .force-cost{color:var(--special);font-weight:700;margin-right:4px;}
+  .card-stats{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:5px;}
+  .stat{font-size:11.5px;font-weight:700;background:#05070a;border-radius:5px;padding:2px 6px;color:var(--text-dim);}
+  .card-text{font-size:11.5px;color:#b7c0d6;line-height:1.4;min-height:14px;}
+  .card-text b, .card-boost b{color:var(--text);font-weight:800;}
+  .card-critical{font-size:11.5px;color:#ffcf6b;line-height:1.4;margin-top:2px;font-weight:600;}
+  .card-critical b{color:#ffcf6b;font-weight:800;}
+  .card-boost{margin-top:6px;padding-top:6px;border-top:1px dashed var(--line);font-size:11.5px;color:#e3d6ff;}
+  .strike-part,.card-boost{border-radius:8px;transition:background .12s,box-shadow .12s;}
+  /* Strike-selection contexts highlight the range/stats/strike-text part of the tile;
+     boost-selection contexts highlight the boost-text part instead — so it's obvious
+     which half of the card is actually relevant to the decision being made. */
+  .card-tile.highlight-strike .strike-part{background:rgba(77,230,209,.14);box-shadow:0 0 0 1px var(--you) inset;padding:4px;margin:-4px -4px 5px -4px;}
+  .card-tile.highlight-boost .card-boost{background:rgba(171,143,242,.18);box-shadow:0 0 0 1px var(--special) inset;padding:6px;margin:6px -4px -4px -4px;border-top:none;}
+  .ex-hint{font-size:12.5px;color:#ffd166;margin:4px 0 8px;}
+
+  .bottom-panel{background:var(--panel);border:2px solid var(--line);border-radius:14px;padding:16px;margin-top:8px;}
+  .action-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .action-btn{display:flex;flex-direction:column;align-items:flex-start;gap:2px;
+    background:var(--panel-2);color:var(--text);border:2px solid var(--line);
+    border-radius:12px;padding:14px 12px;cursor:pointer;font-size:14px;font-weight:700;text-align:left;min-height:64px;}
+  .action-icon{font-size:20px;line-height:1;}
+  .action-label{font-size:14.5px;font-weight:800;}
+  .action-sub{font-weight:500;color:var(--text-dim);font-size:12px;}
+  .action-btn:hover:not(:disabled){border-color:var(--you);transform:translateY(-2px);}
+  .action-btn:disabled{opacity:.4;cursor:not-allowed;}
+  .action-primary{background:linear-gradient(160deg,#3a2f60,#241a42);border-color:var(--special);grid-column:1 / -1;}
+
+  button{font-family:inherit;background:var(--panel-2);color:var(--text);border:2px solid var(--line);
+    border-radius:10px;padding:12px 14px;cursor:pointer;font-size:14px;font-weight:700;text-align:left;min-height:44px;}
+  button:hover:not(:disabled){border-color:var(--you);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;}
+  .btn-row button{text-align:center;}
+  .btn-row button.active{border-color:var(--you);color:var(--you);background:var(--you-dim);}
+  .stepper-row{display:flex;align-items:center;gap:16px;margin:12px 0;}
+  .stepper-row button{min-width:48px;text-align:center;font-size:18px;}
+  .stepper-val{font-weight:800;min-width:130px;text-align:center;font-size:15px;}
+  .big-btn{display:block;width:100%;text-align:center;background:var(--you-dim);color:var(--you);
+    border-color:var(--you);margin-top:12px;padding:14px;font-size:15px;}
+  .wildswing-btn{background:var(--cpu-dim);color:var(--cpu);border-color:var(--cpu);}
+  .cancel-btn{display:block;width:100%;text-align:center;margin-top:8px;background:transparent;color:var(--text-dim);border-color:var(--line);}
+  .name-choice-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:10px 0;}
+  .name-choice-grid button{text-align:center;}
+  .info-row{font-size:14px;margin:8px 0;color:var(--text);}
+  .info-row.char-ability{background:#141a28;border-radius:8px;padding:8px 10px;border:1px solid var(--line);}
+  .info-row.active-ability{border-color:var(--you);background:#0f2a26;}
+  .pile-row{display:flex;justify-content:space-between;font-size:13.5px;padding:4px 8px;background:#141a28;border-radius:6px;margin-bottom:4px;}
+  .pile-row.empty{color:var(--text-dim);justify-content:flex-start;}
+  .pile-qty{color:var(--you);font-weight:800;}
+
+  .center-screen{text-align:center;padding:60px 20px;}
+  .center-screen h1{font-size:34px;margin-bottom:20px;}
+  .title-banner{width:100%;max-width:480px;height:auto;margin-bottom:4px;}
+
+  .char-select{display:flex;flex-direction:column;align-items:center;gap:18px;padding:40px 16px;text-align:center;}
+  .char-cards{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;}
+  .char-card{width:230px;background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:20px;cursor:pointer;}
+  .char-card:hover{border-color:var(--you);}
+  .char-card h2{margin:0 0 8px;}
+  .char-card p{font-size:13.5px;color:var(--text-dim);line-height:1.5;}
+
+  /* Fighter-select cards ONLY (character picker, both human and CPU screens) \u2014
+     a separate class from .char-card above on purpose: .char-card is also reused
+     by the plain-panel difficulty-select cards (badge + heading + paragraph, no
+     artwork), which this full-bleed poster treatment would not suit. Keeping them
+     as two classes means changing one can never silently break the other. */
+  .fighter-card{width:230px;height:300px;position:relative;overflow:hidden;
+    border-radius:16px;border:2px solid var(--line);background:var(--panel);
+    cursor:pointer;transition:transform .12s,border-color .12s;}
+  .fighter-card:hover{transform:translateY(-3px);border-color:var(--you);}
+  .fighter-card:active{transform:translateY(-1px);}
+  .fighter-card-unfinished{opacity:0.6;cursor:not-allowed;border-color:#ff9999;}
+  .fighter-card-unfinished:hover{transform:none;border-color:#ff9999;}
+  .fighter-card-unfinished:active{transform:none;}
+  .fighter-card-unfinished-badge{position:absolute;top:8px;right:8px;z-index:10;
+    background:#ff6666;color:#fff;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:bold;
+    text-shadow:0 1px 2px rgba(0,0,0,0.3);}
+  .fighter-card-bg{position:absolute;inset:0;}
+  .fighter-card-bg .fighter-photo{width:100%;height:100%;object-fit:cover;object-position:top center;border-radius:0;}
+  /* Characters without real art (everyone but Cammy, currently) fall back to
+     their existing line-art pictogram, enlarged and dimmed on a soft radial
+     panel instead of stretched full-bleed \u2014 a small pictogram blown up to
+     fill a 230\u00d7300 card would look broken, not "action-packed". */
+  .fighter-card-bg.pictogram-bg{display:flex;align-items:center;justify-content:center;
+    background:radial-gradient(circle at 50% 38%, var(--panel-2), var(--bg) 78%);}
+  .fighter-card-bg.pictogram-bg .fighter-silhouette{width:60%;height:auto;color:var(--line);opacity:.6;}
+  .fighter-card-scrim{position:absolute;inset:0;pointer-events:none;
+    background:linear-gradient(to top, rgba(5,7,10,.95) 0%, rgba(5,7,10,.86) 30%, rgba(5,7,10,.25) 60%, rgba(5,7,10,0) 78%);}
+  .fighter-card-text{position:absolute;left:0;right:0;bottom:0;padding:14px 14px 16px;text-align:left;}
+  .fighter-card-name{margin:0 0 5px;font-size:26px;line-height:1;color:#fff;
+    font-family:'Arial Black','Arial Bold',Arial,sans-serif;font-weight:900;
+    text-transform:uppercase;letter-spacing:-.01em;transform:skewX(-8deg);transform-origin:left bottom;
+    text-shadow:0 2px 6px rgba(0,0,0,.65),0 0 2px rgba(0,0,0,.5);}
+  .fighter-card-blurb{margin:0;font-size:12px;line-height:1.45;color:#e7ebf5;
+    text-shadow:0 1px 3px rgba(0,0,0,.8);
+    display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden;}
+  .diff-badge{display:inline-block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+    padding:3px 8px;border-radius:6px;margin-bottom:8px;}
+  .diff-badge.champion{background:#4a2f8b;color:#e3d6ff;}
+  .diff-badge.warrior{background:#5a2a1a;color:#ffb599;}
+  .diff-badge.student{background:#164a44;color:#7ff0da;}
+  /* Top-right, not bottom-right: the in-game action grid and fighter-select cards
+     both live near the bottom of the page at the small viewports this project
+     targets, so a fixed bottom-corner button risks sitting on top of them once the
+     page is short enough that #app's bottom edge reaches the viewport bottom. The
+     top-right corner is reliably empty across every screen this shell has (title
+     banner and section headers are centered, never flush right), and living OUTSIDE
+     #app (see the HTML move) is what makes it survive render()'s full #app repaint
+     once a game is in progress — see HANDOFF.md §1's "How to Play trap" note.*/
+  .rules-btn{position:fixed;top:14px;right:14px;background:#c23b45;border:none;border-radius:8px;
+    padding:9px 14px;color:#fff;font-weight:800;font-size:13px;cursor:pointer;z-index:1000;
+    box-shadow:0 3px 10px rgba(194,59,69,.4);transition:transform .15s,box-shadow .15s;}
+  .rules-btn:hover{background:#d04d57;transform:scale(1.05);box-shadow:0 5px 14px rgba(194,59,69,.6);}
+  @media (max-width:420px){ .rules-btn{top:8px;right:8px;padding:7px 10px;font-size:11.5px;} }
+
+  /* ---- Title-screen onboarding additions ---- */
+  .economy-note{max-width:520px;margin:0 auto 6px;background:rgba(107,125,179,.08);
+    border-left:4px solid var(--normal);border-radius:6px;padding:12px 14px;text-align:left;}
+  .economy-note p{margin:4px 0;font-size:13px;color:var(--text-dim);line-height:1.5;}
+  .quickstart-btn{display:block;width:100%;max-width:420px;margin:2px auto 10px;text-align:center;
+    background:var(--you-dim);color:var(--you);border:2px solid var(--you);border-radius:12px;
+    padding:14px 16px;font-size:15px;font-weight:800;cursor:pointer;}
+  .quickstart-btn:hover{background:#1a5c54;}
+  .roster-toggle-btn{display:block;margin:14px auto;background:transparent;color:var(--text-dim);
+    border:2px solid var(--line);border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;}
+  .roster-toggle-btn:hover{color:var(--text);border-color:var(--text-dim);}
+  /* Left corner (mirrors the unfinished badge's right corner) so a fighter can never
+     carry both badges in a way that overlaps — recommended fighters are never
+     unfinished (see RECOMMENDED_BEGINNER_KEYS), but keeping them on opposite sides
+     is a cheap guarantee rather than a coincidence to maintain by hand. */
+  .fighter-card-rec-badge{position:absolute;top:8px;left:8px;z-index:10;
+    background:var(--you);color:#02231f;padding:4px 8px;border-radius:4px;font-size:11px;font-weight:800;}
+
+  /* ---- Coach / hint / strike-breakdown panels (see render.js, beginner mode) ---- */
+  .coach-panel{background:#141a28;border:1.5px solid var(--special);border-radius:10px;
+    padding:10px 12px;margin:8px 0;}
+  .coach-head{display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:8px;}
+  .coach-title{font-weight:800;font-size:13px;color:var(--special);}
+  .coach-toggle{font-weight:800;color:var(--text-dim);}
+  .coach-body{margin-top:8px;font-size:13px;color:var(--text-dim);line-height:1.5;}
+  .coach-body ul{margin:4px 0;padding-left:18px;}
+  .coach-body li{margin:2px 0;}
+  /* Collapsed hides the body entirely rather than height:0 — this panel's content
+     is often re-generated per render, so there's no transition to preserve. */
+  .coach-panel.collapsed .coach-body{display:none;}
+
+  .term{border-bottom:1px dotted var(--text-dim);cursor:help;}
+
+  .cell-dist{position:absolute;top:2px;right:3px;font-size:9px;font-weight:700;color:var(--text-dim);line-height:1;}
+  /* band-lit changes background/box-shadow only — never border-width or padding —
+     so hovering a card can never nudge the board's 9-column grid (contract:
+     "no layout shift on hover"). */
+  .cell.band-lit{background:rgba(77,230,209,.22);box-shadow:0 0 0 2px var(--you) inset;}
+  .cell.band-self{box-shadow:0 0 0 2px var(--cpu) inset;}
+  .cell.band-lit.band-self{box-shadow:0 0 0 2px var(--you) inset, 0 0 0 4px var(--cpu) inset;}
+  .range-chip{display:inline-block;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 5px;margin-left:4px;}
+  .range-chip.in{background:rgba(74,222,128,.18);color:var(--good);}
+  .range-chip.out{background:rgba(248,113,113,.18);color:var(--bad);}
+
+  .breakdown{margin:8px 0;}
+  .breakdown-beat{background:#141a28;border:1px solid var(--line);border-radius:8px;
+    padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:baseline;}
+  /* Pending beats are dimmed rather than removed from the DOM — keeps the reveal-
+     one-at-a-time flow from reflowing the list height on every click. */
+  .breakdown-beat.pending{opacity:.35;filter:blur(.3px);}
+  .beat-num{font-weight:800;color:var(--you);font-size:12px;flex-shrink:0;min-width:18px;}
+  .beat-text{font-size:13px;color:var(--text-dim);line-height:1.4;}
+  .beat-controls{display:flex;gap:8px;margin:8px 0;}
+
+  /* The printed-vs-actual stat tables are built from divs, not a <table> (render.js's
+     statCompareHTML), so the row is a 3-column grid rather than table cells — and the
+     two sides sit side by side as inline blocks so a wide screen shows You/CPU
+     together and a narrow one stacks them without any media query. */
+  .stat-compare{display:inline-block;vertical-align:top;min-width:158px;margin:6px 12px 6px 0;font-size:12.5px;}
+  .stat-compare-label{font-weight:800;font-size:12px;color:var(--text);margin-bottom:3px;}
+  .stat-compare-row{display:grid;grid-template-columns:46px 1fr 1fr;align-items:center;
+    gap:4px;border-bottom:1px solid var(--line);padding:2px 0;}
+  .stat-compare-head{border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:.4px;
+    text-transform:uppercase;color:var(--text-dim);opacity:.75;}
+  .stat-compare-head .stat-live{font-weight:700;color:var(--text-dim);}
+  .stat-name{color:var(--text-dim);padding:3px 6px;text-align:left;}
+  .stat-printed{color:var(--text-dim);padding:3px 6px;text-align:center;}
+  .stat-live{font-weight:800;padding:3px 6px;text-align:center;color:var(--text);}
+  .stat-live.up{color:var(--good);}
+  .stat-live.down{color:var(--bad);}
+
+  .hint-panel{background:rgba(77,230,209,.08);border-left:4px solid var(--you);
+    border-radius:6px;padding:10px 12px;margin:8px 0;font-size:13px;color:var(--text-dim);line-height:1.5;}
+  .hint-panel b{color:var(--text);}
+  .card-usage-guide{background:rgba(107,125,179,0.08);border-left:4px solid #6b7db3;padding:16px;margin:16px auto;max-width:500px;border-radius:6px;}
+  .card-usage-guide h4{font-size:14px;font-weight:800;color:#f5f7fc;margin:12px 0 6px;text-transform:uppercase;letter-spacing:1px;}
+  .card-usage-guide p{font-size:13px;color:#b7c0d6;margin:6px 0;line-height:1.5;}
+  .card-usage-guide b{color:#ab8ff2;font-weight:700;}
+  .opponent-line{font-weight:700;color:var(--cpu);margin:-6px 0 4px;}
+  .htp-section{margin-bottom:16px;}
+  .htp-section h3{margin:0 0 6px;font-size:15px;}
+  .htp-section p, .htp-section li{font-size:13.5px;color:var(--text-dim);line-height:1.5;}
+  .htp-toggle-row{display:flex;gap:8px;margin-bottom:14px;}
+  .htp-toggle-row button{flex:1;padding:8px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--text-dim);font-weight:700;}
+  .htp-toggle-row button.active{border-color:var(--you);color:var(--text);background:rgba(77,230,209,.1);}
+  .kw-term{color:var(--text);font-weight:800;}
+  .htp-icon-note{font-size:12.5px;color:var(--text-dim);margin:0 0 6px;font-style:italic;}
+  .htp-icon-list{list-style:none;margin:0 0 14px;padding:0;}
+  .htp-icon-list li{display:flex;align-items:baseline;gap:8px;padding:4px 0;}
+  .htp-icon-glyph{font-size:18px;line-height:1;flex-shrink:0;min-width:22px;text-align:center;
+    font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;}
+
+  .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+  .modal-panel{background:var(--panel);border:2px solid var(--line);border-radius:16px;max-width:520px;width:100%;
+    max-height:88vh;overflow-y:auto;padding:0;}
+  .modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;
+    border-bottom:2px solid var(--line);position:sticky;top:0;background:var(--panel);}
+  .modal-close{min-height:40px;padding:8px 14px;}
+  .modal-body{padding:16px 18px 24px;}
+  .deck-ref{margin-top:8px;}
+  .ref-card-row{background:#141a28;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;}
+  .ref-card-title{font-weight:800;font-size:14px;margin-bottom:4px;}
+  .ref-qty{color:var(--text-dim);font-weight:600;font-size:12px;}
+
+  ::-webkit-scrollbar{height:12px;width:12px;}
+  ::-webkit-scrollbar-thumb{background:#4a5a7f;border-radius:6px;}
+  ::-webkit-scrollbar-track{background:#141a28;}
+
+  @media (max-width:420px){
+    .action-grid{grid-template-columns:1fr;}
+    .name-choice-grid{grid-template-columns:1fr;}
+    .life-panel{padding:8px 8px;}
+    .life-panel .fighter-silhouette{width:28px;}
+    .life-top-row{gap:6px;}
+    .life-header{font-size:13px;}
+    .life-num{font-size:13px;}
+    .exceeded-badge{font-size:9.5px;padding:1px 5px;margin-left:3px;}
+    .resource-row{font-size:10.5px;gap:5px 7px;}
+    .innate-line{font-size:10.5px;padding:4px 6px;}
+    .boost-active-item{font-size:10.5px;padding:3px 6px;}
+    .tap-hint{display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="char-select" id="charSelect">
+    <svg class="title-banner" viewBox="0 0 520 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Exceed">
+      <defs>
+        <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#4de6d1"/>
+          <stop offset="100%" stop-color="#ff9270"/>
+        </linearGradient>
+      </defs>
+      <polygon points="0,72 520,40 520,56 0,86" fill="#241a42" opacity="0.65"/>
+      <text x="50%" y="64" text-anchor="middle" font-family="'Segoe UI',Roboto,sans-serif" font-weight="800" font-size="98.6" letter-spacing="4" fill="url(#titleGrad)">EXCEED</text>
+      <text x="50%" y="94" text-anchor="middle" font-family="'Segoe UI',Roboto,sans-serif" font-weight="700" font-size="15" letter-spacing="6" fill="#f87171">Fighting System - The Videogame</text>
+    </svg>
+    <!-- Card-economy explainer: this loop (hit->Gauge, miss->discard, Force paid by
+         discarding) is the single mechanic the rest of the UI assumes the player
+         already knows and never states outright anywhere else. -->
+    <div class="economy-note">
+      <p>A card that <b>hits</b> goes to your Gauge, ready to fuel Ultras and Exceed.</p>
+      <p>A card that <b>misses</b> goes to your discard pile instead — gone until you draw or Reshuffle it back.</p>
+      <p>Force (the cost of Moving or Boosting) is paid by throwing cards away, too — your hand, Gauge, position, and Life are all one resource loop.</p>
+    </div>
+    <button class="quickstart-btn" onclick="quickStart()">First time playing? Quick Start — Ryu vs Ken, easiest CPU</button>
+    <div id="charSelectNotice" role="status" aria-live="polite" style="display:none;margin:8px auto 0;max-width:520px;padding:8px 12px;border-radius:8px;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.45);color:#fecaca;font-size:13px;"></div>
+    <div id="charCards"><!-- populated by renderCharSelect() once CHARACTERS is loaded --></div>
+  </div>
+  <div class="char-select" id="aiCharSelect" style="display:none;">
+    <h1>Choose Your Opponent</h1>
+    <p class="opponent-line" id="yourPickLine"></p>
+    <p style="max-width:520px;color:var(--text-dim);font-size:13px;">
+      Pick who the CPU plays. Mirror matches (same fighter on both sides) are allowed.
+    </p>
+    <div id="aiCharSelectNotice" role="status" aria-live="polite" style="display:none;margin:8px auto 0;max-width:520px;padding:8px 12px;border-radius:8px;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.45);color:#fecaca;font-size:13px;"></div>
+    <div class="char-cards" id="aiCharCards"><!-- populated by renderAiCharSelect() --></div>
+    <button class="cancel-btn" style="max-width:230px;" onclick="backToOwnCharSelect()">← Back</button>
+  </div>
+  <div class="char-select" id="diffSelect" style="display:none;">
+    <h1>Choose CPU Difficulty</h1>
+    <p class="opponent-line" id="opponentLine"></p>
+    <!-- Ordered easiest-first (Student, Warrior, Champion) rather than the AI_DIFFICULTIES
+         key order (champion:0, warrior:0.20, student:0.40) — a first-time player scanning
+         top-to-bottom should land on the recommended tier first, not last. The keys passed
+         to startGame() are untouched; only this presentation order changed. -->
+    <div class="char-cards">
+      <div class="char-card" onclick="startGame('student')">
+        <span class="diff-badge student">Student</span>
+        <h2>Student <span style="font-size:11px;color:var(--you);font-weight:700;text-transform:none;">— Recommended for your first game</span></h2>
+        <p>Makes plenty of ordinary mistakes: bad trades, missed punishes, wasted turns. A relaxed opponent for learning what a Strike feels like before the stakes go up.</p>
+      </div>
+      <div class="char-card" onclick="startGame('warrior')">
+        <span class="diff-badge warrior">Warrior</span>
+        <h2>Warrior</h2>
+        <p>Plays soundly most of the time but still slips up sometimes. A fair fight once Strikes and positioning start to feel comfortable.</p>
+      </div>
+      <div class="char-card" onclick="startGame('champion')">
+        <span class="diff-badge champion">Champion</span>
+        <h2>Champion</h2>
+        <p>Always plays its strongest move: punishes bad spacing, never wastes Gauge, never misses a lethal Strike. A real test once you know what you're doing.</p>
+      </div>
+    </div>
+    <!-- Native <details>: the CPU-internals explanation used to be the FIRST thing a
+         newcomer read on this screen (implementation trivia like "Monte Carlo strike
+         selection"), which is backwards — it's now opt-in and after the actual choice. -->
+    <details style="max-width:520px;margin:12px auto 0;text-align:left;color:var(--text-dim);">
+      <summary style="cursor:pointer;font-weight:700;font-size:13px;">How the CPU works</summary>
+      <p style="font-size:12.5px;line-height:1.5;margin-top:8px;">
+        All three tiers share the same underlying decision-maker (Monte Carlo strike
+        selection, lethal detection, life-aware Exceed timing, evaluated Boosts). The only
+        difference between tiers is how often that decision gets thrown away in favor of a
+        random legal one instead: 40% of the time for Student, 20% for Warrior, never for Champion.
+      </p>
+    </details>
+    <button class="cancel-btn" style="max-width:230px;" onclick="backToAiCharSelect()">← Back</button>
+  </div>
+</div>
+<button class="rules-btn" onclick="openHowToPlay()">How to Play</button>
+<div class="modal-overlay" id="howToPlayOverlay" style="display:none;" onclick="if(event.target===this) closeHowToPlay()">
+  <div class="modal-panel" id="howToPlayBox"><!-- populated by openHowToPlay() --></div>
+</div>
+<!-- EXCEED_BUNDLE_SCRIPTS -->
+<script>
+let pendingChar = null;
+let pendingAiChar = null;
+// Shared by both fighter-select screens (human's own pick, then CPU's pick) so the
+// two never drift out of sync with each other's markup. `hasPhoto` branches the
+// background between a full-bleed photo (Cammy, currently) and the enlarged
+// pictogram treatment (everyone else) \u2014 see the .fighter-card-bg CSS comment.
+// Characters that are not yet fully playable (based on Phase 1 implementation).
+// Single source of truth for both fighter-select screens and both selectXChar
+// guards below \u2014 do not fork this into a second copy (see HANDOFF.md \u00a76).
+const UNFINISHED_CHARACTER_NOTES = {
+  'seth': 'Strike action + non-lethal damage not yet implemented',
+};
+const UNFINISHED_CHARACTER_KEYS = Object.keys(UNFINISHED_CHARACTER_NOTES);
+// Beginner roster decision, shared with CORE (see onboarding_contract.md) — these
+// four, in this exact order, are the only fighters that ever appear in the
+// "Recommended for beginners" section, and Quick Start always sets ryu/ken.
+const RECOMMENDED_BEGINNER_KEYS = ['ryu', 'ken', 'cammy', 'zangief'];
+// Whether the human-pick screen's full roster is expanded. Module-scope state
+// (not per-render) so the toggle survives re-renders triggered by other flows;
+// reset only happens implicitly on a page reload, same lifetime as pendingChar.
+let rosterExpanded = false;
+function fighterCardHTML(c, onclick, isRecommended){
+  const hasPhoto = !!FIGHTER_PHOTOS[c.key];
+  const isUnfinished = c.key in UNFINISHED_CHARACTER_NOTES;
+  const unfinishedNote = UNFINISHED_CHARACTER_NOTES[c.key] || '';
+  return `
+    <div class="fighter-card${isUnfinished ? ' fighter-card-unfinished' : ''}" onclick="${onclick}">
+      <div class="fighter-card-bg${hasPhoto ? '' : ' pictogram-bg'}">${fighterSilhouette(c.key)}</div>
+      <div class="fighter-card-scrim"></div>
+      ${isUnfinished ? `<div class="fighter-card-unfinished-badge">⚠️ Unfinished</div>` : ''}
+      ${isRecommended ? `<div class="fighter-card-rec-badge">Recommended</div>` : ''}
+      <div class="fighter-card-text">
+        <h2 class="fighter-card-name" style="color:#f87171;">${esc(c.name)}</h2>
+        <p class="fighter-card-blurb">${isUnfinished ? `<em style="color:#ff9999;">${esc(unfinishedNote)}</em>` : esc(c.blurb || '')}</p>
+      </div>
+    </div>`;
+}
+// Shared by both screens below: everyone except the recommended four, finished
+// fighters before any flagged unfinished ones (unfinished never appear in
+// the recommended set — see RECOMMENDED_BEGINNER_KEYS above).
+function nonRecommendedRoster(chars){
+  const recSet = new Set(RECOMMENDED_BEGINNER_KEYS);
+  const rest = chars.filter(c => !recSet.has(c.key));
+  rest.sort((a, b) => {
+    const aFinished = !UNFINISHED_CHARACTER_KEYS.includes(a.key);
+    const bFinished = !UNFINISHED_CHARACTER_KEYS.includes(b.key);
+    if (aFinished !== bFinished) return aFinished ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+  return rest;
+}
+function showSelectNotice(elementId, message){
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  if (!message) { el.style.display = 'none'; el.textContent = ''; return; }
+  el.textContent = message;
+  el.style.display = 'block';
+}
+function renderCharSelect(){
+  const chars = Object.values(CHARACTERS);
+  const byKey = {}; chars.forEach(c => { byKey[c.key] = c; });
+  const recommended = RECOMMENDED_BEGINNER_KEYS.map(k => byKey[k]).filter(Boolean);
+  const rest = nonRecommendedRoster(chars);
+
+  const recommendedHTML = recommended.map(c => fighterCardHTML(c, `selectCharacter('${c.key}')`, true)).join('');
+  const restHTML = rest.map(c => fighterCardHTML(c, `selectCharacter('${c.key}')`)).join('');
+
+  const container = document.getElementById('charCards');
+  // Recommended fighters are always visible; the rest stay hidden behind an
+  // explicit click so a first-time player's first decision is "pick one of
+  // these four", not "parse the entire roster".
+  container.innerHTML = `
+    <div class="section-label">Recommended for beginners</div>
+    <div class="char-cards">${recommendedHTML}</div>
+    <button class="roster-toggle-btn" onclick="toggleRosterExpanded()">${rosterExpanded ? 'Hide the rest' : `Show all ${chars.length} fighters`}</button>
+    ${rosterExpanded ? `<div class="char-cards">${restHTML}</div>` : ''}
+  `;
+}
+function toggleRosterExpanded(){
+  rosterExpanded = !rosterExpanded;
+  renderCharSelect();
+}
+function renderAiCharSelect(){
+  const chars = Object.values(CHARACTERS);
+  const byKey = {}; chars.forEach(c => { byKey[c.key] = c; });
+  // CPU-pick screen shows everything (no expand/collapse) — just put the same
+  // four beginner-friendly fighters first so a new player picking an opponent
+  // recognizes them from the previous screen.
+  const ordered = RECOMMENDED_BEGINNER_KEYS.map(k => byKey[k]).filter(Boolean).concat(nonRecommendedRoster(chars));
+  const container = document.getElementById('aiCharCards');
+  container.innerHTML = ordered.map(c => fighterCardHTML(c, `selectAiCharacter('${c.key}')`)).join('');
+}
+function selectCharacter(charKey){
+  // Don't allow selecting unfinished characters (non-blocking inline notice).
+  if (UNFINISHED_CHARACTER_KEYS.includes(charKey)) {
+    const name = CHARACTERS[charKey] ? CHARACTERS[charKey].name : charKey;
+    showSelectNotice('charSelectNotice', `${name} is not yet fully implemented.`);
+    return;
+  }
+  showSelectNotice('charSelectNotice', '');
+  pendingChar = charKey;
+  document.getElementById('yourPickLine').textContent = `You picked: ${CHARACTERS[charKey].name}`;
+  renderAiCharSelect();
+  document.getElementById('charSelect').style.display = 'none';
+  document.getElementById('aiCharSelect').style.display = 'flex';
+}
+function selectAiCharacter(charKey){
+  // Don't allow selecting unfinished characters (non-blocking inline notice).
+  if (UNFINISHED_CHARACTER_KEYS.includes(charKey)) {
+    const name = CHARACTERS[charKey] ? CHARACTERS[charKey].name : charKey;
+    showSelectNotice('aiCharSelectNotice', `${name} is not yet fully implemented.`);
+    return;
+  }
+  showSelectNotice('aiCharSelectNotice', '');
+  pendingAiChar = charKey;
+  const oppLine = document.getElementById('opponentLine');
+  oppLine.textContent = `Your opponent: ${CHARACTERS[pendingAiChar].name}`;
+  document.getElementById('aiCharSelect').style.display = 'none';
+  document.getElementById('diffSelect').style.display = 'flex';
+}
+function backToOwnCharSelect(){
+  document.getElementById('aiCharSelect').style.display = 'none';
+  document.getElementById('charSelect').style.display = 'flex';
+}
+function backToAiCharSelect(){
+  document.getElementById('diffSelect').style.display = 'none';
+  renderAiCharSelect();
+  document.getElementById('aiCharSelect').style.display = 'flex';
+}
+function startGame(difficultyKey, opts){
+  // opts is optional (contract: `startGame(difficultyKey, opts)`, opts = {beginner:true}
+  // or omitted) — every pre-existing onclick="startGame('champion')" call site must
+  // keep working with no 2nd argument, so default to {} rather than trusting callers.
+  G = new GameController(pendingChar, pendingAiChar, difficultyKey, opts || {});
+  render();
+}
+function quickStart(){
+  // Skips both select screens entirely — Quick Start's whole point is that a
+  // first-time player never has to make a fighter or difficulty decision to see
+  // the game in action. Keys per RECOMMENDED_BEGINNER_KEYS/onboarding_contract.md.
+  pendingChar = 'ryu';
+  pendingAiChar = 'ken';
+  startGame('student', { beginner: true });
+}
+
+// ---------------- How to Play ----------------
+// CARD_DIAGRAM_SVG: a labeled picture of one real card (Cross, a Normal — chosen
+// because at 0/0/0 Force/Gauge cost and no Critical text it's the simplest card in
+// the game, so ghost/dashed placeholders can show where the cost badges and
+// Critical line WOULD appear on a card that has them, without cluttering the
+// example with two different real cards). Every value baked into this SVG (name,
+// border color, RNG/POW/SPD/ARM/GRD, strike text, boost text) is read directly off
+// NORMALS.find(c => c.key === 'cross') in cards.js, which in turn is a straight
+// copy of Cross's row on the Normals sheet of EXdata.xlsx — the same source of
+// truth as every other card in the game (see cardTile() in render.js for the
+// actual in-game rendering this diagram is illustrating).
+// IMPORTANT: if the card layout ever changes (new badge, new stat, reordered
+// sections, a different rule for when Critical/Force/Gauge badges show) — the
+// canonical place that changed is cardTile()/statLine()/gaugeCostBadge()/
+// forceCostBadge() in render.js — update THIS diagram to match, or it will teach
+// players to read cards wrong.
+const CARD_DIAGRAM_CROSS = `
+<svg viewBox="0 0 1100 700" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Cross card, labeled">
+  <defs>
+    <marker id="htpArrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
+    </marker>
+  </defs>
+  <rect x="400" y="70" width="200" height="250" rx="14" fill="#1c2330" stroke="#6b7db3" stroke-width="3"/>
+  <text x="414" y="98" font-size="17" font-weight="800" fill="#f5f7fc">Cross</text>
+  <line x1="400" y1="112" x2="600" y2="112" stroke="#4a5a7f" stroke-width="1"/>
+  <g font-size="11" font-weight="700" fill="#f5f7fc">
+    <rect x="414" y="122" width="34" height="20" rx="4" fill="#26304a"/><text x="431" y="136" text-anchor="middle">R 1\u20132</text>
+    <rect x="452" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="465" y="136" text-anchor="middle">P 3</text>
+    <rect x="484" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="497" y="136" text-anchor="middle">S 6</text>
+    <rect x="516" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="529" y="136" text-anchor="middle">A 0</text>
+    <rect x="548" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="561" y="136" text-anchor="middle">G 0</text>
+  </g>
+  <text x="414" y="163" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">After:</tspan> Retreat 3.</text>
+  <line x1="410" y1="195" x2="590" y2="195" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="414" y="222" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
+  <text x="414" y="250" font-size="12" fill="#e3d6ff">Advance up to 3.</text>
+
+  <g font-size="24" font-weight="800" fill="#ff9500">
+    <path d="M260,90 L402,75" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="10" y="80" text-anchor="start">Border color</text>
+    <text x="10" y="110" text-anchor="start">= card type</text>
+
+    <path d="M260,250 L412,92" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="10" y="240" text-anchor="start">Card name =</text>
+    <text x="10" y="270" text-anchor="start">Strike headline</text>
+
+    <path d="M260,410 L416,126" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="10" y="400" text-anchor="start">Stats row:</text>
+    <text x="10" y="430" text-anchor="start">R / P / S / A / G</text>
+
+    <path d="M260,570 L416,158" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="10" y="560" text-anchor="start">Strike text =</text>
+    <text x="10" y="590" text-anchor="start">attack effect</text>
+
+    <path d="M740,90 L602,196" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="1090" y="80" text-anchor="end">Dashed divider \u2014</text>
+    <text x="1090" y="110" text-anchor="end">no Critical here</text>
+
+    <path d="M740,250 L480,220" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="1090" y="240" text-anchor="end">"BOOST" label =</text>
+    <text x="1090" y="270" text-anchor="end">Boost headline</text>
+
+    <path d="M740,410 L530,248" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
+    <text x="1090" y="400" text-anchor="end">Boost text =</text>
+    <text x="1090" y="430" text-anchor="end">face-up effect</text>
+  </g>
+</svg>
+`;
+
+const CARD_DIAGRAM_HADOKEN = `
+<svg viewBox="0 0 1100 760" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Hadoken card, labeled">
+  <defs>
+    <marker id="htpArrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
+    </marker>
+  </defs>
+  <rect x="400" y="60" width="200" height="300" rx="14" fill="#1c2330" stroke="#a56bf2" stroke-width="3"/>
+  <text x="414" y="88" font-size="17" font-weight="800" fill="#f5f7fc">Hadoken</text>
+  <line x1="400" y1="102" x2="600" y2="102" stroke="#4a5a7f" stroke-width="1"/>
+  <g font-size="11" font-weight="700" fill="#f5f7fc">
+    <rect x="414" y="112" width="34" height="20" rx="4" fill="#26304a"/><text x="431" y="126" text-anchor="middle">R 3\u20136</text>
+    <rect x="452" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="465" y="126" text-anchor="middle">P 4</text>
+    <rect x="484" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="497" y="126" text-anchor="middle">S 4</text>
+    <rect x="516" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="529" y="126" text-anchor="middle">A 0</text>
+    <rect x="548" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="561" y="126" text-anchor="middle">G 0</text>
+  </g>
+  <text x="414" y="153" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Hit:</tspan> Gauge +1.</text>
+  <text x="414" y="171" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">After:</tspan> Return to deck top, Gauge +1.</text>
+  <rect x="410" y="191" width="180" height="18" rx="4" fill="rgba(255,207,107,0.1)" stroke="#ffcf6b" stroke-width="1.5"/>
+  <text x="420" y="204" font-size="10.5" fill="#ffcf6b"><tspan font-weight="800">Critical:</tspan> Speed +2 (\u2192 6).</text>
+  <line x1="410" y1="225" x2="590" y2="225" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="414" y="252" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
+  <text x="414" y="280" font-size="12" fill="#e3d6ff">+2 Power to next Strike.</text>
+  <text x="414" y="298" font-size="12" fill="#e3d6ff">+1 Armor.</text>
+
+  <g font-size="24" font-weight="800" fill="#ff9500">
+    <path d="M260,90 L402,65" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="10" y="80" text-anchor="start">Border color =</text>
+    <text x="10" y="110" text-anchor="start">Special (purple)</text>
+
+    <path d="M260,250 L416,116" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="10" y="240" text-anchor="start">Stats row:</text>
+    <text x="10" y="270" text-anchor="start">Range 3\u20136 band</text>
+
+    <path d="M260,410 L416,160" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="10" y="400" text-anchor="start">Strike text =</text>
+    <text x="10" y="430" text-anchor="start">Hit / After effects</text>
+
+    <path d="M260,575 L412,200" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="10" y="560" text-anchor="start">"Critical:" \u2014</text>
+    <text x="10" y="590" text-anchor="start">pay 1 Gauge to</text>
+    <text x="10" y="620" text-anchor="start">unlock it</text>
+
+    <path d="M740,90 L602,226" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="1090" y="80" text-anchor="end">Dashed divider =</text>
+    <text x="1090" y="110" text-anchor="end">Strike / Boost split</text>
+
+    <path d="M740,250 L480,254" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="1090" y="240" text-anchor="end">"BOOST" label =</text>
+    <text x="1090" y="270" text-anchor="end">Boost headline</text>
+
+    <path d="M740,410 L530,285" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
+    <text x="1090" y="400" text-anchor="end">Boost text \u2014</text>
+    <text x="1090" y="430" text-anchor="end">free (no Force badge)</text>
+  </g>
+</svg>
+`;
+
+const CARD_DIAGRAM_METSU = `
+<svg viewBox="0 0 1100 700" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Metsu Shoryuken card, labeled">
+  <defs>
+    <marker id="htpArrowC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
+    </marker>
+  </defs>
+  <rect x="400" y="60" width="210" height="290" rx="14" fill="#1c2330" stroke="#d56aa8" stroke-width="3"/>
+  <text x="414" y="86" font-size="14" font-weight="800" fill="#f5f7fc">Metsu Shoryuken</text>
+  <rect x="414" y="94" width="46" height="17" rx="4" fill="rgba(213,106,168,0.15)" stroke="#d56aa8" stroke-width="1.5"/>
+  <text x="437" y="106.5" font-size="9.5" fill="#d56aa8" text-anchor="middle" font-weight="700">[4G]</text>
+  <line x1="400" y1="120" x2="610" y2="120" stroke="#4a5a7f" stroke-width="1"/>
+  <g font-size="11" font-weight="700" fill="#f5f7fc">
+    <rect x="414" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="427" y="144" text-anchor="middle">R 1</text>
+    <rect x="446" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="459" y="144" text-anchor="middle">P 7</text>
+    <rect x="478" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="491" y="144" text-anchor="middle">S 5</text>
+    <rect x="510" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="523" y="144" text-anchor="middle">A 0</text>
+    <rect x="542" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="555" y="144" text-anchor="middle">G 0</text>
+  </g>
+  <text x="414" y="171" font-size="11.5" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Before:</tspan> If opp. initiated: Speed +3 (\u2192 8).</text>
+  <text x="414" y="189" font-size="11.5" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Hit:</tspan> Stun immunity.</text>
+  <line x1="410" y1="215" x2="600" y2="215" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
+  <text x="414" y="242" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
+  <rect x="414" y="252" width="66" height="17" rx="4" fill="rgba(171,143,242,0.12)" stroke="#ab8ff2" stroke-width="1.5"/>
+  <text x="447" y="264.5" font-size="9.5" fill="#ab8ff2" text-anchor="middle">[1 Force]</text>
+  <text x="414" y="290" font-size="12" fill="#e3d6ff">Move 2, then Strike.</text>
+
+  <g font-size="24" font-weight="800" fill="#ff9500">
+    <path d="M260,90 L402,65" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="10" y="80" text-anchor="start">Border color =</text>
+    <text x="10" y="110" text-anchor="start">Ultra (pink)</text>
+
+    <path d="M260,250 L416,135" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="10" y="240" text-anchor="start">Stats row:</text>
+    <text x="10" y="270" text-anchor="start">Range 1, Power 7</text>
+
+    <path d="M260,410 L416,175" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="10" y="400" text-anchor="start">Strike text =</text>
+    <text x="10" y="430" text-anchor="start">Speed bonus,</text>
+    <text x="10" y="460" text-anchor="start">Stun immune</text>
+
+    <path d="M260,590 L416,255" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="10" y="580" text-anchor="start">[1 Force] =</text>
+    <text x="10" y="610" text-anchor="start">cost to Boost</text>
+
+    <path d="M740,90 L462,100" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="1090" y="80" text-anchor="end">[4G] = Gauge cost</text>
+    <text x="1090" y="110" text-anchor="end">to Strike</text>
+
+    <path d="M740,250 L605,216" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="1090" y="240" text-anchor="end">Dashed divider =</text>
+    <text x="1090" y="270" text-anchor="end">Strike / Boost split</text>
+
+    <path d="M740,410 L480,290" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="1090" y="400" text-anchor="end">Boost text = move,</text>
+    <text x="1090" y="430" text-anchor="end">then Strike is forced</text>
+
+    <path d="M740,590 L440,244" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
+    <text x="1090" y="580" text-anchor="end">"BOOST" label =</text>
+    <text x="1090" y="610" text-anchor="end">Boost headline</text>
+  </g>
+</svg>
+`;
+
+const HOWTOPLAY_INTRO = `
+  <div class="htp-section">
+    <h3>The goal</h3>
+    <p>Reduce your opponent's Life to 0 before they do the same to you. Each fighter starts at 30 Life.</p>
+  </div>
+  <div class="htp-section">
+    <h3>Before the first turn: Mulligan</h3>
+    <p>Once, for free, you may set aside any number of cards from your opening hand (including none, or all of them), draw that many replacements, then your set-aside cards are shuffled back into your deck. The CPU does this too, automatically.</p>
+  </div>
+  <div class="htp-section">
+    <h3>Each turn, pick one action</h3>
+    <ul>
+      <li><span class="kw-term">Prepare</span> — draw a card.</li>
+      <li><span class="kw-term">Move</span> — pay Force (discard cards from hand or Gauge) to advance, retreat, or close distance.</li>
+      <li><span class="kw-term">Change Cards</span> — discard some cards, draw that many back.</li>
+      <li><span class="kw-term">Boost</span> — play a card face-up for its Boost effect instead of attacking with it.</li>
+      <li><span class="kw-term">Exceed</span> — once per game, spend Gauge equal to your character's Exceed cost (2–3 depending on fighter) to permanently power up your character's Innate action.</li>
+      <li><span class="kw-term">Reshuffle</span> — once per game, shuffle your discard pile back into your deck (cannot Reshuffle if your deck is already full).</li>
+      <li><span class="kw-term">Strike</span> — set a card face-down as your attack. Your opponent picks their own card to defend with, then both flip. See "Winning a Strike," below, for how the flip is resolved.</li>
+      <li>Some fighters also have a character action (the star-icon button) — see "Your fighter," below.</li>
+    </ul>
+    <p>After any non-Strike action (Prepare, Move, Change Cards, Boost, or your character action), your turn ends and you draw 1 card. If your hand exceeds 7 cards, you must discard down to 7 before your opponent's turn begins.</p>
+  </div>
+  <div class="htp-section">
+    <h3>Reading a card</h3>
+    <p>Every card is really two halves in one, split by a dashed line: a face-down <b>Strike</b> side (top) and a face-up <b>Boost</b> side (bottom). Here are the key parts, with real-game examples:</p>
+    <ul>
+      <li><b>Border color</b> — blue: Normal (shared by every fighter, 2 copies each in every deck). Purple: Special (character-unique, 2 copies each). Pink: Ultra (character-unique, costs Gauge to Strike with).</li>
+      <li><span class="kw-term">Range (RNG)</span> — the distance band this card works at. A single number means only that exact distance; a span like 1–2 means anywhere in that range.</li>
+      <li><span class="kw-term">Power (POW)</span> — damage dealt on a hit, before the defender's Armor is subtracted.</li>
+      <li><span class="kw-term">Speed (SPD)</span> — higher Speed resolves first in a Strike.</li>
+      <li><span class="kw-term">Armor (ARM)</span> — subtracted from incoming Power; can reduce a hit to 0 damage.</li>
+      <li><span class="kw-term">Guard (GRD)</span> — if damage taken exceeds this, the card is Stunned (see Stun, below).</li>
+      <li><b>Strike side</b> — headlined by the card's own name, then the stats row plus the card's text for when it's set face-down as your attack (with keywords like <b>Before:</b>/<b>Hit:</b>/<b>After:</b> shown bold).</li>
+      <li><b>Boost side</b>, below the dashed line — headlined by the word "BOOST" in bold, then the card's alternate effect if played face-up via the Boost action. A <span class="kw-term">\u23F1 1</span> next to "BOOST" means this Boost is Cancelable (see Cancel, below).</li>
+      <li><span class="kw-term">[N Force]</span> next to the Boost text — the Force cost to play it as a Boost. No badge means free.</li>
+    </ul>
+  </div>
+
+  <div class="htp-section">
+    <h3>Cross (Normal) + Run Boost</h3>
+    ${CARD_DIAGRAM_CROSS}
+    <div class="card-usage-guide">
+      <h4>Strike (Speed 6, Range 1–2):</h4>
+      <p><b>After:</b> Retreat 3 — Fast spacing tool. Creates distance into Hadoken range or escapes pressure. Weak if cornered (no room to retreat).</p>
+      <h4>Boost (Instant, Free):</h4>
+      <p><b>Advance up to 3.</b> Primary gap-closer or escape tool. Use to enter Hadoken range or un-corner yourself. Avoid burning both copies early.</p>
+      <h4>Overall use:</h4>
+      <p>Up close → Cross Strike or Run Boost to create distance for Hadoken loops. Keep in mulligan if you already have Hadoken.</p>
+    </div>
+  </div>
+
+  <div class="htp-section">
+    <h3>Hadoken (Special) + Defensive Boost</h3>
+    ${CARD_DIAGRAM_HADOKEN}
+    <div class="card-usage-guide">
+      <h4>Strike (Speed 4, Range 3–6):</h4>
+      <p><b>Core long-range tool.</b> Gauge recursion (return to deck + Gauge from discard on Hit/After) creates strong loops that force opponents in. Critical (+2 Speed → Speed 6) enables zoning pressure. Gauge-negative early if your discard is empty.</p>
+      <h4>Boost (Continuous, Free):</h4>
+      <p><b>+2 Power +1 Armor.</b> Solid defensive/offensive buff; is like an extra copy of Grasp Boost (+2 Power) when opponent can escape zoning.</p>
+      <h4>Overall use:</h4>
+      <p>Zone and loop once you have 1+ Gauge for Critical. Push with Donkey Kick/One Inch Punch into Hadoken range, then recur. Threat of Critical Hadoken is Ryu's main long-range win condition.</p>
+    </div>
+  </div>
+
+  <div class="htp-section">
+    <h3>Metsu Shoryuken (Ultra, 4G) + Lightning Reflexes Boost</h3>
+    ${CARD_DIAGRAM_METSU}
+    <div class="card-usage-guide">
+      <h4>Strike (Speed 5, Range 1, costs 4 Gauge):</h4>
+      <p><b>Powerful reversal check.</b> Becomes Speed 8 if opponent initiated, discouraging Range 1 engagement. Stun Immunity on hit locks out defensive Stun strategies.</p>
+      <h4>Boost (Instant, 1 Force):</h4>
+      <p><b>Move 2, then Strike.</b> High-tempo reposition. Use to threaten Critical Hadoken loops, close on zoners, or set up finishing checkmates. Not Cancelable — the follow-up Strike is a forced, automatic part of the Boost, not a separate action you can chain further.</p>
+      <h4>Overall use:</h4>
+      <p>Hold as Range 1 deterrent (implied threat is huge). Use the boost for fast reposition + immediate Strike into favorable ranges or winning setups. Save Gauge for this over Exceed Mode in most closing scenarios.</p>
+    </div>
+  </div>
+
+  <div class="htp-section">
+    <h3>Reading the board</h3>
+    <p>Fighters move along a 9-space track. <span class="kw-term">Range</span> is the distance between you and your opponent — most attacks only work within a specific range band, so positioning is half the game.</p>
+  </div>
+  <div class="htp-section">
+    <h3>Winning a Strike</h3>
+    <p>Whoever's card has the higher <span class="kw-term">Speed</span> resolves first. If your card is in range and beats the opponent's <span class="kw-term">Armor</span> with your <span class="kw-term">Power</span>, you deal damage. If that damage exceeds the Guard of whichever card hasn't activated yet, that card is <span class="kw-term">Stunned</span>: it's discarded without dealing damage or triggering any of its own effects (unless its owner has Stun Immunity that Strike).</p>
+  </div>
+  <div class="htp-section">
+    <h3>Your fighter</h3>
+    <p>Each fighter has an <span class="kw-term">Innate</span> ability, always active. Some Innates are a per-turn action (the star-icon button, usable instead of Prepare/Move/etc.); others are a passive effect that just applies automatically. Once you <span class="kw-term">Exceed</span>, your Innate is permanently replaced by a stronger Exceeded version for the rest of the game. Check your character panel for your fighter's exact Innate/Exceeded text.</p>
+  </div>
+  <div class="htp-section">
+    <h3>Critical (Street Fighter)</h3>
+    <p>Street Fighter characters can pay 1 Gauge when they set an attack card during a Strike — independently on either side — to unlock all of that card's "Critical:" text for that Strike. If you don't pay, any Critical text on the card simply does nothing. You can even pay on a card with no Critical text at all, as a bluff. Guilty Gear and BlazBlue fighters do not use the Critical mechanic.</p>
+  </div>
+`;
+
+const HOWTOPLAY_KEYWORDS = [
+  ['Life', 'Your health. Starts at 30. Hit 0 and you lose.'],
+  ['Range', 'The distance between the two fighters right now. Each card only works within its own printed range band.'],
+  ['Power (POW)', 'How much damage a card deals if it hits, before the defender\'s Armor is subtracted.'],
+  ['Speed (SPD)', 'Determines who resolves first in a Strike. Higher Speed also usually determines who "wins" a clash.'],
+  ['Armor (ARM)', 'Subtracted from incoming Power. Can reduce a hit to 0 damage.'],
+  ['Guard (GRD)', 'If the damage you take in a Strike exceeds your Guard, and your own card hasn\'t activated yet this Strike, your card is Stunned (see Stun, below).'],
+  ['Force', 'A resource you pay by discarding cards from hand (or Gauge) — used for Move and some Boosts. Every card is worth 1 Force, except Ultras, which are worth 2.'],
+  ['Gauge', 'A resource pool built up by card and Boost effects. Spent on Ultra Strikes, on Exceeding, and on paying for a Critical.'],
+  ['Boost', 'Playing a card face-up for its secondary effect (a buff, a draw, movement, etc.) instead of attacking with it that turn.'],
+  ['Exceed', 'A one-time, permanent power-up available once your Gauge reaches your character\'s Exceed cost. Upgrades your Innate action into a stronger Exceeded action.'],
+  ['Ultra', 'Your character\'s strongest attacks. Cost Gauge to use as a Strike. Also usable as a Boost like any other card — its Boost side costs Force (sometimes 0), not Gauge; only Striking with an Ultra costs Gauge.'],
+  ['EX Strike', 'Set two copies of the same card together as your Strike for +1 to every stat (Power, Speed, Armor, Guard) that exchange — the second copy is discarded on reveal.'],
+  ['Wild Swing', 'Set the top card of your deck face-down, sight unseen, instead of a card from hand — your only option if your hand is empty, and always an option otherwise.'],
+  ['Advantage', 'A bonus some cards grant. Whoever holds Advantage takes the next turn, instead of turns simply alternating — if both players would gain it, the most recent grant wins.'],
+  ['Stun', 'If a card takes damage exceeding its Guard before it has activated this Strike, it\'s Stunned: discarded immediately without dealing damage or triggering any of its own effects — unless its owner has Stun Immunity that Strike. Only the card that would resolve second (by Speed) can be Stunned this way.'],
+  ['Critical', 'A Street Fighter mechanic: an optional 1-Gauge payment Street Fighter characters can make when setting an attack card during a Strike. If paid, all of that card\'s "Critical:" text applies for that Strike; if not, it does nothing. Legal to pay on a card with no Critical text, as a bluff.'],
+  ['Cancel', 'Some Boosts are marked Cancelable (\u23F1 1 on the card). After one of those fully resolves, you may spend 1 Gauge to immediately take another action instead of ending your turn \u2014 the Boost itself already finished normally, Cancel doesn\'t undo or interrupt it. No hard limit on chaining: as long as your next action is also a Cancelable Boost and you still have Gauge, you can Cancel again.'],
+];
+
+// Fighting Games Terminology Useful for Exceed Strategy — common FGC shorthand
+// that appears frequently when discussing Exceed matchups, gameplans, and decisions.
+const HOWTOPLAY_FGC_TERMS = [
+  {
+    heading: 'Archetypes & Playstyles',
+    terms: [
+      ['Shoto', 'Balanced all-rounder with fireball (projectile), dragon punch (reversal), and solid normals at multiple ranges (classic Ryu/Ken archetype).'],
+      ['Zoner', 'Character who controls space from long range and forces the opponent to approach (e.g., Guile, Sagat).'],
+      ['Rushdown', 'Aggressive style focused on closing distance and applying constant pressure.'],
+      ['Grappler', 'Character built around strong close-range options, command grabs, or high-reward hits once in (e.g., Zangief).'],
+      ['Footsies', 'Mid-range spacing game of poking, whiff punishing, and controlling distance without fully committing.'],
+    ],
+  },
+  {
+    heading: 'Key Combat Concepts',
+    terms: [
+      ['Punish', 'Hitting the opponent for a recoverable mistake (whiffed attack, unsafe option, or bad positioning).'],
+      ['Reversal', 'Strong defensive option used when the opponent initiates (often a DP-style attack with speed or positioning benefits).'],
+      ['Poke', 'Fast, relatively safe attack used to check approaches or control space.'],
+      ['Whiff', 'An attack that misses. In Exceed this can still trigger After effects and create punish opportunities.'],
+      ['Mix-up / 50/50', 'Situation where the defender has no perfect answer and must guess correctly between options.'],
+      ['Confirm', 'Successfully converting a hit, advantage, or read into a stronger follow-up or setup.'],
+      ['Safe / Unsafe', 'Whether an attack loses badly to common answers or leaves you vulnerable.'],
+      ['Frame advantage / Advantage', 'Tempo control. In Exceed this maps closely to gaining the next turn (Advantage) or winning speed interactions.'],
+      ['Corner', 'Edge of the board. Limits retreat options and amplifies pressure or carry potential.'],
+      ['Zoning', 'Controlling the board from long range and denying approaches.'],
+      ['Pressure', 'Sequence of threats that keeps the opponent reacting and limits their options.'],
+      ['Checkmate', 'Guaranteed winning line once the opponent\u2019s outs are exhausted.'],
+      ['Throw / Command grab', 'High-reward close-range option that bypasses certain defenses (often represented by Grasp or specific specials).'],
+      ['Anti-air', 'Tool used to beat jumping or advancing approaches (in Exceed this is often a fast or well-timed reversal/special at the relevant range).'],
+    ],
+  },
+  {
+    heading: 'Resource & Decision Terms',
+    terms: [
+      ['Meter', 'General resource (Gauge in Exceed). Spending it for power, speed, or special effects.'],
+      ['Conversion', 'Turning a successful interaction into meaningful damage, positioning, or resource gain.'],
+      ['Reset', 'Ending a sequence in a way that restarts pressure or creates a new mix-up instead of a hard knockdown.'],
+      ['Option select', 'Playing in a way that covers multiple possible opponent responses with one action.'],
+    ],
+  },
+  {
+    heading: 'Expanded Common Shorthand',
+    terms: [
+      ['R#', 'Range (R1, R2, R1\u20133, R3\u20136, etc.).'],
+      ['[0\u20137]', 'Quick notation for Normals by Speed: 0 = Block, 1 = Focus, 2 = Sweep, 3 = Spike, 4 = Dive, 5 = Assault, 6 = Cross, 7 = Grasp. (Example: \u201c732\u201d = Grasp + Spike + Sweep)'],
+      ['UA', 'Unique Ability (character ability), sometimes called Innate.'],
+      ['DP', 'Dragon Punch-style reversal (Shoryuken, etc.).'],
+      ['OS', 'Option select.'],
+      ['CC / CC#', 'Change Cards (spend Force to draw).'],
+      ['WS', 'Wild Swing.'],
+      ['EX', 'EX Attack (two copies of the same card).'],
+      ['Adv', 'Advantage (next turn).'],
+      ['Crit', 'Critical (Season 3 Gauge spend).'],
+      ['Oki', 'Okizeme / wake-up pressure (situations after knockdown or strong positioning).'],
+      ['Meaty', 'Timing an attack to hit as the opponent becomes actionable again.'],
+      ['Fuzzy', 'Overlapping options that cover multiple timings or ranges.'],
+    ],
+  },
+];
+
+// Effects iconography guide — the emoji vocabulary the FX layer (board badges,
+// paced Strike playback, log-line prefixes) actually uses. See engine.js's
+// FX_ICONS for where the glyph itself is defined; `fxIcon(kind)` (also in
+// engine.js, loaded via __BUNDLE__ above this script) reads it here so the two
+// can never drift apart — only the label/description text is hand-authored,
+// same "canonical source elsewhere, describe it here" pattern the card-reading
+// diagrams above already use (see that section's own comment). Grouped to match
+// how a player encounters them: what shows up ON THE BOARD during a Strike
+// first (most players' first question), then everything else that only ever
+// appears as a log-line prefix. Keep in sync with engine.js's FX_ICONS/logMsg
+// call sites if a kind is ever added, renamed, or retired — same standing rule
+// HANDOFF.md §7 already states for "Reading a card" above.
+const HOWTOPLAY_ICON_GROUPS = [
+  {
+    heading: 'On the board, during a Strike',
+    note: 'These float above a fighter’s cell for a beat while an exchange plays out step by step — use the Skip button next to the range readout to jump straight to the result.',
+    items: [
+      ['hit', 'Hit', 'Damage connected. The number under the icon is how much Life was lost.'],
+      ['miss', 'Miss', 'The attack didn’t connect — out of range, or the defender was immune to it this Strike.'],
+      ['stun', 'Stun', 'Damage exceeded Guard: the not-yet-activated card is discarded without dealing damage or triggering its own effects.'],
+      ['move', 'Move', 'Advance, Retreat, Close, or an interactive push/pull moved a fighter. The number is spaces moved; watch the stand slide to its new cell.'],
+      ['armor', 'Armor', 'Force spent on Block (or a card’s own Armor bonus) reduced incoming damage. The number is the Armor gained.'],
+      ['damage', 'Non-lethal damage', 'Damage from an effect that can’t reduce Life below 1 (distinct from a normal Hit).'],
+      ['ex', 'EX pair', 'A paired second copy of the same card was discarded to power up an EX Strike.'],
+    ],
+  },
+  {
+    heading: 'Everywhere else — the fight log',
+    note: 'These prefix the matching log line instead of floating on the board — they’re not tied to a position on the track the way the events above are.',
+    items: [
+      ['draw', 'Draw', 'One or more cards were drawn (Prepare, end-of-turn draw, mulligan, a card/boost effect, etc.).'],
+      ['discard', 'Discard', 'One or more cards left hand or play for the discard pile. The log line always still names the card(s) — the icon is decoration, never the only record.'],
+      ['gauge', 'Gauge', 'Gauge was gained, spent, or a card moved into/out of the Gauge pool.'],
+      ['force', 'Force', 'A Force cost was paid (Move, a Boost, an optional card effect) by discarding cards.'],
+      ['boost', 'Boost', 'A card was played face-up for its Boost effect, or a continuous Boost came into or stayed in play.'],
+      ['boostexpire', 'Boost expires', 'A timed continuous Boost’s clock ran out and it converted to Gauge.'],
+      ['sustain', 'Sustain', 'A continuous Boost was kept in play past the point it would normally leave.'],
+      ['seal', 'Seal', 'A card was removed from play into a sealed area (Happy Chaos) instead of being discarded or Gauged.'],
+      ['reshuffle', 'Reshuffle', 'A discard pile was shuffled back into its deck (the once-per-game action, or an automatic empty-deck reshuffle).'],
+      ['heal', 'Heal', 'Life was gained, capped at maximum.'],
+      ['exceed', 'Exceed', 'A fighter permanently flipped into their stronger Exceeded Innate.'],
+      ['revert', 'Revert', 'An Exceeded fighter flipped back to their un-Exceeded Innate.'],
+      ['overdrive', 'Overdrive', 'A BlazBlue fighter’s Overdrive area lost a card at the start of their turn, triggering its effect.'],
+      ['advantage', 'Advantage', 'A fighter gained Advantage — they take the next turn instead of turns simply alternating.'],
+      ['action', 'Bonus action', 'An effect granted an extra action this turn (e.g. discarding a Boost from play for more actions).'],
+      ['immune', 'Immune / blocked', 'Something was prevented outright — a Stun resisted, a move blocked, an unaffordable card ruled invalid.'],
+    ],
+  },
+];
+
+function openHowToPlay(){
+  showHowToPlayTab('intro');
+  document.getElementById('howToPlayOverlay').style.display = 'flex';
+}
+function closeHowToPlay(){
+  document.getElementById('howToPlayOverlay').style.display = 'none';
+}
+function howToPlayIconsBody(){
+  return `
+    <div class="htp-section">
+      <p>The FX layer overlays these emoji on the board and in the fight log while an exchange resolves, so you can read what just happened without parsing every sentence in the log.</p>
+      ${HOWTOPLAY_ICON_GROUPS.map(group => `
+        <h4>${group.heading}</h4>
+        <p class="htp-icon-note">${group.note}</p>
+        <ul class="htp-icon-list">
+          ${group.items.map(([kind, label, def]) => `<li><span class="htp-icon-glyph">${fxIcon(kind)}</span><b>${label}</b> \u2014 ${def}</li>`).join('')}
+        </ul>
+      `).join('')}
+    </div>
+  `;
+}
+function showHowToPlayTab(tab){
+  const box = document.getElementById('howToPlayBox');
+  const body = tab === 'intro' ? HOWTOPLAY_INTRO : tab === 'icons' ? howToPlayIconsBody() : `
+    <div class="htp-section">
+      <p>Every keyword used on cards and in the log, in one place.</p>
+      <ul>
+        ${HOWTOPLAY_KEYWORDS.map(([term, def]) => `<li><span class="kw-term">${term}</span> \u2014 ${def}</li>`).join('')}
+      </ul>
+    </div>
+    <div class="htp-section">
+      <h3>Fighting Games Terminology Useful for Exceed Strategy</h3>
+      <p>These are common FGC terms that appear frequently when discussing Exceed matchups, gameplans, and decisions.</p>
+      ${HOWTOPLAY_FGC_TERMS.map(group => `
+        <h4>${group.heading}</h4>
+        <ul>
+          ${group.terms.map(([term, def]) => `<li><b>${term}</b> \u2014 ${def}</li>`).join('')}
+        </ul>
+      `).join('')}
+    </div>
+  `;
+  box.innerHTML = `
+    <div class="modal-header">
+      <h2>How to Play</h2>
+      <button class="modal-close" onclick="closeHowToPlay()">\u2715</button>
+    </div>
+    <div class="modal-body">
+      <div class="htp-toggle-row">
+        <button class="${tab === 'intro' ? 'active' : ''}" onclick="showHowToPlayTab('intro')">New player intro</button>
+        <button class="${tab === 'icons' ? 'active' : ''}" onclick="showHowToPlayTab('icons')">Effects iconography</button>
+        <button class="${tab === 'keywords' ? 'active' : ''}" onclick="showHowToPlayTab('keywords')">Complete keyword glossary</button>
+      </div>
+      ${body}
+    </div>
+  `;
+}
+renderCharSelect();
+</script>
+</body>
+</html>
