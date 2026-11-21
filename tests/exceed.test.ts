@@ -90,7 +90,10 @@ test('native CPU bridge is opt-in, validates its protocol, and falls back cleanl
     initiallyReady: boolean;
     fallbackWasNull: boolean;
     registeredAction: string;
+    moveZeroLegal: boolean;
+    snapshotSeed: number;
     hash: string;
+    utf8Hash: string;
   }>(`
     (() => {
       const initiallyReady = NativeCpuAI.status().ready;
@@ -98,13 +101,31 @@ test('native CPU bridge is opt-in, validates its protocol, and falls back cleanl
       const fallbackWasNull = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }) === null;
       NativeCpuAI.registerBackend({ protocolVersion: 1, chooseNeutralAction: () => ({ type: 'prepare' }) });
       const registeredAction = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }).type;
-      return { initiallyReady, fallbackWasNull, registeredAction, hash: NativeCpuAI.canonicalTraceHash({ a: 1 }) };
+      const moveZeroLegal = isNativeActionLegal({ type: 'move', target: 0 }, { hand: [], boostsInPlay: [] }, false);
+      const snap = NativeCpuAI.decisionSnapshot(
+        { characterKey: 'ryu', life: 30, pos: 2, hand: [], deck: [], gauge: [], discard: [], boostsInPlay: [] },
+        { characterKey: 'ken', life: 30, pos: 6, handCount: 5, deckCount: 25, gauge: [], discard: [], boostsInPlay: [] },
+        false,
+        { seed: 42 }
+      );
+      return {
+        initiallyReady,
+        fallbackWasNull,
+        registeredAction,
+        moveZeroLegal,
+        snapshotSeed: snap.seed,
+        hash: NativeCpuAI.canonicalTraceHash({ a: 1 }),
+        utf8Hash: NativeCpuAI.canonicalTraceHash({ name: 'Chun-Li—é' }),
+      };
     })()
   `);
   assert.equal(result.initiallyReady, false);
   assert.equal(result.fallbackWasNull, true);
   assert.equal(result.registeredAction, 'prepare');
+  assert.equal(result.moveZeroLegal, true);
+  assert.equal(result.snapshotSeed, 42);
   assert.equal(result.hash, '9c3e82dd6fcae8b1');
+  assert.equal(result.utf8Hash, '75575cda03f23a7c');
 });
 
 test('AI deckKeysForCharacter matches Engine buildDeck identically for all 41 fighters', () => {

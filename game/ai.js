@@ -2546,7 +2546,7 @@ function isNativeActionLegal(action, me, canExceed) {
   if (!action || !action.type) return false;
   if (action.type === 'exceed') return !!canExceed;
   if (action.type === 'boost') return typeof action.uid === 'string' && me.hand.some(card => card.uid === action.uid && card.boost);
-  if (action.type === 'move') return Number.isInteger(action.target) && action.target >= 1 && action.target <= 8;
+  if (action.type === 'move') return Number.isInteger(action.target) && action.target >= 0 && action.target <= 8;
   if (action.type === 'changecards') return Number.isInteger(action.n) && action.n >= 1 && action.n <= me.hand.length;
   if (action.type === 'burst') return typeof action.boostUid === 'string' && me.boostsInPlay.some(entry => entry.card.uid === action.boostUid);
   return ['strike', 'action', 'prepare', 'reshuffle'].includes(action.type);

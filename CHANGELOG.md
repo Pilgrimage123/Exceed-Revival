@@ -11,6 +11,12 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-21 — Domain modeling (GLOSSARY, ADRs) and Protocol v1 / Rust core fixes
+
+- Added `GLOSSARY.md` and `docs/adr/0001-differential-promotion-gate.md`, `0002-embedded-dependency-free-wasm.md`, and `0003-async-worker-and-sunset-lifecycle.md` establishing canonical domain terms, the Differential Promotion Gate, embedded WASM packaging, and the sunset plan for `src/ai/layer1/*` and `game/ai.js`.
+- Fixed `isNativeActionLegal` in `game/ai.js` to accept arena space `0` (`0..8`), fixed `solve_zero_sum_cfr` exploitability and availability-normalized IS-PUCT in `native/src/lib.rs`, and aligned UTF-8 FNV-1a canonical trace hashing across Rust, TS, and JS.
+- Expanded Protocol v1 (`src/ai/native-protocol.ts`, `game/native-ai.js`) with `seed`, `turnNumber`, `activePlayer`, `overdriveKeys`, `sealedKeys`, `eddiePos`, `knownDeckTop`/`Bottom`, and `chooseStrikeAction`/`chooseDefenseAction` hooks, and added `parity` manifest tracking to `scripts/export-card-dsl.mjs`.
+
 ## 2026-11-21 — Native CPU AI foundation and safe browser integration
 
 - Added `native/`, a dependency-free Rust core with strict conserved `BeliefState`

@@ -14,6 +14,9 @@ const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(`${source}\nglobalThis.__cardDsl = { normals: NORMALS, ggNormals: GG_NORMALS, characters: CHARACTERS };`, sandbox, { filename: 'game/cards.js' });
 const dsl = sandbox.__cardDsl;
+dsl.parity = Object.fromEntries(
+  Object.keys(dsl.characters).map((key) => [key, { dslParity: 'partial' }])
+);
 const json = JSON.stringify(dsl, (_key, value) => typeof value === 'function' ? undefined : value, 2);
 
 if (process.argv.includes('--stdout')) process.stdout.write(`${json}\n`);

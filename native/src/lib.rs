@@ -130,17 +130,21 @@ pub fn solve_zero_sum_cfr(payoffs: &[Vec<f64>], iterations: usize) -> Result<Mix
     let rows = payoffs.len();
     let cols = payoffs.first().map_or(0, Vec::len);
     if rows == 0 || cols == 0 || payoffs.iter().any(|row| row.len() != cols) { return Err("payoff matrix must be rectangular and non-empty".into()); }
-    let mut row_regret = vec![0.0; rows]; let mut col_regret = vec![0.0; cols]; let mut average = vec![0.0; rows];
+    let mut row_regret = vec![0.0; rows];
+    let mut col_regret = vec![0.0; cols];
+    let mut average = vec![0.0; rows];
+    let mut col_average = vec![0.0; cols];
     for _ in 0..iterations.max(1) {
         let row = regret_strategy(&row_regret); let col = regret_strategy(&col_regret);
         let mut row_values = vec![0.0; rows]; let mut col_values = vec![0.0; cols]; let mut value = 0.0;
         for r in 0..rows { for c in 0..cols { row_values[r] += col[c] * payoffs[r][c]; col_values[c] += row[r] * payoffs[r][c]; value += row[r] * col[c] * payoffs[r][c]; } }
         for r in 0..rows { row_regret[r] = (row_regret[r] + row_values[r] - value).max(0.0); average[r] += row[r]; }
-        for c in 0..cols { col_regret[c] = (col_regret[c] + value - col_values[c]).max(0.0); }
+        for c in 0..cols { col_regret[c] = (col_regret[c] + value - col_values[c]).max(0.0); col_average[c] += col[c]; }
     }
     let probabilities = normalize(&average);
+    let col_probs = normalize(&col_average);
     let worst = (0..cols).map(|c| (0..rows).map(|r| probabilities[r] * payoffs[r][c]).sum::<f64>()).fold(f64::INFINITY, f64::min);
-    let best_response = (0..rows).map(|r| payoffs[r].iter().copied().fold(f64::NEG_INFINITY, f64::max)).fold(f64::NEG_INFINITY, f64::max);
+    let best_response = (0..rows).map(|r| (0..cols).map(|c| col_probs[c] * payoffs[r][c]).sum::<f64>()).fold(f64::NEG_INFINITY, f64::max);
     Ok(MixedStrategy { probabilities, value: worst, exploitability: (best_response - worst).max(0.0) })
 }
 
@@ -150,13 +154,13 @@ fn normalize(values: &[f64]) -> Vec<f64> { let total: f64 = values.iter().sum();
 #[derive(Clone, Debug, PartialEq)]
 pub struct PuctEdge { pub prior: f64, pub visits: u32, pub availability: u32, pub value_sum: f64 }
 
-/// Availability-normalized PUCT prevents an action from looking bad merely because a
+/// Availability-normalized IS-PUCT prevents an action from looking bad merely because a
 /// determinization did not make it legal.
-pub fn select_puct(edges: &[PuctEdge], parent_visits: u32, exploration: f64) -> Option<usize> {
+pub fn select_puct(edges: &[PuctEdge], exploration: f64, fpu: f64) -> Option<usize> {
     edges.iter().enumerate().filter(|(_, edge)| edge.availability > 0).max_by(|(_, a), (_, b)| {
         let score = |edge: &PuctEdge| {
-            let q = if edge.visits == 0 { 0.0 } else { edge.value_sum / edge.visits as f64 };
-            q + exploration * edge.prior * ((parent_visits as f64).sqrt() / (1.0 + edge.visits as f64)) * (edge.availability as f64 / parent_visits.max(1) as f64)
+            let q = if edge.visits == 0 { fpu } else { edge.value_sum / edge.visits as f64 };
+            q + exploration * edge.prior * ((edge.availability as f64).sqrt() / (1.0 + edge.visits as f64))
         };
         score(a).partial_cmp(&score(b)).unwrap_or(Ordering::Equal)
     }).map(|(index, _)| index)
@@ -179,6 +183,26 @@ mod tests {
     #[test] fn belief_probability_is_exact() { assert!((belief().probability_at_least_one(0) - 5.0 / 6.0).abs() < 1e-12); assert!((belief().probability_ex_ready(0) - 1.0 / 6.0).abs() < 1e-12); }
     #[test] fn exclusion_is_hard_constraint() { let mut state = belief(); state.excluded_from_hand[0] = true; assert_eq!(state.probability_at_least_one(0), 0.0); }
     #[test] fn force_pruner_preserves_expensive_cards() { let cards = vec![ForceCard { id: "cheap".into(), force: 1, discard_cost: 1.0 }, ForceCard { id: "pair".into(), force: 1, discard_cost: 9.0 }, ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }]; assert_eq!(choose_force_payment(&cards, 2, None), Some(vec!["ultra".into()])); }
-    #[test] fn cfr_finds_matching_pennies_mix() { let result = solve_zero_sum_cfr(&vec![vec![1.0, -1.0], vec![-1.0, 1.0]], 10_000).unwrap(); assert!((result.probabilities[0] - 0.5).abs() < 0.03); }
-    #[test] fn hash_is_stable() { assert_eq!(canonical_hash("{\"a\":1}"), "9c3e82dd6fcae8b1"); }
+    #[test] fn cfr_finds_matching_pennies_mix() {
+        let result = solve_zero_sum_cfr(&vec![vec![1.0, -1.0], vec![-1.0, 1.0]], 10_000).unwrap();
+        assert!((result.probabilities[0] - 0.5).abs() < 0.03);
+        assert!(result.exploitability < 0.05, "exploitability was {}", result.exploitability);
+    }
+    #[test] fn puct_uses_availability_and_fpu() {
+        let edges = vec![
+            PuctEdge { prior: 0.4, visits: 0, availability: 100, value_sum: 0.0 },
+            PuctEdge { prior: 0.6, visits: 0, availability: 4, value_sum: 0.0 },
+        ];
+        assert_eq!(select_puct(&edges, 1.35, -0.15), Some(0));
+        let unvisited_vs_good = vec![
+            PuctEdge { prior: 0.5, visits: 10, availability: 10, value_sum: 8.0 },
+            PuctEdge { prior: 0.1, visits: 0, availability: 10, value_sum: 0.0 },
+        ];
+        assert_eq!(select_puct(&unvisited_vs_good, 1.35, -0.15), Some(0));
+    }
+    #[test] fn hash_is_stable() {
+        assert_eq!(canonical_hash("{\"a\":1}"), "9c3e82dd6fcae8b1");
+        assert_eq!(canonical_hash("{\"name\":\"Chun-Li—é\"}"), canonical_hash("{\"name\":\"Chun-Li\u{2014}\u{00e9}\"}"));
+        println!("utf8_hash={}", canonical_hash("{\"name\":\"Chun-Li—é\"}"));
+    }
 }
