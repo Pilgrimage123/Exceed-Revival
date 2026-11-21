@@ -101,7 +101,12 @@ test('native CPU bridge is opt-in, validates its protocol, and falls back cleanl
       const fallbackWasNull = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }) === null;
       NativeCpuAI.registerBackend({ protocolVersion: 1, chooseNeutralAction: () => ({ type: 'prepare' }) });
       const registeredAction = NativeCpuAI.chooseNeutralAction({ protocolVersion: 1 }).type;
-      const moveZeroLegal = isNativeActionLegal({ type: 'move', target: 0 }, { hand: [], boostsInPlay: [] }, false);
+      const moveZeroLegal = isNativeActionLegal(
+        { type: 'move', targetSpace: 0 },
+        { characterKey: 'ryu', pos: 1, hand: [{ uid: 'c1', key: 'sweep', type: 'normal' }], gauge: [], boostsInPlay: [] },
+        { pos: 6 },
+        false
+      );
       const snap = NativeCpuAI.decisionSnapshot(
         { characterKey: 'ryu', life: 30, pos: 2, hand: [], deck: [], gauge: [], discard: [], boostsInPlay: [] },
         { characterKey: 'ken', life: 30, pos: 6, handCount: 5, deckCount: 25, gauge: [], discard: [], boostsInPlay: [] },
@@ -362,9 +367,6 @@ test('Renderer respects Goldlewis 9-card hand limit, deckReferenceHTML exact cop
       gRyu.engine.forceExceed(gRyu.human());
       const ryuExceededButtons = actionButtons(gRyu);
 
-      // Selecting unfinished character uses inline notice, never alert()
-      selectCharacter('seth');
-
       return { goldlewisDiscardText, hcDeckRef, ragnaDeckRef, nagoButtons, ryuExceededButtons };
     })()
   `);
@@ -376,7 +378,6 @@ test('Renderer respects Goldlewis 9-card hand limit, deckReferenceHTML exact cop
   assert.match(res.nagoButtons, /Via Reshuffle only/);
   assert.match(res.ryuExceededButtons, /Already Exceeded/);
   assert.equal(wasAlertCalled(), false);
-  assert.match(dom.elements.get('charSelectNotice')?.textContent ?? '', /not yet fully implemented/);
 });
 
 test('Headless full-match simulation across Street Fighter, Guilty Gear, and BlazBlue completes cleanly', () => {
@@ -529,4 +530,239 @@ test('Headless full-match simulation across Street Fighter, Guilty Gear, and Bla
   assert.deepEqual(Array.from(res.violations), []);
   assert.deepEqual(Array.from(res.unfinished), []);
   assert.equal(res.completed, res.total);
+});
+
+test('Core engine & card-rule regression fixes (Anji ARM/GRD, playForcedBoost, EX self-pair, payUltra, KO, One Vision, Vega/Ryu/Sol/HC)', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    anjiArmDelta: number;
+    anjiGrdDelta: number;
+    forcedBoostDiscarded: boolean;
+    exSelfPairRejected: boolean;
+    emptyDeckWildSwingHandled: boolean;
+    koStoppedDefender: boolean;
+    oneVisionSustainedOnMiss: boolean;
+    vegaFreeCrit: boolean;
+    vegaRangeBonus: number;
+    vegaSplendidPow: number;
+    vegaSplendidArm: number;
+    ryuShoryuToGauge: boolean;
+    solGunFlameContinuous: boolean;
+    solBanditIgnoreGuard: boolean;
+    hcSingleDemCopy: boolean;
+  }>(`
+    (() => {
+      // 1. Anji set-time +2 GRD (normal) and +2 ARM (exceeded)
+      const eAnji = new Engine('anji', 'ryu');
+      const p1 = eAnji.P('p1'), p2 = eAnji.P('p2');
+      p1.pos = 2; p2.pos = 3;
+      const sweep = p1.hand.find(c => c.key === 'gg_sweep') || { ...GG_NORMALS.find(c => c.key === 'gg_sweep'), uid: eAnji.nextUid() };
+      const p2Sweep = { ...NORMALS.find(c => c.key === 'sweep'), uid: eAnji.nextUid() };
+      p1.hand.push({ ...NORMALS[0], uid: eAnji.nextUid() });
+      CHARACTERS.anji.setTimeOption.apply(eAnji, p1, true);
+      eAnji.runStrikeAuto({
+        initiator: 'p1',
+        attackerSel: { card: sweep, fromWildSwing: false },
+        defenderSel: { card: { ...p2Sweep, pow: 2 }, fromWildSwing: false },
+        gaugePay: {},
+      }, () => ({}));
+      const anjiGrdDelta = eAnji.lastStrikeInfo.sides.p1.live.grd - sweep.grd;
+
+      p1.exceeded = true;
+      CHARACTERS.anji.setTimeOption.apply(eAnji, p1, true);
+      eAnji.runStrikeAuto({
+        initiator: 'p1',
+        attackerSel: { card: { ...sweep, uid: eAnji.nextUid() }, fromWildSwing: false },
+        defenderSel: { card: { ...p2Sweep, pow: 2 }, fromWildSwing: false },
+        gaugePay: {},
+      }, () => ({}));
+      const anjiArmDelta = eAnji.lastStrikeInfo.sides.p1.live.arm - sweep.arm;
+
+      // 2. playForcedBoost discards non-continuous boosts instead of deleting them
+      const eFb = new Engine('ryu', 'ken');
+      const fbP1 = eFb.P('p1'), fbP2 = eFb.P('p2');
+      const oneShot = { ...NORMALS.find(c => c.key === 'cross'), uid: eFb.nextUid() };
+      fbP1.hand.push(oneShot);
+      const fbOk = eFb.playForcedBoost(fbP1, fbP2, oneShot);
+      const forcedBoostDiscarded = fbOk && fbP1.discard.some(c => c.uid === oneShot.uid);
+
+      // 3. EX Strike rejects pairing a card with itself
+      const eEx = new Engine('ryu', 'ken');
+      const exP1 = eEx.P('p1');
+      const cA = { ...NORMALS[0], uid: 'dup1' };
+      exP1.hand = [cA];
+      const exSelfPairRejected = eEx.resolveStrikeCardSelection(exP1, { type: 'ex', uid1: 'dup1', uid2: 'dup1' }) === null;
+
+      // 4. payUltra on empty deck+discard (reshuffle already used) sets gameOver cleanly without double-discarding
+      const ePu = new Engine('ryu', 'ken');
+      const puA = ePu.P('p1');
+      puA.deck = []; puA.discard = []; puA.gauge = []; puA.reshuffleUsed = true;
+      const ultra = { ...CHARACTERS.ryu.specials.find(c => c.type === 'ultra'), uid: 'u1' };
+      ePu.runStrikeAuto({
+        initiator: 'p1',
+        attackerSel: { card: ultra, fromWildSwing: false },
+        defenderSel: { card: { ...NORMALS[0], uid: 'd1' }, fromWildSwing: false },
+        gaugePay: {},
+      }, () => ({}));
+      const emptyDeckWildSwingHandled = ePu.gameOver === true && puA.discard.filter(c => c.uid === 'u1').length === 1;
+
+      // 5. Immediate 0-HP KO stops slower defender from activating
+      const eKo = new Engine('ryu', 'ken');
+      const koA = eKo.P('p1'), koD = eKo.P('p2');
+      koA.pos = 2; koD.pos = 3;
+      koA.life = 1; koD.life = 2;
+      eKo.runStrikeAuto({
+        initiator: 'p1',
+        attackerSel: { card: { ...NORMALS[0], pow: 5, spd: 8, uid: 'koA' }, fromWildSwing: false },
+        defenderSel: { card: { ...NORMALS[0], pow: 5, spd: 1, stunImmuneBase: true, uid: 'koD' }, fromWildSwing: false },
+        gaugePay: {},
+      }, () => ({}));
+      const koStoppedDefender = eKo.gameOver === true && eKo.winner === 'p1' && koA.life === 1;
+
+      // 6. One Vision After: self-boost fires even when it misses
+      const eOv = new Engine('axl', 'ryu');
+      const ovA = eOv.P('p1'), ovD = eOv.P('p2');
+      ovA.pos = 0; ovD.pos = 8; // out of range -> miss
+      const ovCard = { ...CHARACTERS.axl.specials.find(c => c.key === 'one_vision'), uid: 'ov1' };
+      ovA.gauge = [
+        { ...NORMALS[0], uid: 'g1' }, { ...NORMALS[0], uid: 'g2' },
+        { ...NORMALS[0], uid: 'g3' }, { ...NORMALS[0], uid: 'g4' },
+      ];
+      eOv.runStrikeAuto({
+        initiator: 'p1',
+        attackerSel: { card: ovCard, fromWildSwing: false },
+        defenderSel: { card: { ...NORMALS[0], uid: 'ovD' }, fromWildSwing: false },
+        gaugePay: {},
+      }, () => ({}));
+      const oneVisionSustainedOnMiss = ovA.boostsInPlay.some(b => b.card.uid === 'ov1' && b.sustainedForever);
+
+      // 7. Card data fixes: Vega, Ryu, Sol, Happy Chaos
+      const eVega = new Engine('vega', 'ryu');
+      const bhc = CHARACTERS.vega.specials.find(c => c.key === 'bloody_high_claw');
+      const sc = CHARACTERS.vega.specials.find(c => c.key === 'splendid_claw');
+      eVega.P('p1').boostsInPlay.push({ card: bhc, ownerId: 'p1' });
+      const vegaFreeCrit = eVega.hasFreeCriticalBoost(eVega.P('p1'));
+      const vegaRangeBonus = bhc.boost.rangeMaxBonus || 0;
+      const vegaSplendidPow = (sc.boost.statMods && sc.boost.statMods.pow) || 0;
+      const vegaSplendidArm = (sc.boost.statMods && sc.boost.statMods.arm) || 0;
+      const ryuShoryuToGauge = !!CHARACTERS.ryu.specials.find(c => c.key === 'shoryuken_ryu').boost.toGaugeIfHitThisStrike;
+      const solGunFlame = CHARACTERS.sol.specials.find(c => c.key === 'gun_flame');
+      const solBandit = CHARACTERS.sol.specials.find(c => c.key === 'bandit_bringer');
+
+      const eHc = new Engine('happychaos', 'ryu');
+      const hcP1 = eHc.P('p1');
+      CHARACTERS.happychaos.onExceed(eHc, hcP1);
+      CHARACTERS.happychaos.onExceed(eHc, hcP1);
+      const hcSingleDemCopy = hcP1.hand.filter(c => c.key === 'hc_deus_ex_machina').length === 1;
+
+      return {
+        anjiArmDelta, anjiGrdDelta, forcedBoostDiscarded, exSelfPairRejected,
+        emptyDeckWildSwingHandled, koStoppedDefender, oneVisionSustainedOnMiss,
+        vegaFreeCrit, vegaRangeBonus, vegaSplendidPow, vegaSplendidArm,
+        ryuShoryuToGauge,
+        solGunFlameContinuous: !!solGunFlame.boost.continuous && !!solGunFlame.boost.advantageIfOpponentStunnedThisStrike,
+        solBanditIgnoreGuard: !!solBandit.ignoreGuard,
+        hcSingleDemCopy,
+      };
+    })()
+  `);
+  assert.equal(res.anjiGrdDelta, 2);
+  assert.equal(res.anjiArmDelta, 2);
+  assert.equal(res.forcedBoostDiscarded, true);
+  assert.equal(res.exSelfPairRejected, true);
+  assert.equal(res.emptyDeckWildSwingHandled, true);
+  assert.equal(res.koStoppedDefender, true);
+  assert.equal(res.oneVisionSustainedOnMiss, true);
+  assert.equal(res.vegaFreeCrit, true);
+  assert.equal(res.vegaRangeBonus, 1);
+  assert.equal(res.vegaSplendidPow, 1);
+  assert.equal(res.vegaSplendidArm, 1);
+  assert.equal(res.ryuShoryuToGauge, true);
+  assert.equal(res.solGunFlameContinuous, true);
+  assert.equal(res.solBanditIgnoreGuard, true);
+  assert.equal(res.hcSingleDemCopy, true);
+});
+
+test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Key NativeCpuAI bridge', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    poolExcludesOverdrive: boolean;
+    poolExcludesSealed: boolean;
+    infoSetHasNoOppHand: boolean;
+    nativeEnvelopeAction: string;
+    nativeBoostUid: string;
+    nativeStrikeUid: string;
+    nativeExUidsOk: boolean;
+    illegalMoveRejected: boolean;
+  }>(`
+    (() => {
+      // 1. Overdrive & sealedCards excluded from unseenPoolForOpponent
+      const e1 = new Engine('ragna', 'happychaos');
+      const ragna = e1.P('p1'), hc = e1.P('p2');
+      const odCard = ragna.hand.pop() || ragna.deck.pop();
+      ragna.overdrive.push(odCard);
+      const sealCard = hc.hand.pop() || hc.deck.pop();
+      hc.sealedCards.push(sealCard);
+      const ragnaPub = publicInfoOf(ragna);
+      const hcPub = publicInfoOf(hc);
+      const ragnaPool = unseenPoolForOpponent(ragnaPub);
+      const hcPool = unseenPoolForOpponent(hcPub);
+      const totalRagnaOdCopies = deckKeysForCharacter('ragna').filter(k => k === odCard.key).length;
+      const totalHcSealCopies = deckKeysForCharacter('happychaos').filter(k => k === sealCard.key).length;
+      const poolExcludesOverdrive = ragnaPool.filter(k => k === odCard.key).length === totalRagnaOdCopies - 1;
+      const poolExcludesSealed = hcPool.filter(k => k === sealCard.key).length === totalHcSealCopies - 1;
+
+      const info = e1.getInformationSet('p1');
+      const infoSetHasNoOppHand = info.opponent.handKeys === undefined && Array.isArray(info.actor.handKeys) &&
+        info.opponent.sealedKeys.includes(sealCard.key);
+
+      // 2. NativeCpuAI Card-Key + NativeDecisionResponse + tightened legality
+      NativeCpuAI.setMode('modern');
+      const e2 = new Engine('ryu', 'ken');
+      const me = e2.P('p1'), opp = e2.P('p2');
+      const boostCard = { ...NORMALS.find(c => c.key === 'focus'), uid: 'b_uid_1' };
+      const sweep1 = { ...NORMALS.find(c => c.key === 'sweep'), uid: 's_uid_1' };
+      const sweep2 = { ...NORMALS.find(c => c.key === 'sweep'), uid: 's_uid_2' };
+      me.hand = [boostCard, sweep1, sweep2];
+      NativeCpuAI.registerBackend({
+        protocolVersion: 1,
+        chooseNeutralAction: () => ({
+          action: { type: 'boost', cardKey: 'focus' },
+          diagnostics: { topLines: [{ label: 'boost focus', visits: 10, qValue: 0.5 }] },
+        }),
+        chooseStrikeAction: () => ({ action: { kind: 'single', cardKey: 'sweep' } }),
+        chooseDefenseAction: () => ({ action: { kind: 'ex', cardKey: 'sweep' } }),
+      });
+      const chosen = chooseAction({
+        me, mePublicFull: me, oppPublic: publicInfoOf(opp), canExceed: false, rng: () => 0.5, turnNumber: 3,
+      });
+      const strikeSel = chooseStrikeSelection({
+        hand: me.hand, myPos: me.pos, oppPublic: publicInfoOf(opp), iAmInitiator: true,
+        rng: () => 0.5, myBoostMods: e2.activeBoostMods(me), meFull: me, turnNumber: 3,
+      });
+      const defSel = chooseStrikeSelection({
+        hand: me.hand, myPos: me.pos, oppPublic: publicInfoOf(opp), iAmInitiator: false,
+        rng: () => 0.5, myBoostMods: e2.activeBoostMods(me), meFull: me, turnNumber: 3,
+      });
+      const illegalMoveRejected = isNativeActionLegal({ type: 'move', targetSpace: 6 }, me, opp, false);
+      return {
+        poolExcludesOverdrive,
+        poolExcludesSealed,
+        infoSetHasNoOppHand,
+        nativeEnvelopeAction: chosen.type,
+        nativeBoostUid: chosen.uid,
+        nativeStrikeUid: strikeSel.selection.uid,
+        nativeExUidsOk: defSel.selection.type === 'ex' && defSel.selection.uid1 === 's_uid_1' && defSel.selection.uid2 === 's_uid_2',
+        illegalMoveRejected,
+      };
+    })()
+  `);
+  assert.equal(res.poolExcludesOverdrive, true);
+  assert.equal(res.poolExcludesSealed, true);
+  assert.equal(res.infoSetHasNoOppHand, true);
+  assert.equal(res.nativeEnvelopeAction, 'boost');
+  assert.equal(res.nativeBoostUid, 'b_uid_1');
+  assert.equal(res.nativeStrikeUid, 's_uid_1');
+  assert.equal(res.nativeExUidsOk, true);
+  assert.equal(res.illegalMoveRejected, false);
 });

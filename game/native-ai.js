@@ -9,6 +9,7 @@ const NativeCpuAI = (() => {
   let mode = 'classic';
   let backend = null;
   let lastError = null;
+  let lastDiagnostics = null;
 
   const validActions = new Set(['strike', 'exceed', 'burst', 'action', 'changecards', 'move', 'boost', 'prepare', 'reshuffle']);
 
@@ -24,17 +25,31 @@ const NativeCpuAI = (() => {
     }
     backend = candidate;
     lastError = null;
+    lastDiagnostics = null;
     return status();
   }
 
   function status() {
-    return Object.freeze({ mode, ready: !!backend, protocolVersion: PROTOCOL_VERSION, lastError });
+    return Object.freeze({ mode, ready: !!backend, protocolVersion: PROTOCOL_VERSION, lastError, lastDiagnostics });
+  }
+
+  function isModernActive() {
+    return mode === 'modern' && !!backend;
+  }
+
+  function unwrapResponse(raw) {
+    if (raw && typeof raw === 'object' && raw.action && typeof raw.action === 'object') {
+      lastDiagnostics = raw.diagnostics || null;
+      return raw.action;
+    }
+    lastDiagnostics = null;
+    return raw;
   }
 
   function chooseNeutralAction(snapshot) {
     if (mode !== 'modern' || !backend) return null;
     try {
-      const action = backend.chooseNeutralAction(snapshot);
+      const action = unwrapResponse(backend.chooseNeutralAction(snapshot));
       if (!action || !validActions.has(action.type)) throw new Error('backend returned an invalid neutral action');
       return action;
     } catch (error) {
@@ -47,9 +62,12 @@ const NativeCpuAI = (() => {
   function chooseStrikeAction(snapshot) {
     if (mode !== 'modern' || !backend || typeof backend.chooseStrikeAction !== 'function') return null;
     try {
-      const action = backend.chooseStrikeAction(snapshot);
+      const action = unwrapResponse(backend.chooseStrikeAction(snapshot));
       if (!action || (action.kind !== 'single' && action.kind !== 'ex' && action.kind !== 'wild_swing')) {
         throw new Error('backend returned an invalid strike action');
+      }
+      if ((action.kind === 'single' || action.kind === 'ex') && typeof action.cardKey !== 'string') {
+        throw new Error('backend strike action is missing cardKey');
       }
       return action;
     } catch (error) {
@@ -61,9 +79,12 @@ const NativeCpuAI = (() => {
   function chooseDefenseAction(snapshot) {
     if (mode !== 'modern' || !backend || typeof backend.chooseDefenseAction !== 'function') return null;
     try {
-      const action = backend.chooseDefenseAction(snapshot);
+      const action = unwrapResponse(backend.chooseDefenseAction(snapshot));
       if (!action || (action.kind !== 'single' && action.kind !== 'ex' && action.kind !== 'wild_swing')) {
         throw new Error('backend returned an invalid defense action');
+      }
+      if ((action.kind === 'single' || action.kind === 'ex') && typeof action.cardKey !== 'string') {
+        throw new Error('backend defense action is missing cardKey');
       }
       return action;
     } catch (error) {
@@ -72,27 +93,61 @@ const NativeCpuAI = (() => {
     }
   }
 
+  function resolveNativeActionToEngineAction(action, me) {
+    if (!action || !me) return null;
+    if (action.type === 'boost') {
+      const card = (me.hand || []).find(c => c.key === action.cardKey && c.boost);
+      if (!card) return null;
+      return { type: 'boost', uid: card.uid, cardKey: action.cardKey };
+    }
+    if (action.type === 'burst') {
+      const entry = (me.boostsInPlay || []).find(b => b.card && b.card.key === action.cardKey && b.card.boost && b.card.boost.grantsBurstAction);
+      if (!entry) return null;
+      return { type: 'burst', boostUid: entry.card.uid, cardKey: action.cardKey };
+    }
+    return action;
+  }
+
+  function resolveNativeStrikeToEngineSelection(action, me) {
+    if (!action || !me) return null;
+    if (action.kind === 'wild_swing') return { type: 'wildswing', critical: !!action.critical };
+    if (action.kind === 'single') {
+      const card = (me.hand || []).find(c => c.key === action.cardKey);
+      if (!card) return null;
+      return { type: 'hand', uid: card.uid, critical: !!action.critical };
+    }
+    if (action.kind === 'ex') {
+      const matches = (me.hand || []).filter(c => c.key === action.cardKey);
+      if (matches.length < 2) return null;
+      return { type: 'ex', uid1: matches[0].uid, uid2: matches[1].uid, critical: !!action.critical };
+    }
+    return null;
+  }
+
   function mapPublicPlayer(p, isActor) {
-    const overdrive = Array.isArray(p.overdrive) ? p.overdrive.map(c => (typeof c === 'string' ? c : c.key)) : [];
-    const sealed = Array.isArray(p.sealed) ? p.sealed.map(c => (typeof c === 'string' ? c : c.key)) : [];
+    const mapKeys = (arr) => Array.isArray(arr) ? arr.map(c => (typeof c === 'string' ? c : c.key)) : [];
+    const overdrive = mapKeys(p.overdriveKeys || p.overdrive);
+    const sealed = mapKeys(p.sealedKeys || p.sealedCards || p.sealed);
     const base = {
       characterKey: p.characterKey,
       life: p.life,
       maxLife: p.maxLife || 30,
       pos: p.pos,
-      handCount: isActor ? p.hand.length : p.handCount,
-      deckCount: isActor ? p.deck.length : p.deckCount,
-      gaugeKeys: (p.gauge || []).map(c => (typeof c === 'string' ? c : c.key)),
-      discardKeys: (p.discard || []).map(c => (typeof c === 'string' ? c : c.key)),
-      boostKeys: (p.boostsInPlay || []).map(entry => (typeof entry === 'string' ? entry : entry.card.key)),
+      handCount: isActor ? (p.handKeys ? p.handKeys.length : p.hand.length) : p.handCount,
+      deckCount: isActor ? (p.deckCount != null ? p.deckCount : p.deck.length) : p.deckCount,
+      gaugeKeys: mapKeys(p.gaugeKeys || p.gauge),
+      discardKeys: mapKeys(p.discardKeys || p.discard),
+      boostKeys: p.boostKeys ? p.boostKeys.slice() : (p.boostsInPlay || []).map(entry => (typeof entry === 'string' ? entry : entry.card.key)),
       exceeded: !!p.exceeded,
       reshuffleUsed: !!p.reshuffleUsed,
       overdriveKeys: overdrive,
       sealedKeys: sealed,
+      astralState: p.astralState || 'none',
       eddiePos: p.eddiePos !== undefined ? p.eddiePos : null,
+      activeBoostMods: p.activeBoostMods || undefined,
     };
     if (isActor) {
-      base.handKeys = (p.hand || []).map(c => c.key);
+      base.handKeys = p.handKeys ? p.handKeys.slice() : (p.hand || []).map(c => c.key);
       base.knownDeckTop = Array.isArray(p.knownDeckTop) ? p.knownDeckTop.slice() : [];
       base.knownDeckBottom = Array.isArray(p.knownDeckBottom) ? p.knownDeckBottom.slice() : [];
     }
@@ -157,10 +212,13 @@ const NativeCpuAI = (() => {
     setMode,
     registerBackend,
     status,
+    isModernActive,
     decisionSnapshot,
     chooseNeutralAction,
     chooseStrikeAction,
     chooseDefenseAction,
+    resolveNativeActionToEngineAction,
+    resolveNativeStrikeToEngineSelection,
     canonicalize,
     canonicalTraceHash,
   });

@@ -47,7 +47,7 @@ export function binomial(n: number, k: number): number {
 }
 
 /** Exact hypergeometric PMF: P(X = k) when drawing `draws` from `pop` containing `successes`. */
-export function hypergeometricPMF(
+function hypergeometricPMF(
   pop: number,
   successes: number,
   draws: number,
@@ -80,7 +80,7 @@ export class CompiledBeliefModel {
   /** Total partition function Z = prefix[C][unknownHandSlots]. */
   readonly partitionZ: number;
 
-  constructor(state: BeliefState, useUniformWeights = false) {
+  constructor(state: BeliefState, useUniformWeights = false, skipSuffix = false) {
     this.state = state;
     this.unknown = state.computeUnknownPool();
     this.unknownHandSlots = state.getUnknownHandSlots();
@@ -119,14 +119,16 @@ export class CompiledBeliefModel {
     }
     this.weights = weights;
 
-    // Prefix DP: prefix[0] = [1, 0, ..., 0]
+    // Prefix DP: flat backing buffer with subarray views
+    const stride = h + 1;
+    const prefixBuf = new Float64Array((C + 1) * stride);
     const prefix: Float64Array[] = new Array(C + 1);
-    prefix[0] = new Float64Array(h + 1);
+    for (let i = 0; i <= C; i++) prefix[i] = prefixBuf.subarray(i * stride, (i + 1) * stride);
     prefix[0][0] = 1;
 
     for (let i = 0; i < C; i++) {
       const prev = prefix[i];
-      const next = new Float64Array(h + 1);
+      const next = prefix[i + 1];
       const u = this.unknown[i];
       const w = weights[i];
 
@@ -134,39 +136,44 @@ export class CompiledBeliefModel {
         next.set(prev);
       } else {
         const maxR = Math.min(u, h);
+        let wPow = 1;
         for (let r = 0; r <= maxR; r++) {
-          const factor = binomial(u, r) * Math.pow(w, r);
+          const factor = binomial(u, r) * wPow;
           for (let k = r; k <= h; k++) {
             next[k] += prev[k - r] * factor;
           }
+          wPow *= w;
         }
       }
-      prefix[i + 1] = next;
     }
 
-    // Suffix DP: suffix[C] = [1, 0, ..., 0]
-    const suffix: Float64Array[] = new Array(C + 1);
-    suffix[C] = new Float64Array(h + 1);
-    suffix[C][0] = 1;
+    // Suffix DP: skipped when only sampling determinizations
+    const suffix: Float64Array[] = skipSuffix ? [] : new Array(C + 1);
+    if (!skipSuffix) {
+      const suffixBuf = new Float64Array((C + 1) * stride);
+      for (let i = 0; i <= C; i++) suffix[i] = suffixBuf.subarray(i * stride, (i + 1) * stride);
+      suffix[C][0] = 1;
 
-    for (let i = C - 1; i >= 0; i--) {
-      const prev = suffix[i + 1];
-      const next = new Float64Array(h + 1);
-      const u = this.unknown[i];
-      const w = weights[i];
+      for (let i = C - 1; i >= 0; i--) {
+        const prev = suffix[i + 1];
+        const next = suffix[i];
+        const u = this.unknown[i];
+        const w = weights[i];
 
-      if (u === 0 || w === 0) {
-        next.set(prev);
-      } else {
-        const maxR = Math.min(u, h);
-        for (let r = 0; r <= maxR; r++) {
-          const factor = binomial(u, r) * Math.pow(w, r);
-          for (let k = r; k <= h; k++) {
-            next[k] += prev[k - r] * factor;
+        if (u === 0 || w === 0) {
+          next.set(prev);
+        } else {
+          const maxR = Math.min(u, h);
+          let wPow = 1;
+          for (let r = 0; r <= maxR; r++) {
+            const factor = binomial(u, r) * wPow;
+            for (let k = r; k <= h; k++) {
+              next[k] += prev[k - r] * factor;
+            }
+            wPow *= w;
           }
         }
       }
-      suffix[i] = next;
     }
 
     this.prefix = prefix;
@@ -301,15 +308,19 @@ export class CompiledBeliefModel {
       let chosenR = 0;
       let chosenTerm = 0;
 
+      let wPow = 1;
       for (let r = 0; r <= maxR; r++) {
-        const factor = binomial(u, r) * Math.pow(w, r);
+        const factor = binomial(u, r) * wPow;
         const term = factor * this.prefix[i][rem - r];
-        cumulative += term;
-        chosenR = r;
-        chosenTerm = factor;
-        if (drawTarget <= cumulative) {
-          break;
+        if (term > 0) {
+          cumulative += term;
+          chosenR = r;
+          chosenTerm = factor;
+          if (drawTarget <= cumulative) {
+            break;
+          }
         }
+        wPow *= w;
       }
 
       if (chosenR > 0) {
@@ -488,5 +499,5 @@ export function sampleDeterminization(
   state: BeliefState,
   rng: Rng = Math.random,
 ): Determinization {
-  return new CompiledBeliefModel(state, false).sampleDeterminization(rng);
+  return new CompiledBeliefModel(state, false, true).sampleDeterminization(rng);
 }

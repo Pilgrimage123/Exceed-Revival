@@ -11,7 +11,7 @@ import { CardPool, PublicZoneName } from './types.ts';
 export const MIN_LOG_WEIGHT = -4.0;
 export const MAX_LOG_WEIGHT = 4.0;
 
-export interface GameZonesSnapshot {
+interface GameZonesSnapshot {
   readonly discard: Uint8Array;
   readonly gauge: Uint8Array;
   readonly boostsInPlay: Uint8Array;

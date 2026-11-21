@@ -94,7 +94,7 @@ A 7-card hand + 3-card Gauge gives up to $\binom{10}{3} = 120$ distinct Force-pa
 Layer 3 collapses the neutral action space into **$\le 16$ canonical macro-actions** per turn:
 
 1. **`InitiateStrike`**: 1 macro-action (invokes Layer 2).
-2. **`Move(targetSpace)`**: Up to 4–6 reachable target spaces within affordable Force (pruning strictly dominated distances, e.g., moving backward into Space 1 with no threats). Each target space is bound to its **single canonical minimum-cost Force payment** computed by `ForcePruner`.
+2. **`Move(targetSpace)`**: Up to 4–6 reachable target Arena Spaces (`0..8` internally, `1..9` display only) within affordable Force (pruning strictly dominated positions, e.g., moving backward into corner `0` with no threats). Each target space is bound to its **single canonical minimum-cost Force payment** computed by `ForcePruner`.
 3. **`PlayBoost(cardKey)`**: 1 macro-action per distinct playable Boost card in hand (paying canonical minimum-cost Force for non-zero boost costs; if Season 4 `cancelable` and Gauge $\ge 1$, the post-Boost Cancel decision branches cleanly into `{Cancel -> bonus action, Pass}`).
 4. **`Prepare`**: 1 macro-action (draw 1 + EoT draw 1).
 5. **`ChangeCards(k)`**: Collapsed to $k \in \{1, 2, 3\}$ (or max affordable) using the $k$ lowest-retention cards in hand (never spending Gauge on Change Cards unless character passive grants bonus Force, e.g., Guile's `+2` Force on first Gauge!).
@@ -225,7 +225,7 @@ NeutralKind = Literal[
 @dataclass(frozen=True)
 class NeutralMacroAction:
     kind: NeutralKind
-    target_space: Optional[int] = None           # For move (1..9)
+    target_space: Optional[int] = None           # For move (0..8 internal Arena Space)
     card_key: Optional[str] = None               # For boost
     change_count: int = 0                        # For change_cards (1..3)
     force_payment: Tuple[str, ...] = ()          # Canonical card/gauge keys from ForcePruner
@@ -362,11 +362,11 @@ class NeutralEvaluator:
                 reach = 0.25 if p.pool.can_reach(card, dist) else 0.0
                 ex_bonus += 0.55 + hi + reach
 
-        # 4. Positional center control & corner penalty (escape-tool aware)
-        center = 0.65 * (1.0 - abs(p.space - 5) / 4.0)
-        raw_corner = 1.65 if p.space in (1, 9) else (0.70 if p.space in (2, 8) else 0.0)
+        # 4. Positional center control & corner penalty (escape-tool aware, 0..8 Arena Space)
+        center = 0.65 * (1.0 - abs(p.space - 4) / 4.0)
+        raw_corner = 1.65 if p.space in (0, 8) else (0.70 if p.space in (1, 7) else 0.0)
         if p.prefers_edge:  # e.g., Vega
-            corner_term = +0.90 if p.space in (1, 9) else 0.0
+            corner_term = +0.90 if p.space in (0, 8) else 0.0
         else:
             escape_disc = 0.55 if p.has_corner_escape_tool() else 0.0
             corner_term = -raw_corner * (1.0 - escape_disc)

@@ -13,77 +13,116 @@ pub struct CardCount {
     pub key: String,
     pub copies: u8,
     pub force: u8,
-    pub range_min: u8,
-    pub range_max: u8,
+    pub range: Option<(u8, u8)>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CardBelief {
+    pub card: CardCount,
+    pub public: u8,
+    pub known_hand: u8,
+    pub excluded_from_hand: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BeliefState {
-    pub cards: Vec<CardCount>,
-    pub public: Vec<u8>,
-    pub known_hand: Vec<u8>,
-    pub excluded_from_hand: Vec<bool>,
-    pub hand_size: u8,
-    pub deck_size: u8,
+    entries: Vec<CardBelief>,
+    hand_size: u8,
+    deck_size: u8,
 }
 
 impl BeliefState {
-    pub fn new(cards: Vec<CardCount>, public: Vec<u8>, known_hand: Vec<u8>, excluded_from_hand: Vec<bool>, hand_size: u8, deck_size: u8) -> Result<Self, String> {
-        let state = Self { cards, public, known_hand, excluded_from_hand, hand_size, deck_size };
+    pub fn new(entries: Vec<CardBelief>, hand_size: u8, deck_size: u8) -> Result<Self, String> {
+        let state = Self { entries, hand_size, deck_size };
         state.assert_invariants()?;
         Ok(state)
     }
 
-    pub fn assert_invariants(&self) -> Result<(), String> {
-        let count = self.cards.len();
-        if self.public.len() != count || self.known_hand.len() != count || self.excluded_from_hand.len() != count {
-            return Err("belief vectors must have one entry per card key".into());
+    pub fn entries(&self) -> &[CardBelief] { &self.entries }
+    pub fn hand_size(&self) -> u8 { self.hand_size }
+    pub fn deck_size(&self) -> u8 { self.deck_size }
+
+    pub fn set_excluded_from_hand(&mut self, index: usize, excluded: bool) -> Result<(), String> {
+        let entry = self.entries.get_mut(index).ok_or_else(|| "card index out of range".to_string())?;
+        let prev = entry.excluded_from_hand;
+        entry.excluded_from_hand = excluded;
+        if let Err(err) = self.assert_invariants() {
+            self.entries[index].excluded_from_hand = prev;
+            return Err(err);
         }
-        let known: u16 = self.known_hand.iter().map(|&x| x as u16).sum();
+        Ok(())
+    }
+
+    pub fn assert_invariants(&self) -> Result<(), String> {
+        let known: u16 = self.entries.iter().map(|e| e.known_hand as u16).sum();
         if known > self.hand_size as u16 { return Err("known hand exceeds public hand size".into()); }
         let mut unknown = 0u16;
-        for i in 0..count {
-            let used = self.public[i] as u16 + self.known_hand[i] as u16;
-            if used > self.cards[i].copies as u16 { return Err(format!("card conservation violated for {}", self.cards[i].key)); }
-            unknown += self.cards[i].copies as u16 - used;
+        for e in &self.entries {
+            let used = e.public as u16 + e.known_hand as u16;
+            if used > e.card.copies as u16 { return Err(format!("card conservation violated for {}", e.card.key)); }
+            unknown += e.card.copies as u16 - used;
         }
         if unknown != self.hand_size as u16 + self.deck_size as u16 - known {
             return Err("unknown cards do not equal unknown hand plus deck slots".into());
         }
-        let eligible: u16 = (0..count).filter(|&i| !self.excluded_from_hand[i]).map(|i| self.cards[i].copies as u16 - self.public[i] as u16 - self.known_hand[i] as u16).sum();
+        let eligible: u16 = self.entries.iter()
+            .filter(|e| !e.excluded_from_hand)
+            .map(|e| e.card.copies as u16 - e.public as u16 - e.known_hand as u16)
+            .sum();
         if eligible < self.hand_size as u16 - known { return Err("not enough eligible cards for unknown hand slots".into()); }
         Ok(())
     }
 
-    pub fn unknown_hand_slots(&self) -> u8 { self.hand_size - self.known_hand.iter().sum::<u8>() }
+    pub fn unknown_hand_slots(&self) -> u8 {
+        let known: u16 = self.entries.iter().map(|e| e.known_hand as u16).sum();
+        (self.hand_size as u16).saturating_sub(known) as u8
+    }
 
     pub fn unknown_copies(&self, index: usize) -> u8 {
-        self.cards[index].copies - self.public[index] - self.known_hand[index]
+        let e = &self.entries[index];
+        e.card.copies.saturating_sub(e.public.saturating_add(e.known_hand))
     }
 
     /// Exact uniform-prior P(the opponent holds at least one copy of `index`).
     /// Behavioral log-odds belong in the adapter layer; conservation always stays here.
     pub fn probability_at_least_one(&self, index: usize) -> f64 {
-        if self.known_hand[index] > 0 { return 1.0; }
-        if self.excluded_from_hand[index] || self.unknown_hand_slots() == 0 { return 0.0; }
+        let entry = &self.entries[index];
+        if entry.known_hand > 0 { return 1.0; }
+        let hand = self.unknown_hand_slots() as u64;
+        if entry.excluded_from_hand || hand == 0 { return 0.0; }
         let target = self.unknown_copies(index) as u64;
         if target == 0 { return 0.0; }
-        let eligible: u64 = (0..self.cards.len()).filter(|&i| !self.excluded_from_hand[i]).map(|i| self.unknown_copies(i) as u64).sum();
-        let hand = self.unknown_hand_slots() as u64;
-        1.0 - choose(eligible - target, hand) / choose(eligible, hand)
+        let eligible: u64 = (0..self.entries.len())
+            .filter(|&i| !self.entries[i].excluded_from_hand)
+            .map(|i| self.unknown_copies(i) as u64)
+            .sum();
+        if eligible < hand { return 0.0; }
+        if eligible - target < hand { return 1.0; }
+        // Product ratio avoids binomial overflow (inf / inf -> NaN) for large decks.
+        let mut p_none = 1.0;
+        for j in 0..hand {
+            p_none *= (eligible - target - j) as f64 / (eligible - j) as f64;
+        }
+        (1.0 - p_none).clamp(0.0, 1.0)
     }
 
     pub fn probability_ex_ready(&self, index: usize) -> f64 {
-        let required = 2i32 - self.known_hand[index] as i32;
+        let entry = &self.entries[index];
+        let required = 2i32 - entry.known_hand as i32;
         if required <= 0 { return 1.0; }
-        if self.excluded_from_hand[index] { return 0.0; }
+        if entry.excluded_from_hand { return 0.0; }
         let target = self.unknown_copies(index) as u64;
-        let eligible: u64 = (0..self.cards.len()).filter(|&i| !self.excluded_from_hand[i]).map(|i| self.unknown_copies(i) as u64).sum();
+        let eligible: u64 = (0..self.entries.len())
+            .filter(|&i| !self.entries[i].excluded_from_hand)
+            .map(|i| self.unknown_copies(i) as u64)
+            .sum();
         let hand = self.unknown_hand_slots() as u64;
+        let denom = choose(eligible, hand);
+        if !denom.is_finite() || denom == 0.0 { return 0.0; }
         let mut result = 0.0;
         for copies in required as u64..=target.min(hand) {
-            if hand - copies <= eligible - target {
-                result += choose(target, copies) * choose(eligible - target, hand - copies) / choose(eligible, hand);
+            if hand - copies <= eligible.saturating_sub(target) {
+                result += choose(target, copies) * choose(eligible - target, hand - copies) / denom;
             }
         }
         result
@@ -103,23 +142,30 @@ pub fn choose(n: u64, k: u64) -> f64 {
 pub struct ForceCard { pub id: String, pub force: u8, pub discard_cost: f64 }
 
 pub fn choose_force_payment(cards: &[ForceCard], exact_force: u8, forbidden_id: Option<&str>) -> Option<Vec<String>> {
-    if cards.len() > 20 { return None; } // callers must pre-prune; prevents accidental exponential search.
-    let mut best: Option<(f64, Vec<String>)> = None;
-    for mask in 0u64..(1u64 << cards.len()) {
-        let mut force = 0u8;
-        let mut cost = 0.0;
-        let mut ids = Vec::new();
-        for (i, card) in cards.iter().enumerate() {
-            if mask & (1 << i) != 0 {
-                if Some(card.id.as_str()) == forbidden_id { force = u8::MAX; break; }
-                force = force.saturating_add(card.force);
-                cost += card.discard_cost;
-                ids.push(card.id.clone());
+    if cards.len() > 64 { return None; }
+    let target = exact_force as usize;
+    let mut dp: Vec<Option<(f64, u64)>> = vec![None; target + 1];
+    dp[0] = Some((0.0, 0));
+    for (i, card) in cards.iter().enumerate() {
+        if Some(card.id.as_str()) == forbidden_id { continue; }
+        let f = card.force as usize;
+        if f > target { continue; }
+        for prev in (0..=target - f).rev() {
+            if let Some((prev_cost, prev_mask)) = dp[prev] {
+                let next_cost = prev_cost + card.discard_cost;
+                let next_mask = prev_mask | (1u64 << i);
+                if dp[prev + f].map_or(true, |(old, _)| next_cost < old) {
+                    dp[prev + f] = Some((next_cost, next_mask));
+                }
             }
         }
-        if force == exact_force && best.as_ref().map_or(true, |(old, _)| cost < *old) { best = Some((cost, ids)); }
     }
-    best.map(|(_, ids)| ids)
+    dp[target].map(|(_, mask)| {
+        cards.iter().enumerate()
+            .filter(|(i, _)| mask & (1u64 << i) != 0)
+            .map(|(_, c)| c.id.clone())
+            .collect()
+    })
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -134,10 +180,26 @@ pub fn solve_zero_sum_cfr(payoffs: &[Vec<f64>], iterations: usize) -> Result<Mix
     let mut col_regret = vec![0.0; cols];
     let mut average = vec![0.0; rows];
     let mut col_average = vec![0.0; cols];
+    let mut row = vec![0.0; rows];
+    let mut col = vec![0.0; cols];
+    let mut row_values = vec![0.0; rows];
+    let mut col_values = vec![0.0; cols];
     for _ in 0..iterations.max(1) {
-        let row = regret_strategy(&row_regret); let col = regret_strategy(&col_regret);
-        let mut row_values = vec![0.0; rows]; let mut col_values = vec![0.0; cols]; let mut value = 0.0;
-        for r in 0..rows { for c in 0..cols { row_values[r] += col[c] * payoffs[r][c]; col_values[c] += row[r] * payoffs[r][c]; value += row[r] * col[c] * payoffs[r][c]; } }
+        fill_regret_strategy(&row_regret, &mut row);
+        fill_regret_strategy(&col_regret, &mut col);
+        row_values.fill(0.0);
+        col_values.fill(0.0);
+        let mut value = 0.0;
+        for r in 0..rows {
+            let p_row = &payoffs[r];
+            let r_prob = row[r];
+            for c in 0..cols {
+                let pay = p_row[c];
+                row_values[r] += col[c] * pay;
+                col_values[c] += r_prob * pay;
+                value += r_prob * col[c] * pay;
+            }
+        }
         for r in 0..rows { row_regret[r] = (row_regret[r] + row_values[r] - value).max(0.0); average[r] += row[r]; }
         for c in 0..cols { col_regret[c] = (col_regret[c] + value - col_values[c]).max(0.0); col_average[c] += col[c]; }
     }
@@ -148,7 +210,21 @@ pub fn solve_zero_sum_cfr(payoffs: &[Vec<f64>], iterations: usize) -> Result<Mix
     Ok(MixedStrategy { probabilities, value: worst, exploitability: (best_response - worst).max(0.0) })
 }
 
-fn regret_strategy(regret: &[f64]) -> Vec<f64> { normalize(&regret.iter().map(|x| x.max(0.0)).collect::<Vec<_>>()) }
+fn fill_regret_strategy(regret: &[f64], out: &mut [f64]) {
+    let mut total = 0.0;
+    for (i, &r) in regret.iter().enumerate() {
+        let v = r.max(0.0);
+        out[i] = v;
+        total += v;
+    }
+    if total <= f64::EPSILON {
+        let u = 1.0 / out.len() as f64;
+        out.fill(u);
+    } else {
+        let inv = 1.0 / total;
+        for v in out.iter_mut() { *v *= inv; }
+    }
+}
 fn normalize(values: &[f64]) -> Vec<f64> { let total: f64 = values.iter().sum(); if total <= f64::EPSILON { vec![1.0 / values.len() as f64; values.len()] } else { values.iter().map(|v| v / total).collect() } }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -179,10 +255,20 @@ pub extern "C" fn exceed_ai_protocol_version() -> u32 { PROTOCOL_VERSION }
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn belief() -> BeliefState { BeliefState::new(vec![CardCount { key: "a".into(), copies: 2, force: 1, range_min: 1, range_max: 1 }, CardCount { key: "b".into(), copies: 2, force: 1, range_min: 1, range_max: 2 }], vec![0, 0], vec![0, 0], vec![false, false], 2, 2).unwrap() }
-    #[test] fn belief_probability_is_exact() { assert!((belief().probability_at_least_one(0) - 5.0 / 6.0).abs() < 1e-12); assert!((belief().probability_ex_ready(0) - 1.0 / 6.0).abs() < 1e-12); }
-    #[test] fn exclusion_is_hard_constraint() { let mut state = belief(); state.excluded_from_hand[0] = true; assert_eq!(state.probability_at_least_one(0), 0.0); }
+    fn belief() -> BeliefState {
+        BeliefState::new(vec![
+            CardBelief { card: CardCount { key: "a".into(), copies: 2, force: 1, range: Some((1, 1)) }, public: 0, known_hand: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount { key: "b".into(), copies: 2, force: 1, range: Some((1, 2)) }, public: 0, known_hand: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount { key: "block".into(), copies: 2, force: 1, range: None }, public: 2, known_hand: 0, excluded_from_hand: false },
+        ], 2, 2).unwrap()
+    }
+    #[test] fn belief_probability_is_exact() { assert!((belief().probability_at_least_one(0) - 5.0 / 6.0).abs() < 1e-12); assert!((belief().probability_ex_ready(0) - 1.0 / 6.0).abs() < 1e-12); assert_eq!(belief().probability_at_least_one(2), 0.0); }
+    #[test] fn exclusion_is_hard_constraint() { let mut state = belief(); state.set_excluded_from_hand(0, true).unwrap(); assert_eq!(state.probability_at_least_one(0), 0.0); }
     #[test] fn force_pruner_preserves_expensive_cards() { let cards = vec![ForceCard { id: "cheap".into(), force: 1, discard_cost: 1.0 }, ForceCard { id: "pair".into(), force: 1, discard_cost: 9.0 }, ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }]; assert_eq!(choose_force_payment(&cards, 2, None), Some(vec!["ultra".into()])); }
+    #[test] fn force_pruner_respects_forbidden_at_u8_max() {
+        let cards = vec![ForceCard { id: "forbid".into(), force: 255, discard_cost: 0.1 }];
+        assert_eq!(choose_force_payment(&cards, 255, Some("forbid")), None);
+    }
     #[test] fn cfr_finds_matching_pennies_mix() {
         let result = solve_zero_sum_cfr(&vec![vec![1.0, -1.0], vec![-1.0, 1.0]], 10_000).unwrap();
         assert!((result.probabilities[0] - 0.5).abs() < 0.03);

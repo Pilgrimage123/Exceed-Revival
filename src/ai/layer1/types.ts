@@ -3,7 +3,7 @@
  * Core immutable catalog types, public/hidden zone schemas, and reachability math.
  */
 
-export type CardType = 'normal' | 'special' | 'ultra' | 'astral';
+export type CardType = 'normal' | 'special' | 'ultra';
 
 export type PublicZoneName =
   | 'discard'
@@ -36,7 +36,7 @@ export interface CardDescriptor {
   readonly arm: number;
   readonly grd: number;
   readonly gaugeCost: number;
-  /** Force generated when discarded from hand (Ultras = 2, Normals/Specials/Astrals = 1). */
+  /** Force generated when discarded from hand (Ultras = 2, Normals/Specials = 1). */
   readonly forceValue: 1 | 2;
   readonly alwaysMiss: boolean;
   readonly isAstral: boolean;
@@ -79,16 +79,12 @@ export type ObservedAction =
       readonly fromDist: number;
       readonly toDist: number;
       readonly forceSpent: number;
-      readonly discardedKeys?: readonly string[];
     }
   | {
       readonly type: 'prepare';
     }
   | {
       readonly type: 'change_cards';
-      readonly forceSpent: number;
-      readonly cardsDrawn: number;
-      readonly discardedKeys?: readonly string[];
     }
   | {
       readonly type: 'force_discard';
@@ -101,12 +97,10 @@ export type ObservedAction =
       readonly type: 'strike_initiated';
       readonly dist: number;
       readonly isWildSwing?: boolean;
-      readonly fromCharacterAction?: boolean;
     }
   | {
       readonly type: 'boost_played';
       readonly cardKey: string;
-      readonly forceSpent: number;
     };
 
 export interface CardProbabilityBreakdown {
@@ -177,7 +171,7 @@ export function parseBeforeMoveSpec(text: string | undefined): BeforeMoveSpec | 
     return {
       kind: farMatch[1].toLowerCase() as 'advance' | 'close',
       amount: BOARD_SIZE,
-      upTo: false,
+      upTo: true,
     };
   }
   const match = text.match(

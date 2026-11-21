@@ -8,6 +8,14 @@ Digital implementation and AI engine for the Exceed Fighting System card game.
 One of the nine linear positions (`0` through `8` internally, displayed as `1` through `9`) occupied by fighters and board tokens.
 _Avoid_: Tile, square, slot
 
+**Range**:
+The relative distance (`1` through `8`) between two fighters on the arena, distinct from **Arena Space** (`0` through `8`).
+_Avoid_: Distance, spaces away
+
+**Card Key**:
+The canonical template identifier of a card (e.g., `sweep`, `hadoken`) shared by all physical copies of that card, used across the **Information Set** and **Modern Native** boundary instead of runtime instance UIDs.
+_Avoid_: Card ID, UID
+
 **Card DSL**:
 The data-only declarative representation of fighter rosters, card stats, and mechanic primitives derived from the checked-in card catalog.
 _Avoid_: Card schema, roster JSON

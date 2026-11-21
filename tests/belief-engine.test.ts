@@ -14,6 +14,7 @@ import {
   createBeliefStateFromPublicSnapshot,
   createMulberry32,
   EnginePublicSnapshot,
+  parseBeforeMoveSpec,
   queryCardProbabilities,
   queryExactUnweighted,
   RawExceedCardDef,
@@ -554,4 +555,49 @@ test('4-turn competitive simulation trace executes cleanly with verified EX & Wi
       t4.queries.metsu_hadoken.exactUnweighted.probAtLeastOne,
   );
   assert.ok(trace.formattedReport.includes('=== Exceed Layer 1 Belief Engine'));
+});
+
+test('Layer 1 Astral Heat typing/knownHand, Advance-as-far-as-possible reachability, and Overdrive/Sealed snapshot parity', () => {
+  const { CHARACTERS, NORMALS, evalExpr } = loadRosterFromBundle();
+  const ragnaPool = buildCardPoolFromRawData(CHARACTERS.ragna, NORMALS);
+
+  // Astral Heat keeps type 'ultra' and forceValue 2
+  const astralDesc = ragnaPool.cards[ragnaPool.astralIndex!];
+  assert.equal(astralDesc.type, 'ultra');
+  assert.equal(astralDesc.forceValue, 2);
+  assert.equal(astralDesc.isAstral, true);
+
+  // "Before: Advance as far as possible" parses with upTo: true and reaches close range
+  const farSpec = parseBeforeMoveSpec('Before: Advance as far as possible.');
+  assert.deepEqual(farSpec, { kind: 'advance', amount: 9, upTo: true });
+
+  // Live Ragna + Happy Chaos snapshots with Overdrive, Sealed, and Astral in hand
+  const ragnaSnap = evalExpr<EnginePublicSnapshot>(`
+    (() => {
+      const eng = new Engine('ragna', 'ken');
+      const p1 = eng.P('p1');
+      eng.draw(p1, 5);
+      p1.overdrive.push(p1.hand.pop());
+      p1.hand.push(p1.astralCard);
+      p1.astralCard = null;
+      return publicInfoOf(p1);
+    })()
+  `);
+  const adaptedRagna = createBeliefStateFromPublicSnapshot(ragnaPool, ragnaSnap);
+  assert.equal(adaptedRagna.knownHand[ragnaPool.astralIndex!], 1);
+  assert.equal(adaptedRagna.outOfPlay[ragnaPool.astralIndex!], 0);
+
+  const ggNormalsRaw = evalExpr<readonly RawExceedCardDef[]>('GG_NORMALS');
+  const hcPool = buildCardPoolFromRawData(CHARACTERS.happychaos, ggNormalsRaw);
+  const hcSnap = evalExpr<EnginePublicSnapshot>(`
+    (() => {
+      const eng = new Engine('happychaos', 'ryu');
+      const p1 = eng.P('p1');
+      eng.draw(p1, 5);
+      p1.sealedCards.push(p1.hand.pop());
+      return publicInfoOf(p1);
+    })()
+  `);
+  const adaptedHc = createBeliefStateFromPublicSnapshot(hcPool, hcSnap);
+  assert.equal(adaptedHc.handSize, 4);
 });

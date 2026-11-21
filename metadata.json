@@ -1,6 +1,0 @@
-{
-  "name": "Exceed Fighting System",
-  "description": "Exceed Fighting System proof of concept.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

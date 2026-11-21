@@ -57,6 +57,7 @@ export interface EnginePublicSnapshot {
   readonly reshuffleUsed?: boolean;
   readonly astralInPlayOrHand?: boolean;
   readonly astralPending?: boolean;
+  readonly astralState?: 'none' | 'out_of_play' | 'pending' | 'in_hand' | 'public';
   readonly revealedHand?: {
     readonly keys: readonly string[];
     readonly handCount: number;
@@ -64,6 +65,8 @@ export interface EnginePublicSnapshot {
     readonly discardCount: number;
     readonly gaugeCount: number;
     readonly boostsCount: number;
+    readonly overdriveCount?: number;
+    readonly sealedCount?: number;
   } | null;
   readonly knownDeckTop?: readonly string[];
   readonly knownDeckBottom?: readonly string[];
@@ -77,8 +80,8 @@ function toCardDescriptorWithoutIndex(
   const initialDeckCopies = isAstral ? 0 : raw.copies == null ? defaultCopies : raw.copies;
   // Track Astral Heat (1 copy starting outOfPlay) and 0-copy summoned cards (1 copy outOfPlay)
   const totalCopies = isAstral ? 1 : initialDeckCopies === 0 ? 1 : initialDeckCopies;
-  const type: CardType = isAstral ? 'astral' : raw.type;
-  const forceValue: 1 | 2 = raw.type === 'ultra' && !isAstral ? 2 : 1;
+  const type: CardType = raw.type;
+  const forceValue: 1 | 2 = raw.type === 'ultra' ? 2 : 1;
   const isDefensive =
     !!raw.alwaysMiss ||
     raw.key === 'block' ||
@@ -157,7 +160,9 @@ export function createBeliefStateFromPublicSnapshot(
   const addKeys = (zone: Uint8Array, keys: readonly string[] | undefined) => {
     if (!keys) return;
     for (const k of keys) {
-      if (!pool.hasKey(k)) continue;
+      if (!pool.hasKey(k)) {
+        throw new Error(`Unknown card key "${k}" for fighter "${pool.characterKey}" in public snapshot`);
+      }
       zone[pool.indexOf(k)]++;
     }
   };
@@ -169,15 +174,20 @@ export function createBeliefStateFromPublicSnapshot(
   addKeys(state.overdrive, snapshot.overdrive);
   addKeys(state.revealedStrike, snapshot.revealedStrike);
 
+  const astralInHandOrPlay = !!snapshot.astralInPlayOrHand || snapshot.astralState === 'in_hand' || snapshot.astralState === 'public';
+
   // Account for out-of-play cards (Astral Heat / 0-copy summoned cards) unless already visible or in play
   for (let i = 0; i < pool.size; i++) {
     const desc = pool.cards[i];
     const oopDefault = desc.totalCopies - desc.initialDeckCopies;
     if (oopDefault <= 0) continue;
     const alreadyPublic = state.getPublicCount(i);
-    if (desc.isAstral && snapshot.astralInPlayOrHand) {
-      // If Astral entered hand and isn't in public zones yet, it's in hand (or knownHand if revealed).
+    if (desc.isAstral && astralInHandOrPlay) {
       state.outOfPlay[i] = 0;
+      if (alreadyPublic === 0) {
+        // Astral Heat enters hand publicly on Reshuffle -> EoT draw, so it is a known hand card.
+        state.knownHand[i] = 1;
+      }
     } else {
       state.outOfPlay[i] = Math.max(0, oopDefault - alreadyPublic);
     }
@@ -187,7 +197,7 @@ export function createBeliefStateFromPublicSnapshot(
   state.deckSize = snapshot.deckCount;
   state.reshuffleUsed = !!snapshot.reshuffleUsed;
   state.reshuffleCycle = snapshot.reshuffleUsed ? 1 : 0;
-  state.astralPending = !!snapshot.astralPending;
+  state.astralPending = !!snapshot.astralPending || snapshot.astralState === 'pending';
 
   if (snapshot.knownDeckTop) {
     state.knownDeckTop = snapshot.knownDeckTop.map((k) => pool.indexOf(k));
@@ -198,13 +208,17 @@ export function createBeliefStateFromPublicSnapshot(
 
   // Honor valid exact hand reveals (same public-count freshness rule as game/ai.js)
   const rev = snapshot.revealedHand;
+  const odLen = (snapshot.overdrive || []).length;
+  const sealedLen = (snapshot.sealedCards || []).length;
   if (
     rev &&
     rev.handCount === snapshot.handCount &&
     rev.deckCount === snapshot.deckCount &&
     rev.discardCount === snapshot.discard.length &&
     rev.gaugeCount === snapshot.gauge.length &&
-    rev.boostsCount === snapshot.boostsInPlay.length
+    rev.boostsCount === snapshot.boostsInPlay.length &&
+    (rev.overdriveCount == null || rev.overdriveCount === odLen) &&
+    (rev.sealedCount == null || rev.sealedCount === sealedLen)
   ) {
     state.observeFullHandReveal(rev.keys);
   } else {
@@ -218,7 +232,7 @@ export function createBeliefStateFromPublicSnapshot(
 // Built-in Canonical Standard Normals & Ryu Decklist (exact game/cards.js data)
 // ===========================================================================
 
-export const STANDARD_NORMALS_RAW: readonly RawExceedCardDef[] = Object.freeze([
+const STANDARD_NORMALS_RAW: readonly RawExceedCardDef[] = Object.freeze([
   {
     key: 'assault',
     name: 'Assault',
@@ -310,7 +324,7 @@ export const STANDARD_NORMALS_RAW: readonly RawExceedCardDef[] = Object.freeze([
   },
 ]);
 
-export const RYU_CHARACTER_RAW: RawExceedCharacterDef = Object.freeze<RawExceedCharacterDef>({
+const RYU_CHARACTER_RAW: RawExceedCharacterDef = Object.freeze<RawExceedCharacterDef>({
   key: 'ryu',
   name: 'Ryu',
   isStreetFighter: true,

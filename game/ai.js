@@ -12,6 +12,20 @@
 
 
 function publicInfoOf(player) {
+  const astralDef = CHARACTERS[player.characterKey] && CHARACTERS[player.characterKey].specials
+    ? CHARACTERS[player.characterKey].specials.find(c => c.isAstral) : null;
+  let astralState = 'none';
+  if (astralDef) {
+    if (player._astralPending) astralState = 'pending';
+    else if (player.astralCard) astralState = 'out_of_play';
+    else {
+      const ak = astralDef.key;
+      const inPub = player.discard.some(c => c.key === ak) || player.gauge.some(c => c.key === ak) ||
+        player.boostsInPlay.some(b => b.card && b.card.key === ak) ||
+        (player.overdrive || []).some(c => c.key === ak) || (player.sealedCards || []).some(c => c.key === ak);
+      astralState = inPub ? 'public' : 'in_hand';
+    }
+  }
   return {
     id: player.id,
     characterKey: player.characterKey,
@@ -20,6 +34,11 @@ function publicInfoOf(player) {
     discard: player.discard.map(c => c.key),
     gauge: player.gauge.map(c => c.key),
     boostsInPlay: player.boostsInPlay.map(b => b.card.key),
+    overdrive: (player.overdrive || []).map(c => c.key),
+    sealedCards: (player.sealedCards || []).map(c => c.key),
+    astralCard: player.astralCard ? player.astralCard.key : null,
+    _astralPending: !!player._astralPending,
+    astralState,
     life: player.life,
     maxLife: player.maxLife,
     pos: player.pos,
@@ -122,12 +141,26 @@ function deckKeysForCharacter(characterKey) {
 
 function unseenPoolForOpponent(oppPublic) {
   const fullDeckKeys = deckKeysForCharacter(oppPublic.characterKey);
-  // remove exactly the keys that are known to be OUT of {hand+deck}: discard, gauge, boosts in play
-  const removed = [...oppPublic.discard, ...oppPublic.gauge, ...oppPublic.boostsInPlay];
-  const pool = fullDeckKeys.slice();
-  for (const key of removed) {
-    const idx = pool.indexOf(key);
-    if (idx !== -1) pool.splice(idx, 1);
+  const counts = new Map();
+  const addRemoved = (arr) => {
+    if (!arr) return;
+    for (let i = 0; i < arr.length; i++) {
+      const k = arr[i];
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+  };
+  addRemoved(oppPublic.discard);
+  addRemoved(oppPublic.gauge);
+  addRemoved(oppPublic.boostsInPlay);
+  addRemoved(oppPublic.overdrive);
+  addRemoved(oppPublic.sealedCards);
+  if (counts.size === 0) return fullDeckKeys.slice();
+  const pool = [];
+  for (let i = 0; i < fullDeckKeys.length; i++) {
+    const k = fullDeckKeys[i];
+    const rem = counts.get(k) || 0;
+    if (rem > 0) counts.set(k, rem - 1);
+    else pool.push(k);
   }
   return pool; // this represents "hand + deck" combined unknown composition
 }
@@ -140,31 +173,28 @@ function cardByKey(characterKey, key) {
   return _cardByKeyMap.get(key);
 }
 
-function sampleOpponentHand(oppPublic, rng) {
-  // A genuine hand reveal (0-match Reading/Block/Name-a-Range) is exact, strictly
-  // better information than any statistical sample — use it directly instead of
-  // guessing, for as long as nothing about the opponent's public state has changed
-  // since (comparing hand/deck/discard/gauge/boost COUNTS is a cheap, good-enough
-  // proxy for "untouched": every action that changes hand contents in this engine —
-  // draw, discard, play a card, mulligan, changecards — necessarily changes at
-  // least one of these counts too, so a full match across all five is strong
-  // evidence nothing has moved. Doesn't require hooking every individual
-  // hand-mutating call site to explicitly invalidate a stale snapshot).
+function sampleOpponentHand(oppPublic, rng, precomputedPool = null) {
   const rev = oppPublic.revealedHand;
+  const odLen = (oppPublic.overdrive || []).length;
+  const sealedLen = (oppPublic.sealedCards || []).length;
   if (rev && rev.handCount === oppPublic.handCount && rev.deckCount === oppPublic.deckCount &&
       rev.discardCount === oppPublic.discard.length && rev.gaugeCount === oppPublic.gauge.length &&
-      rev.boostsCount === oppPublic.boostsInPlay.length) {
+      rev.boostsCount === oppPublic.boostsInPlay.length &&
+      (rev.overdriveCount == null || rev.overdriveCount === odLen) &&
+      (rev.sealedCount == null || rev.sealedCount === sealedLen)) {
     return rev.keys.map(k => cardByKey(oppPublic.characterKey, k));
   }
-  const pool = unseenPoolForOpponent(oppPublic);
-  // shuffle pool, take handCount as the sampled hand (rest conceptually "in their deck")
-  const shuffled = pool.slice();
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  const pool = precomputedPool ? precomputedPool.slice() : unseenPoolForOpponent(oppPublic);
+  const k = Math.min(oppPublic.handCount, pool.length);
+  const out = new Array(k);
+  for (let i = 0; i < k; i++) {
+    const j = i + Math.floor(rng() * (pool.length - i));
+    const tmp = pool[i];
+    pool[i] = pool[j];
+    pool[j] = tmp;
+    out[i] = cardByKey(oppPublic.characterKey, pool[i]);
   }
-  const handKeys = shuffled.slice(0, Math.min(oppPublic.handCount, shuffled.length));
-  return handKeys.map(k => cardByKey(oppPublic.characterKey, k));
+  return out;
 }
 
 // Sum the continuous-boost stat bonuses represented by a list of boost card keys
@@ -383,9 +413,8 @@ function criticalGrant(card, ownerCharacterKey, dist, exceeded) {
 // "opponent loses 1, I lose 0" and makes every mutual exchange look like a clean win.
 // Races — the decisive phase of expert play — were invisible. Callers that care about
 // life must use evalMatchupDetail and read myDmg/oppDmg separately.
-function evalMatchup(myCard, myPos, myBoostMods, oppCard, oppPos, oppBoostMods, iInitiated, myExceeded, oppExceeded, myCharacterKey, oppCharacterKey, myGaugeCount, oppGaugeCount, eddiePositions) {
-  return evalMatchupDetail(myCard, myPos, myBoostMods, oppCard, oppPos, oppBoostMods, iInitiated,
-    myExceeded, oppExceeded, myCharacterKey, oppCharacterKey, myGaugeCount, oppGaugeCount, eddiePositions).value;
+function evalMatchup(opts) {
+  return evalMatchupDetail(opts).value;
 }
 
 // `eddiePositions` (optional, `{ mine, theirs }` board spaces or null) exists for the
@@ -393,7 +422,15 @@ function evalMatchup(myCard, myPos, myBoostMods, oppCard, oppPos, oppBoostMods, 
 // Specials/Ultras measure from Eddie (see engine.attackSourcePos). Omitting it — which
 // every caller that isn't evaluating a live board does — reproduces the old behaviour
 // exactly, since it only ever changes the two reachability checks below.
-function evalMatchupDetail(myCard, myPos, myBoostMods, oppCard, oppPos, oppBoostMods, iInitiated, myExceeded, oppExceeded, myCharacterKey, oppCharacterKey, myGaugeCount, oppGaugeCount, eddiePositions = null) {
+function evalMatchupDetail({
+  myCard, myPos, myBoostMods,
+  oppCard, oppPos, oppBoostMods,
+  iInitiated,
+  myExceeded, oppExceeded,
+  myCharacterKey, oppCharacterKey,
+  myGaugeCount = 0, oppGaugeCount = 0,
+  eddiePositions = null,
+}) {
   const mb = myBoostMods || { pow: 0, spd: 0, arm: 0, grd: 0, ignoreArmor: false, rangeImmuneRanges: [], stunImmune: false, opponentPowMod: 0, hasOwnContinuousBoost: false };
   const ob = oppBoostMods || { pow: 0, spd: 0, arm: 0, grd: 0, ignoreArmor: false, rangeImmuneRanges: [], stunImmune: false, opponentPowMod: 0, hasOwnContinuousBoost: false };
   const dist = Math.abs(myPos - oppPos);
@@ -664,8 +701,9 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
   // costs nothing extra — the draws already happened — and turns a fixed prior into a
   // belief that actually updates during the game.
   const oppMods = boostModsFromKeys(oppPublic.boostsInPlay);
+  const oppPool = unseenPoolForOpponent(oppPublic);
   for (let s = 0; s < samples; s++) {
-    const h = sampleOpponentHand(oppPublic, rng);
+    const h = sampleOpponentHand(oppPublic, rng, oppPool);
     if (!h.length) continue;
     const w = handLikelihood(h, oppPublic.observations, oppMods);
     hands += w;
@@ -709,36 +747,53 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
 function solveMixedStrategy(A, B, priors, iters = 300) {
   const n = A.length, m = n ? A[0].length : 0;
   if (!n || !m) return { my: [], opp: [] };
-  const regA = new Array(n).fill(0), regB = new Array(m).fill(0);
-  const sumA = new Array(n).fill(0), sumB = new Array(m).fill(0);
-  const fromRegret = (reg) => {
+  const regA = new Float64Array(n), regB = new Float64Array(m);
+  const sumA = new Float64Array(n), sumB = new Float64Array(m);
+  const sa = new Float64Array(n), sb = new Float64Array(m);
+  const uA = new Float64Array(n), uB = new Float64Array(m);
+  const fillStrat = (reg, out) => {
     let tot = 0;
-    const s = reg.map(r => { const v = r > 0 ? r : 0; tot += v; return v; });
-    if (tot <= 0) return s.map(() => 1 / s.length);
-    return s.map(v => v / tot);
+    for (let i = 0; i < reg.length; i++) {
+      const v = reg[i] > 0 ? reg[i] : 0;
+      out[i] = v;
+      tot += v;
+    }
+    if (tot <= 0) {
+      const u = 1 / reg.length;
+      for (let i = 0; i < reg.length; i++) out[i] = u;
+    } else {
+      const inv = 1 / tot;
+      for (let i = 0; i < reg.length; i++) out[i] *= inv;
+    }
   };
   for (let t = 0; t < iters; t++) {
-    const sa = fromRegret(regA);
-    let sb = fromRegret(regB);
+    fillStrat(regA, sa);
+    fillStrat(regB, sb);
     if (priors) {
-      // They can only answer with cards they actually hold, so the availability prior
-      // multiplies their strategy rather than being averaged in after the fact.
       let tot = 0;
-      sb = sb.map((v, j) => { const w = v * (priors[j] || 0); tot += w; return w; });
-      if (tot > 0) sb = sb.map(v => v / tot); else sb = priors.slice();
+      for (let j = 0; j < m; j++) {
+        const w = sb[j] * (priors[j] || 0);
+        sb[j] = w;
+        tot += w;
+      }
+      if (tot > 0) {
+        const inv = 1 / tot;
+        for (let j = 0; j < m; j++) sb[j] *= inv;
+      } else {
+        for (let j = 0; j < m; j++) sb[j] = priors[j] || 0;
+      }
     }
     for (let i = 0; i < n; i++) sumA[i] += sa[i];
     for (let j = 0; j < m; j++) sumB[j] += sb[j];
     let evA = 0;
-    const uA = new Array(n);
     for (let i = 0; i < n; i++) {
       let v = 0;
-      for (let j = 0; j < m; j++) v += sb[j] * A[i][j];
+      const rowA = A[i];
+      for (let j = 0; j < m; j++) v += sb[j] * rowA[j];
       uA[i] = v; evA += sa[i] * v;
     }
     for (let i = 0; i < n; i++) regA[i] += uA[i] - evA;
     let evB = 0;
-    const uB = new Array(m);
     for (let j = 0; j < m; j++) {
       let v = 0;
       for (let i = 0; i < n; i++) v += sa[i] * B[i][j];
@@ -746,8 +801,15 @@ function solveMixedStrategy(A, B, priors, iters = 300) {
     }
     for (let j = 0; j < m; j++) regB[j] += uB[j] - evB;
   }
-  const norm = (sum) => { const t = sum.reduce((a, b) => a + b, 0) || 1; return sum.map(v => v / t); };
-  return { my: norm(sumA), opp: norm(sumB) };
+  const normArr = (sum) => {
+    let t = 0;
+    for (let i = 0; i < sum.length; i++) t += sum[i];
+    const inv = t > 0 ? 1 / t : 1;
+    const out = new Array(sum.length);
+    for (let i = 0; i < sum.length; i++) out[i] = sum[i] * inv;
+    return out;
+  };
+  return { my: normArr(sumA), opp: normArr(sumB) };
 }
 
 // What a candidate costs in resources beyond whatever evalMatchup already charged.
@@ -778,7 +840,7 @@ function candidateResourceCost(candidate, handSize, myGaugeCount, myCharacterKey
 // when every card you hold is dead at this range — effectively did not exist. Sampling
 // the character's own static card pool is a fair approximation of "what might come off
 // the top" (deck composition is public knowledge; see deckKeysForCharacter).
-function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, oppPublic, ob, iAmInitiator, myExceeded, oppExceeded, myGaugeCount, rng, picks = 8 }) {
+function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, oppPublic, ob, iAmInitiator, myExceeded, oppExceeded, myGaugeCount, eddiePositions = null, rng, picks = 8 }) {
   const keys = deckKeysForCharacter(myCharacterKey);
   if (!keys.length || !answers.length) return 0;
   let total = 0, n = 0;
@@ -787,9 +849,14 @@ function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, op
     if (!card) continue;
     let v = 0;
     for (let j = 0; j < answers.length; j++) {
-      v += (oppMix[j] || 0) * evalMatchup(card, myPos, mb, answers[j].card, oppPublic.pos, ob,
-        iAmInitiator, myExceeded, oppExceeded, myCharacterKey, oppPublic.characterKey,
-        myGaugeCount, (oppPublic.gauge || []).length);
+      v += (oppMix[j] || 0) * evalMatchup({
+        myCard: card, myPos, myBoostMods: mb,
+        oppCard: answers[j].card, oppPos: oppPublic.pos, oppBoostMods: ob,
+        iInitiated: iAmInitiator, myExceeded, oppExceeded,
+        myCharacterKey, oppCharacterKey: oppPublic.characterKey,
+        myGaugeCount, oppGaugeCount: (oppPublic.gauge || []).length,
+        eddiePositions,
+      });
     }
     total += v; n++;
   }
@@ -805,7 +872,30 @@ function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, op
 // and pick uniformly among {hand cards, EX pairs, Wild Swing}. `myGaugeCount` (the
 // caller's OWN Gauge, always fully known to them) gates out unaffordable Ultras — see
 // buildStrikeCandidates.
-function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samples = 120, buildExCardFn, myBoostMods, randomness = 0, myGaugeCount = 0, myExceeded = false, myCharacterKey = null, myEddiePos = null }) {
+function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samples = 120, buildExCardFn, myBoostMods, randomness = 0, myGaugeCount = 0, myExceeded = false, myCharacterKey = null, myEddiePos = null, meFull = null, turnNumber = 0 }) {
+  if (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.isModernActive() && meFull && oppPublic) {
+    const snap = NativeCpuAI.decisionSnapshot(meFull, oppPublic, false, {
+      turnNumber,
+      seed: Math.floor(rng() * 0x7fffffff),
+      activePlayer: iAmInitiator ? 'actor' : 'opponent',
+    });
+    const nativeStrike = iAmInitiator ? NativeCpuAI.chooseStrikeAction(snap) : NativeCpuAI.chooseDefenseAction(snap);
+    if (nativeStrike) {
+      const sel = NativeCpuAI.resolveNativeStrikeToEngineSelection(nativeStrike, meFull);
+      if (sel) {
+        if (sel.type === 'wildswing') return { selection: sel, displayCard: null, scores: null };
+        const chosenCard = hand.find(c => c.uid === (sel.uid || sel.uid1));
+        const gaugeFree = CHARACTERS[myCharacterKey] && CHARACTERS[myCharacterKey].gaugeCostsFreeWhenExceeded && myExceeded;
+        const gCost = chosenCard && chosenCard.type === 'ultra' && !gaugeFree ? (chosenCard.gaugeCost || 0) : 0;
+        if (chosenCard && isCardValidForStrike(myCharacterKey, myExceeded, chosenCard) && gCost <= myGaugeCount) {
+          const displayCard = sel.type === 'ex' && buildExCardFn
+            ? buildExCardFn(chosenCard, hand.find(c => c.uid === sel.uid2))
+            : chosenCard;
+          return { selection: sel, displayCard, scores: null };
+        }
+      }
+    }
+  }
   const candidates = buildStrikeCandidates(hand, buildExCardFn, myGaugeCount, myCharacterKey, myExceeded);
 
   // Everything in hand was an unaffordable Ultra (rare, but possible) — the only legal,
@@ -854,10 +944,20 @@ function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samp
       const opp = answers[j].card;
       // `eddiePositions` is `{mine, theirs}` from the acting side's point of view, so
       // it swaps along with everything else on the opponent's row.
-      rowA[j] = evalMatchup(my, myPos, mb, opp, oppPublic.pos, ob, iAmInitiator, myExceeded, oppExceeded,
-        myCharacterKey, oppCharacterKey, myGaugeCount, oppGaugeCount, eddiePositions) - penalty;
-      rowB[j] = evalMatchup(opp, oppPublic.pos, ob, my, myPos, mb, !iAmInitiator, oppExceeded, myExceeded,
-        oppCharacterKey, myCharacterKey, oppGaugeCount, myGaugeCount, eddiePositionsSwapped);
+      rowA[j] = evalMatchup({
+        myCard: my, myPos, myBoostMods: mb,
+        oppCard: opp, oppPos: oppPublic.pos, oppBoostMods: ob,
+        iInitiated: iAmInitiator, myExceeded, oppExceeded,
+        myCharacterKey, oppCharacterKey,
+        myGaugeCount, oppGaugeCount, eddiePositions,
+      }) - penalty;
+      rowB[j] = evalMatchup({
+        myCard: opp, myPos: oppPublic.pos, myBoostMods: ob,
+        oppCard: my, oppPos: myPos, oppBoostMods: mb,
+        iInitiated: !iAmInitiator, oppExceeded, myExceeded,
+        myCharacterKey: oppCharacterKey, oppCharacterKey: myCharacterKey,
+        myGaugeCount: oppGaugeCount, oppGaugeCount: myGaugeCount, eddiePositions: eddiePositionsSwapped,
+      });
     }
     A.push(rowA); B.push(rowB);
   }
@@ -873,7 +973,7 @@ function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samp
   // ---- Wild Swing as a real option, not a desperation dice roll ----
   const wsValue = wildSwingExpectedValue({
     myCharacterKey, myPos, mb, answers, oppMix, oppPublic, ob, iAmInitiator, myExceeded,
-    oppExceeded, myGaugeCount, rng,
+    oppExceeded, myGaugeCount, eddiePositions, rng,
   });
   // Swinging blind also keeps the whole hand, which is worth something on its own; the
   // margin stops it being taken on a rounding difference.
@@ -1183,8 +1283,9 @@ function chooseRangeToName({ rng, randomness = 0, oppPublic = null }) {
   // to the global table when no opponent snapshot is supplied.
   const source = oppPublic
     ? sampleOpponentHand(oppPublic, rng).concat(sampleOpponentHand(oppPublic, rng))
-    : allCardDefs();
-  for (const card of (source.length ? source : allCardDefs())) {
+    : Array.from(_cardByKeyMap.values());
+  const pool = source.length ? source : Array.from(_cardByKeyMap.values());
+  for (const card of pool) {
     if (!card || !card.range) continue;
     for (let r = card.range[0]; r <= card.range[1]; r++) freq[r] = (freq[r] || 0) + 1;
   }
@@ -1231,19 +1332,25 @@ function chooseRangeDiscard(matchingCards, rng) {
 // leave you at Range 0, it leaves you at Range 3 on the far side — which can take a
 // short-range card OUT of range rather than into it. Close-range characters were
 // mis-scored in both directions by this.
+const _beforeMoverSpecCache = new Map();
 function parseBeforeMoverSpec(text) {
   if (!text) return null;
+  const hit = _beforeMoverSpecCache.get(text);
+  if (hit !== undefined) return hit;
+  let spec = null;
   if (/Before: (Advance|Close) as far as possible/i.test(text)) {
-    return { kind: /Before: Close as far as possible/i.test(text) ? 'close' : 'advance', amount: BOARD_SIZE, upTo: true };
+    spec = { kind: /Before: Close as far as possible/i.test(text) ? 'close' : 'advance', amount: BOARD_SIZE, upTo: true };
+  } else {
+    const m = text.match(/Before: (Advance|Close)\s+(?:up to\s+(\d+)|(\d+)\s+or\s+(\d+)|(\d+))/i);
+    if (m) {
+      const kind = m[1].toLowerCase();
+      if (m[2]) spec = { kind, amount: parseInt(m[2], 10), upTo: true };
+      else if (m[3] && m[4]) spec = { kind, amount: Math.max(parseInt(m[3], 10), parseInt(m[4], 10)), upTo: true };
+      else spec = { kind, amount: parseInt(m[5], 10), upTo: false };
+    }
   }
-  const m = text.match(/Before: (Advance|Close)\s+(?:up to\s+(\d+)|(\d+)\s+or\s+(\d+)|(\d+))/i);
-  if (!m) return null;
-  const kind = m[1].toLowerCase();
-  if (m[2]) return { kind, amount: parseInt(m[2], 10), upTo: true };
-  // "Advance 1 or 3" is a genuine choice between two amounts, so it behaves like an
-  // optional move bounded by the larger one for reachability purposes.
-  if (m[3] && m[4]) return { kind, amount: Math.max(parseInt(m[3], 10), parseInt(m[4], 10)), upTo: true };
-  return { kind, amount: parseInt(m[5], 10), upTo: false };
+  _beforeMoverSpecCache.set(text, spec);
+  return spec;
 }
 
 // Where a free (card-effect) move of `amount` spaces leaves you, in DISTANCE terms.
@@ -1301,25 +1408,6 @@ function parseBeforeMoverAmount(text, defaultSlack = 2) {
   return 0; // Unparseable, already handled above or fallback
 }
 
-function effectiveRangeBand(card, boostMods) {
-  if (!card.range) return null;
-  // Card's own Before: Advance/Close movement.
-  const textSlack = card.text && /Before: (Advance|Close)/.test(card.text) ? parseBeforeMoverAmount(card.text) : 0;
-  // Boost-granted movement: if this is a Normal and an active boost grants Normals
-  // a Before-Advance (Cammy's Dive Kick), add that too.
-  const boostSlack = (boostMods && card.type === 'normal' && boostMods.grantsNormalsBeforeAdvance) ? boostMods.grantsNormalsBeforeAdvance : 0;
-  const totalSlack = textSlack + boostSlack;
-  const rangeMaxBonus = card.hooks && card.hooks.rangeMaxBonusIfInitiating ? card.hooks.rangeMaxBonusIfInitiating : 0;
-  // Before: Advance/Close extends the far edge (range[1]) outward, allowing play from greater distances.
-  // The card moves toward you during its Before phase, so you can set it from farther away.
-  return [card.range[0], card.range[1] + totalSlack + rangeMaxBonus];
-}
-
-// Now routed through cardReachesFrom (the reachable-distance set) instead of the
-// widened band above, so a FORCED Before-movement that overshoots the opponent is
-// correctly reported as out of range rather than as extra reach. effectiveRangeBand is
-// kept as-is for the one thing a band is still the right shape for — describing a
-// card's reach as an interval — but nothing should decide "can this connect" with it.
 function isEffectivelyInRange(card, dist, boostMods) {
   if (!card || !card.range) return false;
   const rangeMaxBonus = card.hooks && card.hooks.rangeMaxBonusIfInitiating ? card.hooks.rangeMaxBonusIfInitiating : 0;
@@ -1351,7 +1439,7 @@ function vegaEdgeTargetDistance(myCharacterKey, hand, currentDist, myPos, oppPos
 function bestMoveTarget(hand, currentDist, boostMods, myCharacterKey, myPos, oppPos) {
   const edgeTargetDist = vegaEdgeTargetDistance(myCharacterKey, hand, currentDist, myPos, oppPos);
   let best = null, bestCount = -1;
-  for (let d = 0; d <= 8; d++) {
+  for (let d = 1; d <= 8; d++) {
     let count = 0;
     for (const c of hand) if (isEffectivelyInRange(c, d, boostMods)) count++;
     // Small flat nudge toward the edge-retreat distance, on top of (never
@@ -1441,7 +1529,7 @@ function bestOpponentBoostKey(oppBoostsInPlayKeys) {
   if (!oppBoostsInPlayKeys || oppBoostsInPlayKeys.length === 0) return null;
   let bestKey = null, bestScore = -Infinity;
   for (const key of oppBoostsInPlayKeys) {
-    const targetCard = allCardDefs().find(c => c.key === key);
+    const targetCard = _cardByKeyMap.get(key);
     if (!targetCard) continue;
     const s = scoreBoostCard(targetCard);
     if (s > bestScore) { bestScore = s; bestKey = key; }
@@ -1451,8 +1539,8 @@ function bestOpponentBoostKey(oppBoostsInPlayKeys) {
 function scoreTechBoostCard(oppBoostsInPlayKeys) {
   const key = bestOpponentBoostKey(oppBoostsInPlayKeys);
   if (!key) return 0;
-  const targetCard = allCardDefs().find(c => c.key === key);
-  return scoreBoostCard(targetCard) * 1.1; // denying is at least as good as having it, small premium for tempo/information
+  const targetCard = _cardByKeyMap.get(key);
+  return targetCard ? scoreBoostCard(targetCard) * 1.1 : 0; // denying is at least as good as having it, small premium for tempo/information
 }
 
 // Dive's Tech target choice — which of the opponent's (possibly several) active
@@ -1600,7 +1688,12 @@ function quickBestStrikeValue({ hand, myPos, oppPublic, rng, myBoostMods, myExce
     const opp = sampledHand[Math.floor(rng() * sampledHand.length)];
     n++;
     for (let i = 0; i < validHand.length; i++) {
-      totals[i] += evalMatchup(validHand[i], myPos, myBoostMods, opp, oppPublic.pos, ob, true, myExceeded, oppExceeded, myCharacterKey, oppPublic.characterKey);
+      totals[i] += evalMatchup({
+        myCard: validHand[i], myPos, myBoostMods,
+        oppCard: opp, oppPos: oppPublic.pos, oppBoostMods: ob,
+        iInitiated: true, myExceeded, oppExceeded,
+        myCharacterKey, oppCharacterKey: oppPublic.characterKey,
+      });
     }
   }
   if (n === 0) return 0;
@@ -1839,9 +1932,13 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
         let worst = null;
         const n = Math.min(cfg.oppResponseCap, oppHand.length);
         for (let i = 0; i < n; i++) {
-          const d = evalMatchupDetail(myCard, myPos, mods, oppHand[i], oppPublic.pos, oppMods,
-            iInitiate, myExceeded, oppExceeded, mePublicFull.characterKey, oppPublic.characterKey,
-            myGaugeCount, oppGaugeCount);
+          const d = evalMatchupDetail({
+            myCard, myPos, myBoostMods: mods,
+            oppCard: oppHand[i], oppPos: oppPublic.pos, oppBoostMods: oppMods,
+            iInitiated: iInitiate, myExceeded, oppExceeded,
+            myCharacterKey: mePublicFull.characterKey, oppCharacterKey: oppPublic.characterKey,
+            myGaugeCount, oppGaugeCount,
+          });
           if (!worst || d.value < worst.value) worst = d;
         }
         if (!worst) continue;
@@ -1885,9 +1982,13 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
         // max over my min, the mirror image of exchangeValue above.
         let worstForThem = null;
         for (const myCard of myHand) {
-          const d = evalMatchupDetail(oppHand[i], oppPublic.pos, oppMods, myCard, myPos, myMods,
-            true, oppExceeded, myExceeded, oppPublic.characterKey, mePublicFull.characterKey,
-            oppGaugeCount, myGaugeCount);
+          const d = evalMatchupDetail({
+            myCard: oppHand[i], myPos: oppPublic.pos, myBoostMods: oppMods,
+            oppCard: myCard, oppPos: myPos, oppBoostMods: myMods,
+            iInitiated: true, myExceeded: oppExceeded, oppExceeded: myExceeded,
+            myCharacterKey: oppPublic.characterKey, oppCharacterKey: mePublicFull.characterKey,
+            myGaugeCount: oppGaugeCount, oppGaugeCount: myGaugeCount,
+          });
           if (!worstForThem || d.value < worstForThem.value) worstForThem = d;
         }
         if (worstForThem && (!bestForThem || worstForThem.value > bestForThem.value)) bestForThem = worstForThem;
@@ -2488,8 +2589,16 @@ function preferChangeCardsOverPrepare(hand, dist, boostMods) {
 function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
   if (!mePublicFull.hand.length || oppPublic.life <= 0) return false;
   const mb = myBoostMods || boostModsFromKeys([]);
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
   const myGauge = (mePublicFull.gauge || []).length;
+  // Fast-path: if no affordable card can possibly reach oppPublic.life even with boost/edge/critical headroom, skip sampling.
+  let maxUpperPow = -Infinity;
+  for (const card of mePublicFull.hand) {
+    if ((card.gaugeCost || 0) > myGauge) continue;
+    const upper = (card.pow || 0) + (mb.pow || 0) + 5;
+    if (upper > maxUpperPow) maxUpperPow = upper;
+  }
+  if (maxUpperPow < oppPublic.life) return false;
+  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
   const oppGauge = (oppPublic.gauge || []).length;
   const answers = buildOpponentAnswerSet(oppPublic, rng, 16);
   if (!answers.length) return false;
@@ -2497,9 +2606,13 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
     if ((card.gaugeCost || 0) > myGauge) continue; // an Ultra we can't pay for isn't a strike
     let worst = Infinity;
     for (const a of answers) {
-      const d = evalMatchupDetail(card, mePublicFull.pos, mb, a.card, oppPublic.pos, ob, true,
-        !!mePublicFull.exceeded, !!oppPublic.exceeded, mePublicFull.characterKey, oppPublic.characterKey,
-        myGauge, oppGauge);
+      const d = evalMatchupDetail({
+        myCard: card, myPos: mePublicFull.pos, myBoostMods: mb,
+        oppCard: a.card, oppPos: oppPublic.pos, oppBoostMods: ob,
+        iInitiated: true, myExceeded: !!mePublicFull.exceeded, oppExceeded: !!oppPublic.exceeded,
+        myCharacterKey: mePublicFull.characterKey, oppCharacterKey: oppPublic.characterKey,
+        myGaugeCount: myGauge, oppGaugeCount: oppGauge,
+      });
       if (d.myDmg < worst) worst = d.myDmg;
       if (worst < oppPublic.life) break;
     }
@@ -2540,25 +2653,69 @@ function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) 
   return out;
 }
 
-// `usePlanner` defaults to the global switch; a caller can force it off for one side to
-// A/B the three-turn planner against the legacy one-turn heuristic in the same game.
-function isNativeActionLegal(action, me, canExceed) {
-  if (!action || !action.type) return false;
-  if (action.type === 'exceed') return !!canExceed;
-  if (action.type === 'boost') return typeof action.uid === 'string' && me.hand.some(card => card.uid === action.uid && card.boost);
-  if (action.type === 'move') return Number.isInteger(action.target) && action.target >= 0 && action.target <= 8;
-  if (action.type === 'changecards') return Number.isInteger(action.n) && action.n >= 1 && action.n <= me.hand.length;
-  if (action.type === 'burst') return typeof action.boostUid === 'string' && me.boostsInPlay.some(entry => entry.card.uid === action.boostUid);
-  return ['strike', 'action', 'prepare', 'reshuffle'].includes(action.type);
+function canPayExactForce(cards, targetForce, excludeUid = null) {
+  if (targetForce <= 0) return targetForce === 0;
+  let ones = 0, twos = 0;
+  for (let i = 0; i < cards.length; i++) {
+    const c = cards[i];
+    if (c.uid === excludeUid) continue;
+    if (c.type === 'ultra') twos++;
+    else ones++;
+  }
+  return targetForce <= ones + 2 * twos && (targetForce % 2 === 0 || ones > 0);
 }
 
-function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness = 0, myBoostMods, usePlanner = PLAN_CONFIG.enabled }) {
+// `usePlanner` defaults to the global switch; a caller can force it off for one side to
+// A/B the three-turn planner against the legacy one-turn heuristic in the same game.
+function isNativeActionLegal(action, me, opp, canExceed) {
+  if (!action || !action.type) return false;
+  const pool = [...(me.hand || []), ...(me.gauge || [])];
+  if (action.type === 'exceed') return !!canExceed;
+  if (action.type === 'reshuffle') return !me.reshuffleUsed;
+  if (action.type === 'action') {
+    const char = CHARACTERS[me.characterKey];
+    if (!char || !char.action) return false;
+    const cost = char.actionForceCost || 0;
+    return cost === 0 || canPayExactForce(pool, cost);
+  }
+  if (action.type === 'boost') {
+    if (typeof action.cardKey !== 'string') return false;
+    const card = (me.hand || []).find(c => c.key === action.cardKey && c.boost);
+    if (!card) return false;
+    const cost = card.boost.force || 0;
+    return cost === 0 || canPayExactForce(pool, cost, card.uid);
+  }
+  if (action.type === 'move') {
+    if (!Number.isInteger(action.targetSpace) || action.targetSpace < 0 || action.targetSpace > 8) return false;
+    if (action.targetSpace === me.pos || (opp && action.targetSpace === opp.pos)) return false;
+    const forceCost = Math.abs(action.targetSpace - me.pos);
+    return canPayExactForce(pool, forceCost);
+  }
+  if (action.type === 'changecards') {
+    return Number.isInteger(action.n) && action.n >= 1 && canPayExactForce(pool, action.n);
+  }
+  if (action.type === 'burst') {
+    return typeof action.cardKey === 'string' &&
+      (me.boostsInPlay || []).some(entry => entry.card && entry.card.key === action.cardKey && entry.card.boost && entry.card.boost.grantsBurstAction);
+  }
+  return action.type === 'strike' || action.type === 'prepare';
+}
+
+function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness = 0, myBoostMods, usePlanner = PLAN_CONFIG.enabled, turnNumber = 0 }) {
   // Native/WASM planning is opt-in until it clears the differential promotion gate.
   // It receives a detached, canonical snapshot only; a bad or unavailable backend
   // returns null and this established JS policy remains the safe fallback.
-  if (typeof NativeCpuAI !== 'undefined') {
-    const nativeAction = NativeCpuAI.chooseNeutralAction(NativeCpuAI.decisionSnapshot(mePublicFull, oppPublic, canExceed));
-    if (nativeAction && isNativeActionLegal(nativeAction, mePublicFull, canExceed)) return nativeAction;
+  if (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.isModernActive()) {
+    const snap = NativeCpuAI.decisionSnapshot(mePublicFull, oppPublic, canExceed, {
+      turnNumber,
+      seed: Math.floor(rng() * 0x7fffffff),
+      activePlayer: 'actor',
+    });
+    const nativeAction = NativeCpuAI.chooseNeutralAction(snap);
+    if (nativeAction && isNativeActionLegal(nativeAction, mePublicFull, oppPublic, canExceed)) {
+      const resolved = NativeCpuAI.resolveNativeActionToEngineAction(nativeAction, mePublicFull);
+      if (resolved) return resolved;
+    }
   }
   if (rng() < randomness) return pickRandomLegalAction({ mePublicFull, canExceed, rng });
 
@@ -2569,100 +2726,22 @@ function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness 
   const oppMaxLife = oppPublic.maxLife || 30;
   const handCount = mePublicFull.hand.length;
 
-  // ---- Lethal check ----
-  // Was `isEffectivelyInRange(c, dist) && c.pow >= oppLife` on the raw printed Power.
-  // That is wrong in both directions: it ignores my own continuous-boost POW, Critical
-  // grants and character passives, so it MISSES real kills; and it ignores the
-  // opponent's Armor, their Guard/stun-first answer and speed order, so it COMMITS to
-  // fake ones — throwing away a turn and a card on a strike that was never lethal.
-  // Missing lethal is the most expensive single error class in a card game.
-  //
-  // Now it asks the real evaluator, and only fires on a kill that survives the
-  // opponent's BEST defence. Anything less certain is left to the planner, which
-  // already values reaching oppLife <= 0 at +25 and can weigh it against everything
-  // else instead of short-circuiting the whole decision.
   if (certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng })) return { type: 'strike' };
 
-  // Axl's One Vision burst action ("take 3 actions") — close to strictly good
-  // (three more chances to draw/reposition/boost/Exceed before the opponent
-  // gets a turn), so taken whenever available, right after the lethal check
-  // (which should still win — ending the game now beats setting up a bigger
-  // turn) and before anything else. No deeper cost/benefit weighing here, same
-  // simplification level as this file's other near-always-correct heuristics
-  // (e.g. resolveAIStrikeRequest's hadoken_recycle/sustain_choice).
   const burstBoost = mePublicFull.boostsInPlay.find(b => b.card.boost && b.card.boost.grantsBurstAction);
   if (burstBoost) return { type: 'burst', boostUid: burstBoost.card.uid };
 
-  // Manual Reshuffle: once per game, shuffle discard back into deck. Previously never
-  // used by the AI (HANDOFF.md known gap) — a real risk for discard-heavy characters
-  // that can run their deck dry. Trigger only when the deck is nearly empty and there's
-  // a discard pile worth reclaiming; checked after the lethal check above so it never
-  // trades away a kill.
   if (!mePublicFull.reshuffleUsed && mePublicFull.deck.length <= 1 && mePublicFull.discard.length >= 3) {
     return { type: 'reshuffle' };
   }
 
   if (handCount === 0) return { type: 'strike' }; // forced wild swing
 
-  // How many of our cards could actually connect from here? This is the crux of the
-  // "why does it strike when nothing is in range" bug — every downstream decision
-  // must be gated on this, not just the range-check branch.
   const inRangeCount = mePublicFull.hand.filter(c => isEffectivelyInRange(c, dist, myBoostMods)).length;
-
-  // Life-awareness: positive when we're behind on life (press harder / take more
-  // risks to catch up), negative when comfortably ahead (can afford to play patiently
-  // and bank resources instead of trading). Both ratios are public (visible life bars).
-  const lifeRatio = life / maxLife, oppLifeRatio = oppLife / oppMaxLife;
-  const desperation = Math.max(-1, Math.min(1, (oppLifeRatio - lifeRatio) * 2));
-
-  // Character action score and the best timing-relevant Boost are both computed here,
-  // ahead of every decision point, because the three-turn planner needs them as
-  // candidate actions — the legacy one-turn branches below still read the same two
-  // values further down, so nothing is computed twice.
   const actionScore = scoreCharacterAction(mePublicFull.characterKey, {
     mePublicFull, oppPublic, dist, life, maxLife, oppLife, oppMaxLife, handCount, inRangeCount,
   });
-  const timingRelevantBoostable = mePublicFull.hand.filter(c => c.boost && c.boost.force === 0 &&
-    (c.boost.continuous || movementBoostReachableDist(c.key, dist)));
-  const boostScoreCtx = { hand: mePublicFull.hand, dist, oppBoostsInPlay: oppPublic.boostsInPlay, boostMods: myBoostMods };
-  let bestBoostCandidate = null, bestBoostTiming = -Infinity;
-  if (timingRelevantBoostable.length > 0) {
-    bestBoostCandidate = timingRelevantBoostable.reduce((best, c) =>
-      (!best || scoreBoostCardContextual(c, boostScoreCtx) > scoreBoostCardContextual(best, boostScoreCtx)) ? c : best, null);
-    bestBoostTiming = estimateBoostTimingValue({
-      card: bestBoostCandidate, hand: mePublicFull.hand, myPos: mePublicFull.pos, oppPublic, rng,
-      myBoostMods, myExceeded: mePublicFull.exceeded, myCharacterKey: mePublicFull.characterKey,
-    });
-  }
 
-  // ---- three-turn lookahead ----
-  // Everything below this point is the original one-turn heuristic, kept as the
-  // fallback: it still runs whenever the planner declines (no usable opponent sample,
-  // empty hand) or is switched off via PLAN_CONFIG.enabled.
-  //
-  // *** DO NOT TUNE ANYTHING BELOW THIS LINE. IT DOES NOT RUN IN A REAL GAME. ***
-  //
-  // Measured: over 400 sampled real states, planThreeTurns returned a plan 400 times.
-  // Its only null paths are an empty opponent sample or an empty hand, and an empty
-  // hand is already short-circuited above — so with PLAN_CONFIG.enabled true (the
-  // shipped setting) the ~90 lines below are unreachable. The desperation term, the
-  // Exceed-timing curve, preferChangeCardsOverPrepare, the inRangeCount === 0
-  // repositioning branch, shouldWildSwing's influence on action choice and the
-  // character-action probability gate are all dead in normal play, and at least two of
-  // them were "tuned" by earlier sessions that believed they were live. That is this
-  // project's own documented pitfall — "a green test suite only proves what the driver
-  // actually calls" (HANDOFF.md §6) — one level up: tuning that cannot fail because it
-  // cannot execute.
-  //
-  // It is deliberately KEPT rather than deleted, for exactly one reason: it is the
-  // control group. test_ai_strength.js's `legacy` config flips PLAN_CONFIG.enabled to
-  // false to play the planner against it, which is the only evidence that the planner
-  // is worth its cost. Deleting this would delete the measurement.
-  //
-  // So: the ideas here belong in planEvaluate's weights, not here. `desperation` has
-  // already made that move (see PLAN_CONFIG.aggression). If you want to improve how
-  // the AI plays, change a weight in PLAN_CONFIG or a term in planEvaluate — a change
-  // made below this line will not affect a single shipped decision.
   if (usePlanner) {
     const planned = planThreeTurns({
       mePublicFull, oppPublic, canExceed, rng, myBoostMods,
@@ -2671,119 +2750,28 @@ function chooseAction({ me, mePublicFull, oppPublic, canExceed, rng, randomness 
     });
     if (planned) {
       const act = planned.action;
-      // Ryu's action is the one that needs a direction picked; reuse the existing
-      // best-distance heuristic for it rather than teaching the planner about it.
       if (act.type === 'action' && mePublicFull.characterKey === 'ryu') {
         const { target: bestMove } = bestMoveTarget(mePublicFull.hand, dist);
         act.direction = dist > bestMove ? 'advance' : (dist < bestMove ? 'retreat' : (rng() < 0.5 ? 'advance' : 'retreat'));
       }
-      // The planner now picks the CARD as well as the turn, because every boostable card
-      // is one of its candidate actions. It used to only decide "boost, yes or no" from
-      // one card's modelled effects and then let scoreBoostCardContextual re-pick a
-      // different card afterwards — so the plan's reasoning and the card actually played
-      // routinely came apart. All that's left here is the safety check.
       if (act.type === 'boost' && !mePublicFull.hand.some(c => c.uid === act.uid)) {
         return { type: 'prepare' };
       }
-      // An action the character can't actually afford or use never reaches here (the
-      // planner filters on actionForceCost), but a -Infinity score means the heuristic
-      // considers it useless, so honour that veto rather than taking a dead turn.
       if (act.type === 'action' && actionScore === -Infinity) return { type: 'prepare' };
       return act;
     }
   }
 
+  // Minimal safe fallback when planner is disabled or no opponent samples are available
   if (inRangeCount === 0) {
-    // Nothing can hit from here. Reposition (purposefully, toward whatever distance
-    // helps the most cards), rebuild resources, or very rarely gamble a Wild Swing.
-    if (handCount <= 2 && rng() < 0.45) return { type: 'changecards', n: Math.min(2, handCount) };
     const { target, count } = bestMoveTarget(mePublicFull.hand, dist, myBoostMods, mePublicFull.characterKey, mePublicFull.pos, oppPublic.pos);
     if (count > 0 && target !== dist) return { type: 'move', target };
-    if (preferChangeCardsOverPrepare(mePublicFull.hand, dist, myBoostMods) || rng() < 0.5) {
+    if (preferChangeCardsOverPrepare(mePublicFull.hand, dist, myBoostMods)) {
       return { type: 'changecards', n: Math.min(2, handCount) };
     }
     return { type: 'prepare' };
   }
-
-  // Exceed timing: no longer a flat coin flip. Avoid burning the turn on Exceeding
-  // when the opponent is nearly dead (press for the kill instead) or when we're
-  // critically low ourselves (that turn is better spent striking or repositioning);
-  // more inclined to Exceed with a comfortable hand and no immediate urgency.
-  if (canExceed) {
-    let exceedChance = 0.5;
-    if (oppLifeRatio <= 0.2) exceedChance -= 0.35;
-    if (lifeRatio <= 0.3) exceedChance -= 0.2;
-    if (handCount >= 4) exceedChance += 0.15;
-    exceedChance = Math.max(0.05, Math.min(0.85, exceedChance));
-    if (rng() < exceedChance) return { type: 'exceed' };
-  }
-
-  // Character action (Ryu's Move 1, Ken's Close+draw): if character has one, evaluate whether
-  // it's better than the other turn options right now. This was a 0%-execution gap (HANDOFF.md).
-  // `actionScore` is computed once, above the planner.
-  if (actionScore > -Infinity && rng() < (0.5 + actionScore * 0.3)) {
-    // Ryu's action needs a direction choice.
-    if (mePublicFull.characterKey === 'ryu') {
-      const { target: bestMove } = bestMoveTarget(mePublicFull.hand, dist);
-      const direction = dist > bestMove ? 'advance' : (dist < bestMove ? 'retreat' : (rng() < 0.5 ? 'advance' : 'retreat'));
-      return { type: 'action', direction };
-    }
-    // Ken's action: no direction needed, resolve always returns the result (mayStrike depends on exceeded state).
-    return { type: 'action' };
-  }
-
-  if (handCount <= 2 && rng() < 0.4) {
-    return { type: 'changecards', n: Math.min(2, handCount) };
-  }
-
-  // Boost-vs-strike timing: evaluate timing-relevant boost candidates now (before the
-  // strike/boost split below) so a genuinely strong setup — Cammy's Dive Kick turning
-  // every Normal into a closer, Zangief's Atomic Suplex trading a card for +2 Armor
-  // and free positioning, or Cross's Run repositioning into range of half the hand —
-  // can pull weight away from striking with the hand as-is, not just win a coin flip
-  // AFTER already deciding not to strike. "Timing-relevant" here means continuous
-  // stat boosts AND the two movement Instant Boosts (Run/Backstep) — both are
-  // fundamentally about "how good does my NEXT strike look from here," which is
-  // exactly what estimateBoostTimingValue's lookahead answers (see its comment for
-  // the position-vs-stats split). Focus/Block/Tech aren't included here — their value
-  // isn't about next-strike quality, it's direct information/denial value, already
-  // captured by scoreBoostCardContextual below without needing a lookahead.
-  // Only the single highest-`scoreBoostCardContextual`-ranked candidate gets the
-  // (relatively expensive, nested-Monte-Carlo) lookahead — chooseAction runs on
-  // every non-strike decision of every AI-controlled turn, so evaluating every
-  // candidate this way was measured to blow up total test-suite runtime by roughly
-  // an order of magnitude. Scoring only the top candidate is a real accuracy
-  // trade-off (a lower-scored option that's tactically better positioned could be
-  // missed) but keeps this affordable; it still directly answers "is boosting
-  // instead of striking actually worth it right now," which is the timing question
-  // this exists for.
-  // (`bestBoostCandidate`/`bestBoostTiming` are computed once, above the planner.)
-
-  // Press harder when behind on life, ease off slightly (favor resource-building)
-  // when comfortably ahead. A strong boost-timing setup pulls some of that weight
-  // toward boosting instead — capped so it can never dominate the life-awareness
-  // logic above (the lethal check and desperation term both still win out over this).
-  let strikeChance = Math.max(0.35, Math.min(0.85, 0.65 + desperation * 0.15));
-  if (bestBoostTiming > 0) strikeChance = Math.max(0.1, strikeChance - Math.min(0.25, bestBoostTiming * 0.08));
-  if (rng() < strikeChance) return { type: 'strike' };
-
-  // Boost — scores which boost is best via scoreBoostCardContextual (hand/distance/
-  // opponent-boosts-aware — see its comment for why Run/Backstep/Tech specifically
-  // need this over plain scoreBoostCard), blended with the timing lookahead above for
-  // whichever candidate was actually evaluated.
-  const boostable = mePublicFull.hand.filter(c => c.boost && c.boost.force === 0);
-  if (boostable.length > 0 && rng() < 0.3) {
-    const scored = boostable.map(c => ({
-      c, w: scoreBoostCardContextual(c, boostScoreCtx) + (bestBoostCandidate && c.uid === bestBoostCandidate.uid ? bestBoostTiming * 0.6 : 0) + rng() * 0.01,
-    }));
-    scored.sort((a, b) => b.w - a.w);
-    return { type: 'boost', uid: scored[0].c.uid };
-  }
-
-  if (preferChangeCardsOverPrepare(mePublicFull.hand, dist, myBoostMods)) {
-    return { type: 'changecards', n: Math.min(2, handCount) };
-  }
-  return { type: 'prepare' };
+  return { type: 'strike' };
 }
 
 

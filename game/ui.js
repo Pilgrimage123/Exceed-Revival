@@ -185,7 +185,8 @@ class GameController {
     const dist = this.engine.range(p, opp);
     switch (action && action.type) {
       case 'strike': {
-        const inRange = p.hand.filter(c => isEffectivelyInRange(c, dist, this.engine.activeBoostMods(p))).length;
+        const mods = this.engine.activeBoostMods(p);
+        const inRange = p.hand.filter(c => isEffectivelyInRange(c, dist, mods)).length;
         return `Strike. At range ${dist} you have ${inRange} card${inRange === 1 ? '' : 's'} that can reach, and a card that hits goes to your Gauge.`;
       }
       case 'move': {
@@ -243,6 +244,11 @@ class GameController {
         this.currentFx = null;
         this._fxTimer = null;
         render();
+        if (this._pendingAiCallback) {
+          const cb = this._pendingAiCallback;
+          this._pendingAiCallback = null;
+          cb();
+        }
         return;
       }
       this.currentFx = q.shift();
@@ -264,19 +270,24 @@ class GameController {
     this.fxPlaying = false;
     this.currentFx = null;
     render();
+    if (this._pendingAiCallback) {
+      const cb = this._pendingAiCallback;
+      this._pendingAiCallback = null;
+      cb();
+    }
   }
 
-  // Delays the CPU's next visible turn until any in-flight FX playback has
-  // finished, so the CPU doesn't visibly start acting while the human's last
-  // exchange is still stepping through its board animation. Every existing
-  // `setTimeout(() => this.runAITurn(), N)` call site now goes through this
-  // instead of calling runAITurn() directly.
   scheduleAITurn(delay) {
-    const fire = () => {
-      if (this.fxPlaying) { setTimeout(fire, 120); return; }
+    if (this._aiTimer) { clearTimeout(this._aiTimer); this._aiTimer = null; }
+    this._pendingAiCallback = null;
+    this._aiTimer = setTimeout(() => {
+      this._aiTimer = null;
+      if (this.fxPlaying) {
+        this._pendingAiCallback = () => this.runAITurn();
+        return;
+      }
       this.runAITurn();
-    };
-    setTimeout(fire, delay);
+    }, delay);
   }
 
   // ----- opening-hand mulligan (human) -----
@@ -791,6 +802,7 @@ class GameController {
       return render();
     }
     if (card.boost.needsRangeNameChoice) {
+      this._namedRange = 1;
       this.mode = 'name_range_choice';
       this.sel = { ...this.sel, promptText: 'Name a Range (Flying Power Bomb): opponent must discard a card that includes it, or reveal their hand.' };
       return render();
@@ -1224,6 +1236,7 @@ class GameController {
           myBoostMods: this.engine.activeBoostMods(aiPlayer), randomness: this.randomness,
           myGaugeCount: this.engine.gaugeCount(aiPlayer), myExceeded: aiPlayer.exceeded,
           myCharacterKey: aiPlayer.characterKey, myEddiePos: aiPlayer.eddiePos,
+          meFull: aiPlayer, turnNumber: this.engine.turn,
         });
         dSel = this.engine.resolveStrikeCardSelection(aiPlayer, selection);
       }
@@ -1290,6 +1303,12 @@ class GameController {
         // `chosen` is used by the yields that present a card picker (block_force);
         // harmless for the ones that don't.
         this.sel = { request: req, chosen: [] };
+        if (req.type === 'grasp_move') {
+          this._graspAmount = req.max != null ? req.max : 2;
+          this._graspDir = req.forceDirection || 'retreat';
+        } else if (req.type === 'optional_force_spend_pow') {
+          this._forcePowSpend = 0;
+        }
         this.mode = req.type === 'grasp_move' ? 'grasp_choice'
           : req.type === 'hadoken_recycle' ? 'hadoken_recycle_choice'
           : req.type === 'sustain_choice' ? 'sustain_choice'
@@ -1353,9 +1372,6 @@ class GameController {
     render();
   }
   confirmBlockForce() { this.driveStrikeGen(this.pendingGen, { uids: this.sel.chosen || [] }); }
-  // Legacy/integer entry point ("spend N Force worth, engine picks the cheapest
-  // cards") — the engine still accepts it; kept for any caller that only has a number.
-  resolveBlockForce(n) { this.driveStrikeGen(this.pendingGen, n); }
   resolveHadokenRecycle(wantsRecycle) { this.driveStrikeGen(this.pendingGen, wantsRecycle); }
   resolveSustainChoice(wantsSustain) { this.driveStrikeGen(this.pendingGen, wantsSustain); }
   resolveSustainChoicePaid(wantsSustain) { this.driveStrikeGen(this.pendingGen, wantsSustain); }
@@ -1457,7 +1473,7 @@ class GameController {
     if (this.engine.gameOver) { this.mode = 'game_over'; render(); return; }
     const player = this.ai(), opp = this.human();
     const oppPublic = publicInfoOf(opp);
-    const action = chooseAction({ me: player, mePublicFull: player, oppPublic, canExceed: this.engine.canExceed(player), rng: Math.random, randomness: this.randomness, myBoostMods: this.engine.activeBoostMods(player) });
+    const action = chooseAction({ me: player, mePublicFull: player, oppPublic, canExceed: this.engine.canExceed(player), rng: Math.random, randomness: this.randomness, myBoostMods: this.engine.activeBoostMods(player), turnNumber: this.engine.turn });
 
     if (action.type === 'strike') { this.aiInitiateStrike(); return; }
     if (action.type === 'exceed') {
@@ -1470,7 +1486,8 @@ class GameController {
       // actionExceed() already did.
       if (res.mayStrike && Math.random() < 0.7) {
         const dist = this.engine.range(player, opp);
-        const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, this.engine.activeBoostMods(player))).length;
+        const mods = this.engine.activeBoostMods(player);
+        const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, mods)).length;
         if (inRangeCount > 0) { this.aiInitiateStrike(); return; }
       }
       if (res.mayAction && Math.random() < 0.7) { this.aiRunHandToGaugeAction(player); return; }
@@ -1519,7 +1536,8 @@ class GameController {
         // Ken's exceeded action: Close 1, draw 1, then may Strike.
         // Decide whether to chain the Strike (favorable, close range, etc.) or end turn.
         const dist = this.engine.range(player, opp);
-        const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, this.engine.activeBoostMods(player))).length;
+        const mods = this.engine.activeBoostMods(player);
+        const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, mods)).length;
         if (inRangeCount > 0) {
           this.aiInitiateStrike();
           return;
@@ -1547,12 +1565,33 @@ class GameController {
         // (onExceed mayStrike, Ken's Exceeded action), and only when something in
         // hand can actually reach.
         const dist = this.engine.range(player, opp);
-        if (Math.random() < 0.7 && player.hand.some(c => isEffectivelyInRange(c, dist, this.engine.activeBoostMods(player)))) { this.aiInitiateStrike(); return; }
+        const mods = this.engine.activeBoostMods(player);
+        if (Math.random() < 0.7 && player.hand.some(c => isEffectivelyInRange(c, dist, mods))) { this.aiInitiateStrike(); return; }
       }
       this.aiFinishNonStrike();
       return;
     }
     if (action.type === 'move') {
+      if (Number.isInteger(action.targetSpace)) {
+        const targetSpace = action.targetSpace;
+        const movingTowardOpp = (player.pos < opp.pos && targetSpace > player.pos) || (player.pos > opp.pos && targetSpace < player.pos);
+        const dir = movingTowardOpp ? 'advance' : (targetSpace !== player.pos ? 'retreat' : null);
+        if (dir) {
+          const crossed = (player.pos < opp.pos && targetSpace > opp.pos) || (player.pos > opp.pos && targetSpace < opp.pos);
+          const steps = Math.abs(targetSpace - player.pos) - (crossed ? 1 : 0);
+          const force = dir === 'advance' ? this.engine.simulateAdvance(player.pos, opp.pos, steps).force : steps;
+          const uids = this.pickForceUidsForTarget(player, force);
+          if (uids && steps > 0) {
+            this.engine.startRound();
+            this.engine.payForceFromHandOrGauge(player, uids, "CPU's Move");
+            if (dir === 'advance') this.engine.advanceSelfPaid(player, opp, steps);
+            else this.engine.retreatSelfPaid(player, opp, steps);
+            this.log(`CPU moves (${dir}).`, 'move', this.aiId, { amount: steps });
+            this.aiFinishNonStrike();
+            return;
+          }
+        }
+      }
       const dist = this.engine.range(player, opp);
       const dir = dist > action.target ? 'advance' : (dist < action.target ? 'retreat' : null);
       if (dir) {
@@ -1811,6 +1850,7 @@ class GameController {
         myBoostMods: this.engine.activeBoostMods(player), randomness: this.randomness,
         myGaugeCount: this.engine.gaugeCount(player), myExceeded: player.exceeded,
         myCharacterKey: player.characterKey, myEddiePos: player.eddiePos,
+        meFull: player, turnNumber: this.engine.turn,
       });
       aSel = this.engine.resolveStrikeCardSelection(player, selection);
     }

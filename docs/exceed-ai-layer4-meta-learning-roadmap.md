@@ -14,16 +14,16 @@
 
 ## 1. Character-Agnostic State & Card Feature Encoding ($X(s)$)
 
-Every state $s$ (from the acting/AI player's perspective, canonically oriented so the AI's own corner is always space `1` and opponent's corner is space `9` via horizontal symmetry mirroring!) is encoded into **five fixed-schema tensors**:
+Every state $s$ (from the acting/AI player's perspective, canonically oriented so the AI's own corner is always Arena Space `0` and opponent's corner is Arena Space `8` via horizontal symmetry mirroring; `1..9` is UI/prose display only) is encoded into **five fixed-schema tensors**:
 
 ### 1.1 Spatial Arena Grid Tensor: $X_{\text{spatial}} \in \mathbb{R}^{9 \times 18}$
 
-Each of the 9 arena spaces $x \in \{1..9\}$ carries 18 normalized channels:
+Each of the 9 Arena Spaces $x \in \{0..8\}$ carries 18 normalized channels:
 
 | Channels | Feature Group | Encoding Details |
 |---|---|---|
 | `0..1` | Fighter Occupancy | `[is_ai_here, is_opp_here]` (binary) |
-| `2..4` | Geometry & Edges | `[dist_to_center / 4, is_own_corner (x==1), is_opp_corner (x==9)]` |
+| `2..4` | Geometry & Edges | `[dist_to_center / 4, is_own_corner (x==0), is_opp_corner (x==8)]` |
 | `5..6` | Reachable Threat Map | `[ai_hand_can_hit_space_x, opp_belief_threat_mass_at_space_x]` |
 | `7..10` | Spatial Token / Trap Slot A | `[owner (-1/+1/0), trigger_kind_id_norm, dmg_or_push_mag / 5, blocks_or_range_origin]` (e.g., Rachel Lightning Rod, Shovel Knight Dirt Pile, Zato-1 Eddie) |
 | `11..14` | Spatial Token / Trap Slot B | Secondary token/trap on space $x$ (supports multi-token fighters like Jack-O / Arakune / Faust items) |
@@ -160,7 +160,7 @@ SPATIAL_CH = 18
 GLOBAL_DIM = 38
 CARD_DIM = 48
 KIT_DIM = 24
-FIXED_NEUTRAL_ACTIONS = 18  # Move(1..9), Prepare, Change(1..3), Exceed, Reshuffle, Strike, CharAct(L/R)
+FIXED_NEUTRAL_ACTIONS = 18  # Move(0..8), Prepare, Change(1..3), Exceed, Reshuffle, Strike, CharAct(L/R)
 
 
 @dataclass
@@ -180,22 +180,22 @@ class StateEncoder:
     """Projects arbitrary Exceed fighter states into canonical AI-left-oriented tensors."""
 
     def encode_single(self, state, compiled_belief) -> EncodedBatch:
-        # Mirror coordinates if AI stands to the right of opponent so spatial features are symmetric
+        # Mirror coordinates if AI stands to the right of opponent so spatial features are symmetric (0..8 Arena Space)
         mirror = state.ai.space > state.opp.space
-        map_x = (lambda x: 10 - x) if mirror else (lambda x: x)
+        map_x = (lambda x: 8 - x) if mirror else (lambda x: x)
 
         spatial = torch.zeros(SPATIAL_CH, 9, dtype=torch.float32)
-        ai_x, opp_x = map_x(state.ai.space) - 1, map_x(state.opp.space) - 1
+        ai_x, opp_x = map_x(state.ai.space), map_x(state.opp.space)
         spatial[0, ai_x] = 1.0
         spatial[1, opp_x] = 1.0
         for s in range(9):
-            spatial[2, s] = abs((s + 1) - 5) / 4.0
+            spatial[2, s] = abs(s - 4) / 4.0
         spatial[3, 0] = 1.0  # Own corner
         spatial[4, 8] = 1.0  # Opponent corner
 
         # Encode spatial tokens/traps (Rachel Rods, Shovel Knight Dirt, Zato-1 Eddie, Jack-O Servants)
         for tok in state.arena_tokens:
-            tx = map_x(tok.space) - 1
+            tx = map_x(tok.space)
             slot = 7 if spatial[7, tx] == 0.0 else 11
             spatial[slot, tx] = 1.0 if tok.owner == "ai" else -1.0
             spatial[slot + 1, tx] = tok.trigger_type_norm

@@ -137,7 +137,7 @@ const NORMALS = [
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true);
         const after = ctx.attacker.pos < ctx.defender.pos;
-        if (before !== after) { ctx.sideSwapped = true; ctx.attacker._unhittableThisStrike = true; }
+        if (before !== after) { ctx.sideSwapped = true; ctx.attacker.strikeState.unhittable = true; }
         ctx.engine.logMsg(`${ctx.attacker.name}'s Dive advances ${ctx.engine.spaceWord(3)}.${ctx.sideSwapped ? ' [Side swap detected — cannot be hit this Strike]' : ''}`);
       },
     },
@@ -291,7 +291,7 @@ const GG_NORMALS = [
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true);
         const after = ctx.attacker.pos < ctx.defender.pos;
-        if (before !== after) { ctx.sideSwapped = true; ctx.attacker._unhittableThisStrike = true; }
+        if (before !== after) { ctx.sideSwapped = true; ctx.attacker.strikeState.unhittable = true; }
       },
     },
     boost: { force: 0, continuous: false, needsBoostTargetChoice: true, cancelable: true,
@@ -394,7 +394,7 @@ const RYU = [
     },
     critical: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } },
     boost: { force: 0, continuous: true, statMods: {}, ignoreArmorGrant: true,
-      triggersStrike: true, goesToGaugeOnHit: true }
+      triggersStrike: true, toGaugeIfHitThisStrike: true }
   },
   {
     key: 'tatsumaki_ryu', name: 'Tatsumaki Senpukyaku', type: 'special', owner: 'ryu',
@@ -582,7 +582,7 @@ const CAMMY = [
       // After step) — see the range-immunity comment in engine.js's
       // resolveStrikeSteps for why this is handled differently from CQC/Gyro
       // Drive Smasher/Razor's Edge Slicer's set-time immunity.
-      after(ctx) { ctx.attacker._rangeImmuneThisStrike.push(1); },
+      after(ctx) { ctx.attacker.strikeState.rangeImmune.push(1); },
     },
     boost: { force: 0, continuous: true, grantsNormalsBeforeAdvance: 3, sustainIfNoNormalUsed: true }
   },
@@ -748,9 +748,11 @@ const SOL_BADGUY = [
     range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard.\nBefore: Advance 2.',
     boostText: '[+] Advance or Retreat up to 2.',
+    ignoreGuard: true,
     hooks: {
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
     },
+    // DEFERRED: interactive "Advance or Retreat up to 2" boost movement
     boost: { force: 0, continuous: false, cancelable: true, resolve() {} }
   },
   {
@@ -766,8 +768,8 @@ const SOL_BADGUY = [
       },
     },
     boost: { force: 0, continuous: false, cancelable: false, bonusAction: true,
-      // HARD PART: needsHandGaugeChoice — requires ui.js mode to pick a hand card,
-      // move it to Gauge. Deferred. For now, this boost just grants bonusAction.
+      // DEFERRED: needsHandGaugeChoice — requires ui.js mode to pick a hand card,
+      // move it to Gauge. For now, this boost just grants bonusAction.
       resolve() {} }
   },
   {
@@ -782,13 +784,10 @@ const SOL_BADGUY = [
       // (already added to ctx in engine.js) and an after hook that mutates it.
       // For now, can't implement without setting up the exact stats mutation timing.
     },
-    boost: { force: 0, continuous: false, cancelable: true,
-      resolve(ctx) {
-        if (ctx.hitLanded) {
-          ctx.powBonus = (ctx.powBonus || 0) + 1;
-          ctx.engine.draw(ctx.player, 1);
-        }
-      }
+    boost: { force: 0, continuous: true, cancelable: true,
+      statMods: { pow: 1 },
+      nowDraw: 1,
+      advantageIfOpponentStunnedThisStrike: true,
     }
   },
   {
@@ -1056,8 +1055,13 @@ const VEGA = [
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); },
     },
     boost: { force: 0, continuous: false, needsDirectionChoice: true,
-      // HARD PART: "if moved past, add to Gauge" requires tracking side-swap
-      toGaugeIfSideSwapped: true
+      resolve(ctx) {
+        const before = ctx.player.pos < ctx.opponent.pos;
+        if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
+        else if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 3);
+        const after = ctx.player.pos < ctx.opponent.pos;
+        if (before !== after) ctx.gaugeInsteadOfDiscard = true;
+      }
     }
   },
   {
@@ -1070,7 +1074,7 @@ const VEGA = [
     },
     critical: { statMods: { spd: 2 } },
     boost: { force: 2, continuous: false,
-      // HARD PART: needsAnySpaceChoice + edge innate bonus tracking
+      // DEFERRED: needsAnySpaceChoice + edge innate bonus tracking
       needsAnySpaceChoice: true, triggersStrike: true
     }
   },
@@ -1086,8 +1090,13 @@ const VEGA = [
     // `force: 1` is this card's printed FRC cost on the Vega sheet; it was 0 here
     // (card-data audit, 2026-08-17).
     boost: { force: 1, continuous: false, needsDirectionChoice: true,
-      // Uses engine.reviveBestContinuousBoostFromDiscard if side-swapped
-      reviveBoostIfSideSwapped: true
+      resolve(ctx) {
+        const before = ctx.player.pos < ctx.opponent.pos;
+        if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
+        else if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 3);
+        const after = ctx.player.pos < ctx.opponent.pos;
+        if (before !== after) ctx.engine.reviveBestContinuousBoostFromDiscard(ctx.player);
+      }
     }
   },
   {
@@ -1106,7 +1115,8 @@ const VEGA = [
       },
     },
     boost: { force: 1, continuous: true,
-      grantsCritical: true, // Checked in engine.js; all attacks are Critical free
+      rangeMaxBonus: 1,
+      forcesFreeCritical: true, // Checked in engine.js; all attacks are Critical free
       sustainIfNotStunnedCost: 1
     }
   },
@@ -1120,6 +1130,7 @@ const VEGA = [
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 3); },
     },
     boost: { force: 0, continuous: true,
+      statMods: { pow: 1, arm: 1 },
       sustainIfNotStunnedCost: 1
     }
   },
@@ -2705,7 +2716,7 @@ const ANJI = [
     hooks: {
       before(ctx) {
         ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2);
-        if (ctx.attacker._wasHitThisStrike) ctx.powBonus = (ctx.powBonus || 0) + 2;
+        if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 2;
       },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.grantAdvantage(ctx.attacker, 'Fuujin'); },
     },
@@ -2723,7 +2734,7 @@ const ANJI = [
     hooks: {
       before(ctx) {
         ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true);
-        if (ctx.attacker._wasHitThisStrike) ctx.powBonus = (ctx.powBonus || 0) + 2;
+        if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 2;
       },
     },
     boost: { force: 0, continuous: true, statMods: { spd: 1 },
@@ -2795,7 +2806,7 @@ const ANJI = [
     boostText: 'Name a Normal. Strike; the opponent must set that Normal or reveal a hand without it.',
     hooks: {
       before(ctx) {
-        if (ctx.attacker._wasHitThisStrike) {
+        if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
           ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3);
         }
@@ -3146,7 +3157,7 @@ const BAIKEN = [
     liveStatMods(owner) { return owner.hand.length <= 3 ? { arm: 2 } : {}; },
     hooks: {
       before(ctx) {
-        if (ctx.attacker._wasHitThisStrike) {
+        if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
           ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2);
         }
@@ -3960,7 +3971,7 @@ const ZATO = [
     hooks: {
       // `_wasHitThisStrike` is set by the OPPONENT's activation, so this only reads
       // true when their card was faster — exactly what "if you were hit" means here.
-      before(ctx) { if (ctx.attacker._wasHitThisStrike) ctx.powBonus = (ctx.powBonus || 0) + 3; },
+      before(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 3; },
     },
     boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
       resolve(ctx) {
@@ -4114,7 +4125,7 @@ const RAGNA = [
         // (unlike Dive, which sets it to protect itself) — engine.js reads the
         // defender's copy, and after a side swap this attacker is the one whose
         // attack must not connect, so the flag goes on the card's own owner and the
-        // engine's `defender._unhittableThisStrike` check sees it when this card
+        // engine's `defender.strikeState.unhittable` check sees it when this card
         // activates as the attack.
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true);
@@ -4374,7 +4385,7 @@ const NOEL = [
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true);
         const after = ctx.attacker.pos < ctx.defender.pos;
-        if (before !== after) { ctx.sideSwapped = true; ctx.attacker._unhittableThisStrike = true; }
+        if (before !== after) { ctx.sideSwapped = true; ctx.attacker.strikeState.unhittable = true; }
       },
     },
     boost: { force: 0, continuous: true, statMods: { spd: 1 }, toGaugeIfHitThisStrike: true,
@@ -4408,7 +4419,7 @@ const NOEL = [
       // "If you were hit" reads the same wasHit state Hakumen's cards use — see the
       // ctx.defenderHitMe note in engine.js. Draw auto-resolves to the max of 4.
       before(ctx) {
-        if (ctx.attacker._wasHitThisStrike) { ctx.powBonus = (ctx.powBonus || 0) + 4; ctx.engine.draw(ctx.attacker, 4); }
+        if (ctx.attacker.strikeState.wasHit) { ctx.powBonus = (ctx.powBonus || 0) + 4; ctx.engine.draw(ctx.attacker, 4); }
       },
     },
     boost: { force: 0, continuous: false, bonusAction: true, resolve(ctx) { ctx.engine.draw(ctx.player, 2); } },
@@ -4761,7 +4772,7 @@ const BANG = [
     boostText: 'Advance 3. If you Advanced past the opponent this way, Advance or Retreat 1, then draw 1.',
     hooks: {
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); },
-      after(ctx) { if (ctx.attacker._wasHitThisStrike) ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 2); },
+      after(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 2); },
     },
     boost: { force: 0, continuous: false,
       resolve(ctx) {
@@ -4900,7 +4911,7 @@ const PLATINUM = [
     text: 'Hit: If you were hit, the opponent must discard a card at random.',
     boostText: '[+] +2 SPD.\nBefore: Retreat 2.',
     hooks: {
-      hit(ctx) { if (ctx.attacker._wasHitThisStrike) ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
+      hit(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
     },
     boost: { force: 0, continuous: true, statMods: { spd: 2 } },
   },
@@ -5043,7 +5054,7 @@ const HAKUMEN = [
     boostText: '[+] Hit: Advance up to 1. The opponent must discard a card at random.',
     hooks: {
       before(ctx) { if (ctx.engine.spendGaugeIfAble(ctx.attacker, 1)) ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); },
-      hit(ctx) { if (ctx.attacker._wasHitThisStrike) ctx.powBonus = (ctx.powBonus || 0) + 2; },
+      hit(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 2; },
     },
     boost: { force: 0, continuous: true,
       onHit(ctx) {
@@ -5081,7 +5092,7 @@ const HAKUMEN = [
     stunImmuneBase: true,
     hooks: {
       before(ctx) {
-        if (ctx.attacker._wasHitThisStrike) {
+        if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
           ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8);
         }
@@ -5114,9 +5125,7 @@ const CHARACTERS = {
     specials: RAGNA,
     innateText: 'Innate — Hit: Gain 1 life.',
     exceedText: 'Exceeded — When you Exceed, draw 1, Close up to 1, and Strike.\nHit: +1 POW and gain 2 life.',
-    blurb: 'Lifesteal bruiser. Every hit heals, and Exceeding turns that into a real swing.',
-    silhouettePose: 'grounded_menace',
-    overdrive: {
+    blurb: 'Lifesteal bruiser. Every hit heals, and Exceeding turns that into a real swing.',    overdrive: {
       text: 'Take 1 non-lethal damage, then you may Push 1.',
       options() {
         return [
@@ -5150,14 +5159,12 @@ const CHARACTERS = {
     specials: JIN,
     innateText: 'Innate — When you set your attack, you may spend [1] to gain "After: Draw 2."',
     exceedText: 'Exceeded — When you Exceed, draw 2.\nHit: The opponent must discard a card. After: Draw 1.',
-    blurb: 'Card-advantage zoner. Pays Gauge to refill, freezes the opponent in place.',
-    silhouettePose: 'grounded_menace',
-    overdrive: { text: 'Draw 1.', resolve(engine, player) { engine.draw(player, 1); } },
+    blurb: 'Card-advantage zoner. Pays Gauge to refill, freezes the opponent in place.',    overdrive: { text: 'Draw 1.', resolve(engine, player) { engine.draw(player, 1); } },
     setTimeOption: {
       text: 'Spend 1 Gauge for "After: Draw 2"',
       cost: { gauge: 1 },
       apply(engine, player) {
-        player._setOptionAfter = (eng, p) => eng.draw(p, 2);
+        player.strikeState.setOptionAfter = (eng, p) => eng.draw(p, 2);
       },
     },
     *attackHitHook(ctx) {
@@ -5179,9 +5186,7 @@ const CHARACTERS = {
     specials: NOEL,
     innateText: 'Innate — When you initiate a Strike, you may spend [1] for +1 SPD.',
     exceedText: 'Exceeded — When you initiate a Strike, your attack has +1 SPD and "Hit: Advantage."',
-    blurb: 'Speed-race gunner. Buys initiative with Gauge, then keeps the turn.',
-    silhouettePose: 'leaning_kick',
-    overdrive: {
+    blurb: 'Speed-race gunner. Buys initiative with Gauge, then keeps the turn.',    overdrive: {
       text: 'Close or Retreat 1.',
       options() {
         return [
@@ -5198,7 +5203,7 @@ const CHARACTERS = {
       text: 'Spend 1 Gauge for +1 SPD',
       cost: { gauge: 1 },
       initiatorOnly: true,
-      apply(engine, player) { player._setOptionStatMods = { spd: 1 }; },
+      apply(engine, player) { player.strikeState.setOptionStatMods = { spd: 1 }; },
     },
     attackStatMods(player, card, info) {
       return (player.exceeded && info.initiator) ? { spd: 1 } : {};
@@ -5215,9 +5220,7 @@ const CHARACTERS = {
     specials: TAOKAKA,
     innateText: 'Innate — When you initiate a Strike with a Wild Swing, your attack has "Before: Advance 2, then you may spend {1} to Retreat 2."',
     exceedText: 'Exceeded — When you initiate a Strike, your attack has "Before: Advance 2, then you may Retreat 2."',
-    blurb: 'Chaotic rushdown. Wild Swings lunge in; Exceeding makes every attack lunge.',
-    silhouettePose: 'leaning_kick',
-    overdrive: {
+    blurb: 'Chaotic rushdown. Wild Swings lunge in; Exceeding makes every attack lunge.',    overdrive: {
       text: 'Advance or Retreat 2.',
       options() {
         return [
@@ -5302,7 +5305,7 @@ const CHARACTERS = {
       // "When you set your attack" — offered defending as well as initiating, unlike
       // Noel's initiator-only option. "+3~4" auto-resolves to the max, per this
       // file's "up to X" convention.
-      apply(engine, player) { player._setOptionRangeBonus = 4; },
+      apply(engine, player) { player.strikeState.setOptionRangeBonus = 4; },
     },
     attackRangeBonus(player) { return player.exceeded ? 4 : 0; },
     *attackHitHook(ctx) {
@@ -5416,9 +5419,7 @@ const CHARACTERS = {
     specials: PLATINUM,
     innateText: 'Innate — Cleanup: You may reveal the top card of your deck. If it has a Continuous Boost, play that boost, then sustain it; otherwise, discard it.',
     exceedText: 'Exceeded — Cleanup: You may reveal the top card of your deck. If it has a Continuous Boost, play that boost; otherwise, discard it. In either case, you may sustain one of your Continuous Boosts.',
-    blurb: 'Boost engine. Every exchange flips a free Continuous Boost off the top of her deck, and Exceeding lets her keep the one she already likes.',
-    silhouettePose: 'summoner_stance',
-    overdrive: {
+    blurb: 'Boost engine. Every exchange flips a free Continuous Boost off the top of her deck, and Exceeding lets her keep the one she already likes.',    overdrive: {
       text: 'If the discarded card has a Continuous Boost, play that boost.',
       // `card` is the card beginOverdriveTick just moved from Overdrive to the discard
       // — the same signature Bang's Overdrive uses; see engine.resolveOverdriveEffect.
@@ -5533,9 +5534,7 @@ const CHARACTERS = {
     revertOnNonStrikeTurn: true,
     innateText: 'Innate — After: If the opponent is stunned, you may Exceed (at no cost).',
     exceedText: 'Exceeded — Your Wild Swings have +1POW and +1SPD. When you end a turn without Striking, Revert.',
-    blurb: 'Bruiser built around Exceed tempo. Exceed grants mobility on normals.',
-    silhouettePose: 'grounded_menace',
-    wildSwingStatMods(player) {
+    blurb: 'Bruiser built around Exceed tempo. Exceed grants mobility on normals.',    wildSwingStatMods(player) {
       // Exceed: Wild Swings get +1POW and +1SPD
       return { pow: 1, spd: 1 };
     },
@@ -5712,9 +5711,7 @@ const CHARACTERS = {
     key: 'sol', name: 'Sol Badguy', exceedCost: 3, isStreetFighter: false,
     innateText: 'Innate — When you Strike, if you Canceled this turn, +1 POW.',
     exceedText: 'Exceeded — When you Strike, if you Canceled this turn, +2 POW.',
-    blurb: 'GGST rushdown with Cancel chains. Gun Flame and other Cancelable Boosts loop into each other.',
-    silhouettePose: 'grounded_punch',
-    normals: GG_NORMALS, // Uses GG-set Normals, not base NORMALS
+    blurb: 'GGST rushdown with Cancel chains. Gun Flame and other Cancelable Boosts loop into each other.',    normals: GG_NORMALS, // Uses GG-set Normals, not base NORMALS
     specials: SOL_BADGUY,
     // Innate: "if you Canceled this turn" is passive tracking via player.canceledThisTurn flag
     powBonusIfCanceledThisTurn(player) { return player.exceeded ? 2 : 1; },
@@ -5724,9 +5721,7 @@ const CHARACTERS = {
     key: 'cviper', name: 'C. Viper', exceedCost: 3, isStreetFighter: true,
     innateText: 'Innate — After you resolve a Continuous Boost, you may Strike.',
     exceedText: 'Exceeded — When you Exceed, draw 5.\nAfter you resolve a Continuous Boost, you may Strike. If you do, your attack is Critical.',
-    blurb: 'Continuous Boost engine. Play Boosts to unlock follow-up Strikes.',
-    silhouettePose: 'leaning_sidekick',
-    specials: CVIPER,
+    blurb: 'Continuous Boost engine. Play Boosts to unlock follow-up Strikes.',    specials: CVIPER,
     mayStrikeAfterContinuousBoost: true, // Triggers maybeAskMayStrike in ui.js doBoost continuation
     onExceed(engine, player, opponent) { engine.draw(player, 5); },
   },
@@ -5735,9 +5730,7 @@ const CHARACTERS = {
     key: 'vega', name: 'Vega', exceedCost: 3, isStreetFighter: true,
     innateText: 'Innate — If you are at the edge of the arena when you set your attack, your Specials and Ultras have +2 POW.',
     exceedText: 'Exceeded — If you are at the edge of the arena when you set your attack, your Specials and Ultras have +3 POW and +1 SPD.',
-    blurb: 'Edge control. Specials gain bonuses at arena edges.',
-    silhouettePose: 'leaning_handstand',
-    specials: VEGA,
+    blurb: 'Edge control. Specials gain bonuses at arena edges.',    specials: VEGA,
     specialsUltrasStatModsIfAtEdge(player) {
       return player.exceeded ? { pow: 3, spd: 1 } : { pow: 2 };
     },
@@ -5749,9 +5742,7 @@ const CHARACTERS = {
     key: 'akuma', name: 'Akuma', exceedCost: 2, isStreetFighter: true,
     innateText: 'Innate — Your attacks have "Critical: Both players have +2 POW."',
     exceedText: 'Exceeded — Your attacks have "Critical: Both players have +3 POW."',
-    blurb: 'Mutual damage scaling. Critical bonuses apply to both players.',
-    silhouettePose: 'grounded_ready',
-    specials: AKUMA,
+    blurb: 'Mutual damage scaling. Critical bonuses apply to both players.',    specials: AKUMA,
     // Data-driven extension point (see engine.js's liveStats) — same
     // function-per-player shape as Zangief's extraCriticalStatsIfOpponentAtRange1
     // and Vega's specialsUltrasStatModsIfAtEdge, but MUTUAL: unlike those two
@@ -5768,9 +5759,7 @@ const CHARACTERS = {
     key: 'guile', name: 'Guile', exceedCost: 2, isStreetFighter: true,
     innateText: 'Innate — When using a Change Cards action, the first Gauge spent generates an extra {2}.',
     exceedText: 'Exceeded — When using a Change Cards action, the first Gauge spent generates an extra {2}.\nIf you spent Gauge this way, you may then Strike (after drawing cards).',
-    blurb: 'Resource generator. Change Cards grants bonus Force and post-Change Strike.',
-    silhouettePose: 'grounded_stance',
-    specials: GUILE,
+    blurb: 'Resource generator. Change Cards grants bonus Force and post-Change Strike.',    specials: GUILE,
     // UNBLOCKED 2026-08-17 by the source rulebook (Exceed Comprehensive Rulebook —
     // the Actions table and "Force Generation"), which settles what the earlier
     // BLOCKED note here could not decide from the card text alone:
@@ -5796,9 +5785,7 @@ const CHARACTERS = {
     key: 'chunli', name: 'Chun-Li', exceedCost: 3, isStreetFighter: true,
     innateText: 'Innate — After you resolve a Boost, you may Retreat 1.\n(If you would Strike, retreat first).',
     exceedText: 'Exceeded — (same)\nFor each Continuous Boost you have in play, your attacks have +0~1 RNG.',
-    blurb: 'Boost momentum and Range scaling. Boosts grant positioning choices.',
-    silhouettePose: 'leaning_kick',
-    specials: CHUNLI,
+    blurb: 'Boost momentum and Range scaling. Boosts grant positioning choices.',    specials: CHUNLI,
     // "After you resolve a Boost, you may Retreat 1" — implemented 2026-08-16 via
     // ui.js's maybeAskRetreatAfterBoost (human) / AI heuristic in doBoost's AI path.
     mayRetreatAfterBoost: true,
@@ -5813,9 +5800,7 @@ const CHARACTERS = {
     key: 'dan', name: 'Dan', exceedCost: 2, isStreetFighter: true,
     innateText: 'Innate — Your Wild Swings have "Critical: +1 POW and +1 SPD."',
     exceedText: 'Exceeded — (same)\nWhen drawing a card at end of turn, you may draw from the bottom or top of your deck. You may then discard a card.',
-    blurb: 'Wild Swing scaling and flexible deck draws. Goofy taunts.',
-    silhouettePose: 'grounded_laugh',
-    specials: DAN,
+    blurb: 'Wild Swing scaling and flexible deck draws. Goofy taunts.',    specials: DAN,
     // "Your Wild Swings have 'Critical: +1POW and +1SPD'" — implemented 2026-08-16 via
     // engine.js's liveStats (gated on `fromWildSwing`, the same param Leo's
     // wildSwingStatMods already uses) + ai.js's hasRealCriticalValue/
@@ -5835,9 +5820,7 @@ const CHARACTERS = {
     key: 'mbison', name: 'M. Bison', exceedCost: 3, isStreetFighter: true,
     innateText: 'Innate — Action: Add a card from hand to Gauge and draw.',
     exceedText: 'Exceeded — Action: Add up to 3 cards from hand to Gauge and draw that many cards.\nWhen you Exceed, you may take this action immediately.',
-    blurb: 'Custom resource action. Exceed grants immediate hand-to-Gauge conversion.',
-    silhouettePose: 'grounded_menace',
-    specials: MBISON,
+    blurb: 'Custom resource action. Exceed grants immediate hand-to-Gauge conversion.',    specials: MBISON,
     // "Add N cards from hand to Gauge, draw N" — a real multi-card-selection choice
     // the generic `action.resolve(engine, player, opponent, direction)` shape can't
     // express (no way to pass in which cards were picked). New `needsHandToGaugeChoice`
@@ -5867,9 +5850,7 @@ const CHARACTERS = {
     key: 'sagat', name: 'Sagat', exceedCost: 3, isStreetFighter: true,
     innateText: 'Innate — When you initiate a Strike, you may place your attack face up for +1 SPD.',
     exceedText: 'Exceeded — When you Exceed, draw 2 and Retreat up to 2.\nWhen you initiate a Strike, you may place your attack face up for +1 POW and +1 SPD.',
-    blurb: 'Face-up strike mechanic for stat bonuses. Exceeded boosts initiative.',
-    silhouettePose: 'grounded_scar',
-    specials: SAGAT,
+    blurb: 'Face-up strike mechanic for stat bonuses. Exceeded boosts initiative.',    specials: SAGAT,
     canGoFaceUp: true,
     faceUpStatBonus(player) {
       return player.exceeded ? { pow: 1, spd: 1 } : { spd: 1 };
@@ -5886,9 +5867,7 @@ const CHARACTERS = {
     key: 'chipp', name: 'Chipp Zanuff', exceedCost: 2, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — After: You may Advance or Retreat 1.',
     exceedText: 'Exceeded — When you Cancel, you may draw 1.\nAfter: You may Advance or Retreat 1.',
-    blurb: 'Hit-and-run rushdown. Every exchange ends with him repositioning, and Cancels refill his hand.',
-    silhouettePose: 'airborne_dash',
-    specials: CHIPP,
+    blurb: 'Hit-and-run rushdown. Every exchange ends with him repositioning, and Cancels refill his hand.',    specials: CHIPP,
     onCancel(engine, player, opponent) {
       // Chipp's Exceed: "When you Cancel, you may draw 1."
       if (player.exceeded) engine.draw(player, 1);
@@ -5914,9 +5893,7 @@ const CHARACTERS = {
     key: 'ky', name: 'Ky Kiske', exceedCost: 2, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — The first time each turn you Cancel, you may Advance or Retreat 1.',
     exceedText: 'Exceeded — The first time each turn you Cancel, draw 1, then you may Advance or Retreat 1.',
-    blurb: 'Balanced zoning. Cancel draw reinforces action economy.',
-    silhouettePose: 'raised_sword',
-    specials: KY,
+    blurb: 'Balanced zoning. Cancel draw reinforces action economy.',    specials: KY,
     onCancel(engine, player, opponent) {
       // Ky: first-time-per-turn gate on Cancel responses.
       if (!player.firstCancelThisTurn) return;
@@ -5934,16 +5911,14 @@ const CHARACTERS = {
     key: 'anji', name: 'Anji Mito', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — After setting your attack, you may spend {1}. If you do, -1 SPD and +2 GRD.',
     exceedText: 'Exceeded — When you Exceed, draw 1 and Strike.\nAfter setting your attack, you may spend {1}. If you do, -1 SPD and +2 ARM.',
-    blurb: 'Defensive counter-puncher. Every attack can buy Guard now and Armor once Exceeded.',
-    silhouettePose: 'fan_pose',
-    specials: ANJI,
+    blurb: 'Defensive counter-puncher. Every attack can buy Guard now and Armor once Exceeded.',    specials: ANJI,
     // Both halves of his Innate/Exceed are the same paid set-time decision; only the
     // payoff stat changes, so one setTimeOption covers both (see engine.applySetTimeOption).
     setTimeOption: {
       text: 'Spend 1 Force for -1 SPD and +2 GRD/ARM',
       cost: { force: 1 },
       apply(engine, player) {
-        player._setOptionStatMods = player.exceeded ? { spd: -1, arm: 2 } : { spd: -1, grd: 2 };
+        player.strikeState.setOptionStatMods = player.exceeded ? { spd: -1, arm: 2 } : { spd: -1, grd: 2 };
       },
     },
     onExceed(engine, player, opponent) {
@@ -5956,14 +5931,12 @@ const CHARACTERS = {
     key: 'may', name: 'May', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — When you initiate a Strike, you may spend {1}. If you do, +1 POW.',
     exceedText: 'Exceeded — When you Exceed, draw 2 and Strike.\nWhen you initiate a Strike, you may spend {1}. If you do, +2 POW.',
-    blurb: 'Aggressive anchor-swinger. Initiating is always worth a Force for extra Power.',
-    silhouettePose: 'anchor_ready',
-    specials: MAY,
+    blurb: 'Aggressive anchor-swinger. Initiating is always worth a Force for extra Power.',    specials: MAY,
     setTimeOption: {
       text: 'Spend 1 Force for +POW',
       cost: { force: 1 },
       initiatorOnly: true,
-      apply(engine, player) { player._setOptionStatMods = { pow: player.exceeded ? 2 : 1 }; },
+      apply(engine, player) { player.strikeState.setOptionStatMods = { pow: player.exceeded ? 2 : 1 }; },
     },
     onExceed(engine, player, opponent) {
       engine.draw(player, 2);
@@ -5975,16 +5948,14 @@ const CHARACTERS = {
     key: 'ramlethal', name: 'Ramlethal Valentine', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — After setting your attack, you may spend {2}. If you do, +0~1 RNG.',
     exceedText: 'Exceeded — When you Exceed, draw 3.\nAfter setting your attack, you may spend {2}. If you do, +0~1 RNG and +1 POW.',
-    blurb: 'Range-adaptive swordfighter. Two Force stretches any attack a space further.',
-    silhouettePose: 'sword_ready',
-    specials: RAMLETHAL,
+    blurb: 'Range-adaptive swordfighter. Two Force stretches any attack a space further.',    specials: RAMLETHAL,
     setTimeOption: {
       text: 'Spend 2 Force for +0~1 RNG',
       cost: { force: 2 },
       // "+0~1" auto-resolves to +1, per this codebase's "up to X" convention.
       apply(engine, player) {
-        player._setOptionRangeBonus = 1;
-        if (player.exceeded) player._setOptionStatMods = { pow: 1 };
+        player.strikeState.setOptionRangeBonus = 1;
+        if (player.exceeded) player.strikeState.setOptionStatMods = { pow: 1 };
       },
     },
     onExceed(engine, player, opponent) {
@@ -6000,9 +5971,7 @@ const CHARACTERS = {
     specials: NAGORIYUKI,
     innateText: 'Innate — When you Reshuffle, Exceed at end of turn.\nYour Specials have "Cleanup: Draw 4. Discard 2."',
     exceedText: 'Exceeded — Your Specials are invalid. Your Normals have +1 POW and "Cleanup: Lose all Armor. Take 2 non-lethal damage."',
-    blurb: 'Blood Rage samurai. Reshuffling forces him into an Exceed that locks out his own Specials.',
-    silhouettePose: 'blood_armor',
-    // He has no printed Exceed cost and cannot take the ordinary Exceed action — the
+    blurb: 'Blood Rage samurai. Reshuffling forces him into an Exceed that locks out his own Specials.',    // He has no printed Exceed cost and cannot take the ordinary Exceed action — the
     // only way in is his own Reshuffle trigger below (the sheet's Notes column says so
     // explicitly). `canExceedAction: false` is read by engine.canExceed.
     canExceedAction: false,
@@ -6030,9 +5999,7 @@ const CHARACTERS = {
     key: 'baiken', name: 'Baiken', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — [1] Action: Pull 2 without Pulling past yourself. Strike.',
     exceedText: 'Exceeded — [1] Action: Pull 2. Strike. +1 POW.',
-    blurb: 'Counter-attacking swordmaster. Drags the opponent into range, and thrives on an empty hand.',
-    silhouettePose: 'sword_drawn',
-    specials: BAIKEN,
+    blurb: 'Counter-attacking swordmaster. Drags the opponent into range, and thrives on an empty hand.',    specials: BAIKEN,
     actionStrikePowBonus: 1, // Exceed action Strike gets +1POW
     actionForceCost: 1,
     action: {
@@ -6066,9 +6033,7 @@ const CHARACTERS = {
     key: 'faust', name: 'Faust', exceedCost: 2, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — Action: Boost with the top card of your deck (face up, cannot be Canceled). Strike.',
     exceedText: 'Exceeded — Action: Reveal the top 2 cards of your deck. Boost with one of them (cannot be Canceled). Strike.',
-    blurb: 'Wildcard doctor. Every action throws whatever the deck hands him, then swings.',
-    silhouettePose: 'doctor_pose',
-    specials: FAUST,
+    blurb: 'Wildcard doctor. Every action throws whatever the deck hands him, then swings.',    specials: FAUST,
     action: {
       needsDirection: false,
       // "Boost with the top card of your deck (Exceeded: reveal 2, use one), then
@@ -6102,9 +6067,7 @@ const CHARACTERS = {
     key: 'giovanna', name: 'Giovanna', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — Action: Strike with "Hit: Draw 1."',
     exceedText: 'Exceeded — When you Exceed, you may add a card from your hand to your Gauge.\n[1] Action: Strike with +1 POW and "Hit: Draw 2."',
-    blurb: 'Wind-spirit rushdown. Her action is a free Strike that always pays out on a hit.',
-    silhouettePose: 'summoner_stance',
-    specials: GIOVANNA,
+    blurb: 'Wind-spirit rushdown. Her action is a free Strike that always pays out on a hit.',    specials: GIOVANNA,
     actionStrikePowBonus: 1, // Exceed action Strike gets +1POW
     // NOTE: unlike Baiken/I-No/Jack-O, Giovanna's action is only [1] Force when
     // Exceeded (Innate is free) — `actionForceCost` is a flat always-charged field,
@@ -6149,9 +6112,7 @@ const CHARACTERS = {
     key: 'ino', name: 'I-No', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — [1] Action: Advance 2. Strike.',
     exceedText: 'Exceeded — [1] Action: Advance 2. Strike with +1 POW.',
-    blurb: 'Guitar-wielding momentum striker. Closes two spaces and swings in one action.',
-    silhouettePose: 'guitar_ready',
-    specials: INO,
+    blurb: 'Guitar-wielding momentum striker. Closes two spaces and swings in one action.',    specials: INO,
     actionStrikePowBonus: 1, // Exceed action Strike gets +1POW
     actionForceCost: 1,
     action: {
@@ -6173,9 +6134,7 @@ const CHARACTERS = {
     key: 'jacko', name: 'Jack-O', exceedCost: 2, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — {1} Action: Play a Continuous Boost from your hand (you cannot cancel it). Strike.',
     exceedText: 'Exceeded — When you Exceed, draw 3.\n{1} Action: Play a Continuous Boost from your hand or Gauge (you cannot cancel it). Strike.',
-    blurb: 'Puppet master. Sets a servant down and attacks behind it; her cards scale off boosts in play.',
-    silhouettePose: 'puppet_stance',
-    specials: JACKO,
+    blurb: 'Puppet master. Sets a servant down and attacks behind it; her cards scale off boosts in play.',    specials: JACKO,
     actionForceCost: 1,
     onExceed(engine, player, opponent) {
       engine.draw(player, 3);
@@ -6223,9 +6182,7 @@ const CHARACTERS = {
     key: 'happychaos', name: 'Happy Chaos', exceedCost: 3, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — Hit: You may seal an Ultra from your hand. If you do, +1 POW and Advantage.',
     exceedText: 'Exceeded — When you Exceed, Strike with Deus Ex Machina. Revert during cleanup.',
-    blurb: 'Gunslinger who spends his own deck as ammunition — sealed cards come back all at once.',
-    silhouettePose: 'chaos_stance',
-    specials: HAPPYCHAOS,
+    blurb: 'Gunslinger who spends his own deck as ammunition — sealed cards come back all at once.',    specials: HAPPYCHAOS,
     // Steady Aim is the one card whose text lets him initiate face up (Sagat's
     // mechanic); `canGoFaceUp` is checked per card so it doesn't offer on the rest.
     canGoFaceUp(card) { return !!(card && card.canInitiateFaceUp); },
@@ -6246,12 +6203,27 @@ const CHARACTERS = {
       ctx.engine.grantAdvantage(player, "Happy Chaos's Innate");
     },
     onExceed(engine, player) {
-      // "Strike with Deus Ex Machina" — the card is put in hand so it can actually be
+      // "Strike with Deus Ex Machina" — move the single copy into hand so it can be
       // set, and `revertPending` Reverts him at the end of that Strike's cleanup.
       // DEFERRED: the Strike is offered, not forced to use this specific card (the
       // strike-selection path has no "you must set this card" shape).
-      const dem = HAPPYCHAOS.find(c => c.key === 'hc_deus_ex_machina');
-      player.hand.push({ ...dem, uid: 'dem' + player.id });
+      const key = 'hc_deus_ex_machina';
+      let card = player.hand.find(c => c.key === key);
+      if (!card) {
+        for (const zone of ['discard', 'gauge', 'sealedCards', 'overdrive']) {
+          const idx = (player[zone] || []).findIndex(c => c.key === key);
+          if (idx !== -1) { [card] = player[zone].splice(idx, 1); break; }
+        }
+        if (!card) {
+          const bIdx = player.boostsInPlay.findIndex(b => b.card && b.card.key === key);
+          if (bIdx !== -1) card = player.boostsInPlay.splice(bIdx, 1)[0].card;
+        }
+        if (!card) {
+          const dem = HAPPYCHAOS.find(c => c.key === key);
+          card = { ...dem, uid: engine.nextUid() };
+        }
+        player.hand.push(card);
+      }
       player.revertPending = true;
       engine.logMsg(`${player.name} takes Deus Ex Machina in hand and will Revert after this Strike.`);
       return { mayStrike: true };
@@ -6273,9 +6245,7 @@ const CHARACTERS = {
     key: 'zato1', name: 'Zato-1', exceedCost: 2, isStreetFighter: false, normals: GG_NORMALS,
     innateText: 'Innate — Eddie begins out of play.\nYour Normals have "After: You may place Eddie in a space within this attack\'s Range."\nWhile Eddie is in play, your Specials and Ultras calculate Range from Eddie and have "Hit: Advantage." and "Cleanup: Remove Eddie from play."',
     exceedText: 'Exceeded — Your Normals have "After: You may place Eddie in any space."',
-    blurb: 'Puppet zoner. Plant Eddie where the opponent is standing and every Special reaches from there instead of from Zato.',
-    silhouettePose: 'puppet_master',
-    specials: ZATO,
+    blurb: 'Puppet zoner. Plant Eddie where the opponent is standing and every Special reaches from there instead of from Zato.',    specials: ZATO,
     usesEddie: true,
     specialsRangeFromEddie: true,
     // "Your Normals have 'After: You may place Eddie in a space within this attack's
@@ -6329,9 +6299,7 @@ const CHARACTERS = {
     maxHandSize: 9,
     innateText: 'Innate — Your maximum hand size is 9.\nDraw 2 additional cards in your starting hand (before mulligan).',
     exceedText: 'Exceeded — When you Exceed, draw 2.\nYour maximum hand size is 9.\nYour Specials have "Hit: Draw 2."',
-    blurb: 'Coffin-swinging heavyweight. Holds nine cards, so every Behemoth Typhoon variant is always an option.',
-    silhouettePose: 'briefcase_ready',
-    specials: GOLDLEWIS,
+    blurb: 'Coffin-swinging heavyweight. Holds nine cards, so every Behemoth Typhoon variant is always an option.',    specials: GOLDLEWIS,
     onStartingHand(engine, player) {
       engine.draw(player, 2);
     },
@@ -6343,12 +6311,6 @@ const CHARACTERS = {
     },
   },
 }
-// direction: Seth is drawn from a different card set/design space than the
-// rest of this Street Fighter batch and is explicitly out of scope for this
-// pass — not selectable, not implemented, not to be worked on. His card data
-// (SETH array above) is left in place for potential future use but is inert:
-// nothing references it, so it can't be picked (including by randomized
-// test harnesses that iterate Object.keys(CHARACTERS)).
 
 // Every card definition (Normals + every character's Specials/Ultras), for lookups
 // that need to resolve a card by key without caring which character owns it (e.g.

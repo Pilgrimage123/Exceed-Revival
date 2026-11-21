@@ -120,7 +120,6 @@ export function runFourTurnSimulationTrace(seed = 20261121): FourTurnSimulationR
       fromDist: 3,
       toDist: 1,
       forceSpent: 2,
-      discardedKeys: ['block', 'dive'],
     },
     turn1Board,
   );

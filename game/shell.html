@@ -400,7 +400,6 @@
       <p>Force (the cost of Moving or Boosting) is paid by throwing cards away, too — your hand, Gauge, position, and Life are all one resource loop.</p>
     </div>
     <button class="quickstart-btn" onclick="quickStart()">First time playing? Quick Start — Ryu vs Ken, easiest CPU</button>
-    <div id="charSelectNotice" role="status" aria-live="polite" style="display:none;margin:8px auto 0;max-width:520px;padding:8px 12px;border-radius:8px;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.45);color:#fecaca;font-size:13px;"></div>
     <div id="charCards"><!-- populated by renderCharSelect() once CHARACTERS is loaded --></div>
   </div>
   <div class="char-select" id="aiCharSelect" style="display:none;">
@@ -409,7 +408,6 @@
     <p style="max-width:520px;color:var(--text-dim);font-size:13px;">
       Pick who the CPU plays. Mirror matches (same fighter on both sides) are allowed.
     </p>
-    <div id="aiCharSelectNotice" role="status" aria-live="polite" style="display:none;margin:8px auto 0;max-width:520px;padding:8px 12px;border-radius:8px;background:rgba(248,113,113,0.14);border:1px solid rgba(248,113,113,0.45);color:#fecaca;font-size:13px;"></div>
     <div class="char-cards" id="aiCharCards"><!-- populated by renderAiCharSelect() --></div>
     <button class="cancel-btn" style="max-width:230px;" onclick="backToOwnCharSelect()">← Back</button>
   </div>
@@ -486,10 +484,6 @@ function toggleCpuEngine(){
 // Characters that are not yet fully playable (based on Phase 1 implementation).
 // Single source of truth for both fighter-select screens and both selectXChar
 // guards below \u2014 do not fork this into a second copy (see HANDOFF.md \u00a76).
-const UNFINISHED_CHARACTER_NOTES = {
-  'seth': 'Strike action + non-lethal damage not yet implemented',
-};
-const UNFINISHED_CHARACTER_KEYS = Object.keys(UNFINISHED_CHARACTER_NOTES);
 // Beginner roster decision, shared with CORE (see onboarding_contract.md) — these
 // four, in this exact order, are the only fighters that ever appear in the
 // "Recommended for beginners" section, and Quick Start always sets ryu/ken.
@@ -500,40 +494,22 @@ const RECOMMENDED_BEGINNER_KEYS = ['ryu', 'ken', 'cammy', 'zangief'];
 let rosterExpanded = false;
 function fighterCardHTML(c, onclick, isRecommended){
   const hasPhoto = !!FIGHTER_PHOTOS[c.key];
-  const isUnfinished = c.key in UNFINISHED_CHARACTER_NOTES;
-  const unfinishedNote = UNFINISHED_CHARACTER_NOTES[c.key] || '';
   return `
-    <div class="fighter-card${isUnfinished ? ' fighter-card-unfinished' : ''}" onclick="${onclick}">
+    <div class="fighter-card" onclick="${onclick}">
       <div class="fighter-card-bg${hasPhoto ? '' : ' pictogram-bg'}">${fighterSilhouette(c.key)}</div>
       <div class="fighter-card-scrim"></div>
-      ${isUnfinished ? `<div class="fighter-card-unfinished-badge">⚠️ Unfinished</div>` : ''}
       ${isRecommended ? `<div class="fighter-card-rec-badge">Recommended</div>` : ''}
       <div class="fighter-card-text">
         <h2 class="fighter-card-name" style="color:#f87171;">${esc(c.name)}</h2>
-        <p class="fighter-card-blurb">${isUnfinished ? `<em style="color:#ff9999;">${esc(unfinishedNote)}</em>` : esc(c.blurb || '')}</p>
+        <p class="fighter-card-blurb">${esc(c.blurb || '')}</p>
       </div>
     </div>`;
 }
-// Shared by both screens below: everyone except the recommended four, finished
-// fighters before any flagged unfinished ones (unfinished never appear in
-// the recommended set — see RECOMMENDED_BEGINNER_KEYS above).
 function nonRecommendedRoster(chars){
   const recSet = new Set(RECOMMENDED_BEGINNER_KEYS);
   const rest = chars.filter(c => !recSet.has(c.key));
-  rest.sort((a, b) => {
-    const aFinished = !UNFINISHED_CHARACTER_KEYS.includes(a.key);
-    const bFinished = !UNFINISHED_CHARACTER_KEYS.includes(b.key);
-    if (aFinished !== bFinished) return aFinished ? -1 : 1;
-    return a.name.localeCompare(b.name);
-  });
+  rest.sort((a, b) => a.name.localeCompare(b.name));
   return rest;
-}
-function showSelectNotice(elementId, message){
-  const el = document.getElementById(elementId);
-  if (!el) return;
-  if (!message) { el.style.display = 'none'; el.textContent = ''; return; }
-  el.textContent = message;
-  el.style.display = 'block';
 }
 function renderCharSelect(){
   const chars = Object.values(CHARACTERS);
@@ -570,13 +546,7 @@ function renderAiCharSelect(){
   container.innerHTML = ordered.map(c => fighterCardHTML(c, `selectAiCharacter('${c.key}')`)).join('');
 }
 function selectCharacter(charKey){
-  // Don't allow selecting unfinished characters (non-blocking inline notice).
-  if (UNFINISHED_CHARACTER_KEYS.includes(charKey)) {
-    const name = CHARACTERS[charKey] ? CHARACTERS[charKey].name : charKey;
-    showSelectNotice('charSelectNotice', `${name} is not yet fully implemented.`);
-    return;
-  }
-  showSelectNotice('charSelectNotice', '');
+  if (!CHARACTERS[charKey]) return;
   pendingChar = charKey;
   document.getElementById('yourPickLine').textContent = `You picked: ${CHARACTERS[charKey].name}`;
   renderAiCharSelect();
@@ -584,13 +554,7 @@ function selectCharacter(charKey){
   document.getElementById('aiCharSelect').style.display = 'flex';
 }
 function selectAiCharacter(charKey){
-  // Don't allow selecting unfinished characters (non-blocking inline notice).
-  if (UNFINISHED_CHARACTER_KEYS.includes(charKey)) {
-    const name = CHARACTERS[charKey] ? CHARACTERS[charKey].name : charKey;
-    showSelectNotice('aiCharSelectNotice', `${name} is not yet fully implemented.`);
-    return;
-  }
-  showSelectNotice('aiCharSelectNotice', '');
+  if (!CHARACTERS[charKey]) return;
   pendingAiChar = charKey;
   const oppLine = document.getElementById('opponentLine');
   oppLine.textContent = `Your opponent: ${CHARACTERS[pendingAiChar].name}`;

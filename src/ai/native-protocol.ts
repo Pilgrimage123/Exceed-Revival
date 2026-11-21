@@ -3,20 +3,22 @@ export const NATIVE_AI_PROTOCOL_VERSION = 1 as const;
 
 export type NativeDecisionKind = 'neutral' | 'strike' | 'defense';
 
+export type NativeAstralState = 'none' | 'out_of_play' | 'pending' | 'in_hand' | 'public';
+
 export type NativeAction =
   | { type: 'strike' }
   | { type: 'exceed' }
   | { type: 'prepare' }
   | { type: 'reshuffle' }
   | { type: 'changecards'; n: number }
-  | { type: 'move'; target: number }
-  | { type: 'boost'; uid: string }
+  | { type: 'move'; targetSpace: number }
+  | { type: 'boost'; cardKey: string }
   | { type: 'action'; direction?: 'advance' | 'retreat' }
-  | { type: 'burst'; boostUid: string };
+  | { type: 'burst'; cardKey: string };
 
 export type NativeStrikeAction =
-  | { kind: 'single'; cardUid: string; cardKey: string; critical?: boolean }
-  | { kind: 'ex'; cardUid: string; exCardUid: string; cardKey: string; critical?: boolean }
+  | { kind: 'single'; cardKey: string; critical?: boolean }
+  | { kind: 'ex'; cardKey: string; critical?: boolean }
   | { kind: 'wild_swing'; critical?: boolean };
 
 export interface NativePublicPlayer {
@@ -34,6 +36,7 @@ export interface NativePublicPlayer {
   reshuffleUsed: boolean;
   overdriveKeys?: readonly string[];
   sealedKeys?: readonly string[];
+  astralState?: NativeAstralState;
   eddiePos?: number | null;
   activeBoostMods?: Record<string, number | boolean>;
 }

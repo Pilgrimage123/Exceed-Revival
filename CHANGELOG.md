@@ -11,6 +11,22 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-21 — Dead code removal, hot-loop performance overhaul, `strikeState`, and `Card DSL` `beforeMove`
+
+- Removed dead AI Studio/React/Vite/Gemini scaffold (`src/App.tsx`, `src/main.tsx`, `src/index.css`, `index.html`, `vite.config.ts`, `.env.example`, `metadata.json`, `bun.lock`) and 14 unused npm dependencies from `package.json`.
+- Removed dead methods (`enforceHandSize`, `maxUsefulForce`, `runOverdriveTick`, `peekReading`, `effectiveRangeBand`, `resolveBlockForce`), dead `'seth'`/`UNFINISHED_CHARACTER_NOTES` UI gating in `game/shell.html`, 23 nonexistent `silhouettePose` strings in `game/cards.js`, and unused internal exports in `src/ai/layer1/*`.
+- Optimized `game/ai.js` hot loops (O(D+R) `unseenPoolForOpponent` + partial Fisher–Yates shuffle, `Float64Array` scratch buffers in `solveMixedStrategy`, memoized `parseBeforeMoverSpec`, `_cardByKeyMap` lookups, O(1) `canPayExactForce`, `certainLethal` upper-bound fast path, `NativeCpuAI.isModernActive()` snapshot guard, and skipped dead `estimateBoostTimingValue` / legacy fallback).
+- Optimized `game/render.js`, `game/ui.js`, and `game/engine.js` (lazy `Blob` URL cache for `FIGHTER_PHOTOS`, tail-scanning `buildLogEntries`, batched `applyFlip` DOM reads/writes, tracked `scheduleAITurn`/`applyPendingShake` timers, hoisted `activeBoostMods`, bounded `log`/`fxQueue`).
+- Optimized `native/src/lib.rs` (zero-alloc `solve_zero_sum_cfr` inner loop, O(n × exact_force) `choose_force_payment`, overflow-safe `probability_at_least_one`) and `src/ai/layer1/probability-engine.ts` (flat `Float64Array` DP buffers, incremental `wPow`, `skipSuffix` for sampling).
+- Consolidated 9 scattered `_`-prefixed per-strike flags on `player` into `player.strikeState` (`makeStrikeState`/`resetStrikeState`), and exported structured `beforeMove` metadata in `scripts/export-card-dsl.mjs` / `native/generated/card-dsl.json`.
+
+## 2026-11-21 — Rules bug fixes, Card-Key Native Protocol, Layer 1/Rust parity & Card DSL normalization
+
+- Fixed core rules bugs in `game/engine.js` and `game/cards.js`: per-`Engine` UID counter, unified `liveStats` stat-mod summing (fixing Anji's dropped `+2 ARM`/`+2 GRD`), `playForcedBoost` non-continuous disposal and continuous setup, EX self-pairing guard (`uid1 !== uid2`), `payUltra` empty-deck guard, immediate 0-HP KO short-circuit, `One Vision` `After:` self-boost on miss, Vega/Ryu/Sol boost flags & clauses, and Happy Chaos single-copy `hc_deus_ex_machina` handling.
+- Added canonical `Engine.getInformationSet(playerId)`, included `overdrive`/`sealedCards`/`astralState` in `publicInfoOf` and `unseenPoolForOpponent`, converted `evalMatchup`/`evalMatchupDetail` to an options object (passing `eddiePositions` in `wildSwingExpectedValue`), restored `render.js` paint purity, and aligned `GLOSSARY.md`, `ADR-0004`, and Layer 2–4 docs to `0..8` Arena Space + `1..8` Range.
+- Standardized `NativeCpuAI` and `src/ai/native-protocol.ts` on `cardKey` (`boost`/`burst`/`single`/`ex`), `targetSpace` (`0..8`), `NativeDecisionResponse` (`{ action, diagnostics? }`), tightened `isNativeActionLegal`, and wired `chooseStrikeAction`/`chooseDefenseAction`.
+- Fixed TS Layer 1 (`src/ai/layer1/*`) Astral Heat `ultra`/`forceValue: 2`/`knownHand`, `Advance as far as possible` (`upTo: true`), `sampleDeterminization` 1-ULP float guard, and trimmed unused `ObservedAction` fields; encapsulated Rust `BeliefState` (`native/src/lib.rs`) with `Option<(u8, u8)>` range and fixed `choose_force_payment` sentinel collision; normalized `card-dsl.json` via `normalsPool`.
+
 ## 2026-11-21 — Domain modeling (GLOSSARY, ADRs) and Protocol v1 / Rust core fixes
 
 - Added `GLOSSARY.md` and `docs/adr/0001-differential-promotion-gate.md`, `0002-embedded-dependency-free-wasm.md`, and `0003-async-worker-and-sunset-lifecycle.md` establishing canonical domain terms, the Differential Promotion Gate, embedded WASM packaging, and the sunset plan for `src/ai/layer1/*` and `game/ai.js`.

@@ -46,7 +46,7 @@ export interface BayesianTellParams {
   readonly boostPlayedCurrentRangePenalty: number;
 }
 
-export const DEFAULT_TELL_PARAMS: BayesianTellParams = Object.freeze({
+const DEFAULT_TELL_PARAMS: BayesianTellParams = Object.freeze({
   moveTargetRangeBoost: 0.65,
   moveRange1FinishBonus: 0.25,
   movePrevRangePenalty: -0.55,

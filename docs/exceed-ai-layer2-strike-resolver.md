@@ -7,7 +7,7 @@
 ### Explicit Domain Alignment & Modeling Assumptions
 
 1. **Deck & Multi-Season Parity (Reconciling with Layer 1 & Repo Engine):** Standard Exceed decks contain **16 Normals** (8 distinct × 2 copies) + **14 Character Cards** (typically 5 Specials × 2 + 2 Ultras × 2 = 30 cards), while multi-season rosters support arbitrary copy counts (`0` for Happy Chaos's *Deus Ex Machina*, `3` for Goldlewis/Happy Chaos, `4` for Axl's *Sickle Flash*) and out-of-play Season 5 Astral Heats. Layer 2 never hardcodes `14/16` splits—it enumerates strictly from Layer 1's `CardPool` and `BeliefState`.
-2. **Arena Coordinates:** Conceptual arena spaces are $x \in \{1, \dots, 9\}$ (mapped to `pos = x - 1` in `game/engine.js`); corners are $x \in \{1, 9\}$, center is $x = 5$, and fighter distance is $d = |x_{\text{AI}} - x_{\text{opp}}| \in \{1, \dots, 8\}$.
+2. **Arena Coordinates:** Internal Arena Spaces are $x \in \{0, \dots, 8\}$ (`1..9` for UI/prose display only, per ADR-0003); corners are $x \in \{0, 8\}$, center is $x = 4$, and fighter Range is $d = |x_{\text{AI}} - x_{\text{opp}}| \in \{1, \dots, 8\}$.
 3. **EX & Resource Cost Fidelity:** In Exceed rules, an **EX Attack** commits **two matching copies** from hand for `+1 POW, +1 SPD, +1 ARM, +1 GRD` (the second copy is discarded at reveal—its cost is **card/Force-economy opportunity cost**, plus the card's printed Gauge cost if it is an EX Ultra). Mid-strike **Block** reactive Force-for-Armor (`+2 ARM` per Force spent) and **Street Fighter Criticals** (`1 Gauge` optional spend on set) are modeled via inner-loop optimal policies rather than exploding the outer matrix dimension.
 4. **Zero-Sum Antisymmetrization:** Because Exceed has tempo/Gauge gains that can appear positive to both players simultaneously, raw state evaluations are explicitly antisymmetrized ($U_{i,j} = V_{\text{AI}}(s'_{i,j}) - V_{\text{opp}}(s'_{i,j})$) so Minimax and CFR+ convergence guarantees hold strictly.
 
@@ -18,7 +18,7 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         Upstream Inputs                                 │
-│  • GameState (public board 1..9, life, Gauge, Boosts, Active flag,      │
+│  • GameState (public board 0..8, life, Gauge, Boosts, Active flag,      │
 │               AI private hand, AI known own-deck multiset)              │
 │  • BeliefState / CompiledBeliefModel (from Layer 1: exact P(>=1),       │
 │               P(EX>=2), P(top_of_deck), rejection-free hand sampler)    │
@@ -113,7 +113,7 @@ For any concrete pair of non-Wild-Swing attacks $(a_i, b_j)$, the headless `Rule
 3. **Speed Comparison & Active-Player Tiebreak:**
    $$\text{first} = \begin{cases} \text{AI} & \text{if } \text{SPD}_{\text{AI}} > \text{SPD}_{\text{opp}} \ \lor\ (\text{SPD}_{\text{AI}} = \text{SPD}_{\text{opp}} \land \text{isActive}(\text{AI})) \\ \text{Opp} & \text{otherwise} \end{cases}$$
 4. **Faster Player Activation (`activate(first)`):**
-   - **Before Triggers:** Execute `Before: Advance/Close` movement (updating positions $x_1, x_2 \in \{1..9\}$, checking Dive/Cammy side-swap flags and `_unhittableThisStrike`).
+   - **Before Triggers:** Execute `Before: Advance/Close` movement (updating positions $x_1, x_2 \in \{0..8\}$, checking Dive/Cammy side-swap flags and `_unhittableThisStrike`).
    - **Range & Immunity Check:** Verify effective attack distance $d_{\text{eff}} \in [\text{range}_{\min}, \text{range}_{\max}]$ (using Eddie's space for Zato-1 Specials/Ultras), not `alwaysMiss`, not in defender's `rangeImmune`, and not blocked by `_unhittableThisStrike`.
    - **Hit Resolution:**
      - If defender is using *Block* (`reactiveForceArmor`), execute optimal reactive Force spend $\Delta F \ge 0$ adding $+2\Delta F$ Armor.
