@@ -157,6 +157,35 @@ function coachPanelHTML(modeKey) {
   </div>`;
 }
 
+// Pure read of G.hintText / G.trainerReport / G.studyMode populated by ui.js.
+// Beginner Coach shows plain-language advice; Study Mode additionally renders
+// NativeDiagnostics (topLines, nashMix, beliefThreats) or a clean partial-matchup note.
+function trainerPanelHTML(G) {
+  if (!G || (!G.hintText && !G.trainerReport)) return '';
+  const report = G.trainerReport;
+  const text = G.hintText || (report && report.text) || '';
+  let out = text ? `<div class="hint-panel"><b>Hint:</b> ${esc(text)}</div>` : '';
+  if (G.studyMode && report) {
+    const d = report.diagnostics;
+    if (d) {
+      const parts = [];
+      if (Array.isArray(d.topLines) && d.topLines.length) {
+        parts.push('<b>Top lines:</b> ' + d.topLines.map(l => `${esc(l.label)} (${l.visits || 0}v, Q=${Number(l.qValue || 0).toFixed(2)})`).join(' · '));
+      }
+      if (Array.isArray(d.nashMix) && d.nashMix.length) {
+        parts.push('<b>Nash mix:</b> ' + d.nashMix.map(m => `${esc(m.label)} ${Math.round(Number(m.probability || 0) * 100)}%`).join(' · '));
+      }
+      if (Array.isArray(d.beliefThreats) && d.beliefThreats.length) {
+        parts.push('<b>Opponent threats:</b> ' + d.beliefThreats.map(t => `${esc(t.cardKey)} (${Math.round(Number(t.probAtLeastOne || 0) * 100)}% hold, ${Math.round(Number(t.probExReady || 0) * 100)}% EX)`).join(' · '));
+      }
+      if (parts.length) out += `<div class="hint-panel">${parts.join('<br>')}</div>`;
+    } else if (report.note) {
+      out += `<div class="hint-panel">${esc(report.note)}</div>`;
+    }
+  }
+  return out;
+}
+
 // Original, generic fighting-stance silhouettes (NOT derived from any character's
 // actual artwork — simple geometric "action figure" pictograms, distinguished only by
 // pose). Poses are a named registry here in render.js (the "how to draw" concern);
@@ -1105,9 +1134,12 @@ function paint() {
       // "Suggest a move" is opt-in and purely informational \u2014 G.suggestMove() (ui.js)
       // fills G.hintText from ai.js's own chooseAction and re-renders; render.js never
       // calls into ai.js directly, it only ever displays whatever ui.js already decided.
-      const hint = G.hintText ? `<div class="hint-panel"><b>Hint:</b> ${esc(G.hintText)}</div>` : '';
+      const hint = trainerPanelHTML(G);
       bottomPanel = `<h3>Your turn \u2014 choose an action</h3>
-        <button onclick="G.suggestMove()">Suggest a move</button>
+        <div class="btn-row">
+          <button onclick="G.suggestMove()">Suggest a move</button>
+          <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+        </div>
         ${hint}
         ${actionButtons(G)}`;
     } else {
@@ -1267,6 +1299,11 @@ function paint() {
         rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
       }), exTiles })}
       ${exTiles ? '<div class="ex-hint">Cards marked (EX) pair two copies for +1 to all stats \u2014 the extra copy is discarded on reveal.</div>' : ''}
+      <div class="btn-row">
+        <button onclick="G.suggestStrike(false)">Suggest a card</button>
+        <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+      </div>
+      ${trainerPanelHTML(G)}
       <button class="big-btn wildswing-btn" onclick="G.pickWildSwing()">Wild Swing (top of deck)</button>
       <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
   } else if (G.mode === 'face_up_choice') {
@@ -1302,6 +1339,11 @@ function paint() {
     } else {
       const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
       bottomPanel = `<h3>CPU struck${wildSwingNote}${faceUpNote}! Choose your defense card.</h3>
+        <div class="btn-row">
+          <button onclick="G.suggestStrike(true)">Suggest a card</button>
+          <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+        </div>
+        ${trainerPanelHTML(G)}
         ${handHTML(G, { tileOpts: defendTileOpts, exTiles })}
         <button class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing (top of deck)</button>`;
     }

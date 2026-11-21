@@ -121,7 +121,9 @@ class GameController {
     // the same game either way, so a beginner-mode game is still a real game and
     // nothing here can produce a state the normal path couldn't.
     this.beginner = !!opts.beginner;
-    this.hintText = null;   // filled by suggestMove(), shown by render.js
+    this.studyMode = !!opts.studyMode;
+    this.hintText = null;   // filled by suggestMove()/suggestStrike(), shown by render.js
+    this.trainerReport = null; // structured Trainer payload for Study Mode
     this.beatIndex = 0;     // how many strike-breakdown beats are revealed
     // Criticals are offered on EVERY set attack, which is one prompt too many before
     // a player has seen a hit land. In beginner mode the prompt is auto-declined
@@ -160,20 +162,93 @@ class GameController {
   revealNextBeat() { this.beatIndex++; render(); }
   revealAllBeats() { this.beatIndex = Number.MAX_SAFE_INTEGER; render(); }
 
-  // ---- "Suggest a move" ----
-  // Runs the SAME decision function the CPU uses (ai.js's chooseAction), at full
-  // strength, on the human's own position — so the advice can never contradict the
-  // rules or the evaluator the player is actually up against. randomness is pinned to
-  // 0 regardless of difficulty: this is a teaching tool, and a Student-difficulty
-  // dice roll would sometimes suggest a deliberately bad move.
+  // ---- Trainer & Study Mode ("Suggest a move" / "Suggest a card") ----
+  // Runs on a strict human-perspective Information Set (never reading opp.hand).
+  // Queries NativeCpuAI.advise() when a Modern Native backend is registered, and
+  // otherwise falls back to Classic JS chooseAction/chooseStrikeSelection at randomness=0.
+  toggleStudyMode() {
+    this.studyMode = !this.studyMode;
+    render();
+  }
+
   suggestMove() {
     const p = this.human(), opp = this.ai();
-    const action = chooseAction({
-      me: p, mePublicFull: p, oppPublic: publicInfoOf(opp),
-      canExceed: this.engine.canExceed(p), rng: Math.random, randomness: 0,
-      myBoostMods: this.engine.activeBoostMods(p),
-    });
+    const oppPublic = publicInfoOf(opp);
+    const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
+      ? NativeCpuAI.advise('neutral', NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
+          turnNumber: this.engine.turn,
+          activePlayer: 'actor',
+          myBoostMods: this.engine.activeBoostMods(p),
+          oppBoostMods: this.engine.activeBoostMods(opp),
+        }))
+      : null;
+    let action = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeActionToEngineAction)
+      ? NativeCpuAI.resolveNativeActionToEngineAction(nativeAdvice.action, p)
+      : null;
+    if (!action) {
+      action = chooseAction({
+        me: p, mePublicFull: p, oppPublic,
+        canExceed: this.engine.canExceed(p), rng: Math.random, randomness: 0,
+        myBoostMods: this.engine.activeBoostMods(p),
+      });
+    }
     this.hintText = this.describeSuggestion(action, p, opp);
+    this.trainerReport = {
+      kind: 'neutral',
+      text: this.hintText,
+      source: (nativeAdvice && nativeAdvice.source) || 'classic',
+      diagnostics: (nativeAdvice && nativeAdvice.diagnostics) || null,
+      note: (nativeAdvice && nativeAdvice.note) || null,
+    };
+    render();
+  }
+
+  suggestStrike(isDefense) {
+    const p = this.human(), opp = this.ai();
+    const oppPublic = publicInfoOf(opp);
+    const kind = isDefense ? 'defense' : 'strike';
+    const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
+      ? NativeCpuAI.advise(kind, NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
+          turnNumber: this.engine.turn,
+          activePlayer: isDefense ? 'opponent' : 'actor',
+          myBoostMods: this.engine.activeBoostMods(p),
+          oppBoostMods: this.engine.activeBoostMods(opp),
+        }))
+      : null;
+    let selection = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeStrikeToEngineSelection)
+      ? NativeCpuAI.resolveNativeStrikeToEngineSelection(nativeAdvice.action, p)
+      : null;
+    if (!selection) {
+      if (p.hand.length === 0) {
+        selection = { type: 'wildswing' };
+      } else {
+        const res = chooseStrikeSelection({
+          hand: p.hand, myPos: p.pos, oppPublic, iAmInitiator: !isDefense, rng: Math.random,
+          samples: 100, buildExCardFn: (a, b) => this.engine.buildExCard(a, b),
+          myBoostMods: this.engine.activeBoostMods(p), randomness: 0,
+          myGaugeCount: this.engine.gaugeCount(p), myExceeded: p.exceeded,
+          myCharacterKey: p.characterKey, myEddiePos: p.eddiePos,
+          meFull: p, turnNumber: this.engine.turn,
+        });
+        selection = res && res.selection;
+      }
+    }
+    let text = 'Wild Swing (top of deck) — your hand has no stronger Strike option right now.';
+    if (selection && selection.type === 'ex') {
+      const c = p.hand.find(x => x.uid === selection.uid1);
+      text = `Set EX ${c ? c.name : 'pair'} — committing two matching copies for +1 to all stats gives the strongest expected exchange.`;
+    } else if (selection && selection.type === 'hand') {
+      const c = p.hand.find(x => x.uid === selection.uid);
+      text = `Set ${c ? c.name : 'your card'} — best expected Strike value against the opponent's public range and Gauge.`;
+    }
+    this.hintText = text;
+    this.trainerReport = {
+      kind,
+      text,
+      source: (nativeAdvice && nativeAdvice.source) || 'classic',
+      diagnostics: (nativeAdvice && nativeAdvice.diagnostics) || null,
+      note: (nativeAdvice && nativeAdvice.note) || null,
+    };
     render();
   }
 

@@ -93,6 +93,30 @@ const NativeCpuAI = (() => {
     }
   }
 
+  function advise(kind, snapshot) {
+    if (kind !== 'neutral' && kind !== 'strike' && kind !== 'defense') {
+      throw new Error(`Unknown Trainer advice kind: ${kind}`);
+    }
+    const fallbackNote = 'Study Mode diagnostics require a verified Modern Native matchup; showing Beginner Coach guidance.';
+    if (!backend || typeof backend.advise !== 'function') {
+      return { available: false, source: 'classic', action: null, diagnostics: null, note: fallbackNote };
+    }
+    try {
+      const res = backend.advise(kind, snapshot);
+      if (!res || typeof res !== 'object') throw new Error('backend returned an invalid Trainer response');
+      return {
+        available: true,
+        source: 'modern',
+        action: res.action || null,
+        diagnostics: res.diagnostics || null,
+        note: res.note || null,
+      };
+    } catch (error) {
+      lastError = String(error && error.message || error);
+      return { available: false, source: 'classic', action: null, diagnostics: null, note: fallbackNote };
+    }
+  }
+
   function resolveNativeActionToEngineAction(action, me) {
     if (!action || !me) return null;
     if (action.type === 'boost') {
@@ -217,6 +241,7 @@ const NativeCpuAI = (() => {
     chooseNeutralAction,
     chooseStrikeAction,
     chooseDefenseAction,
+    advise,
     resolveNativeActionToEngineAction,
     resolveNativeStrikeToEngineSelection,
     canonicalize,

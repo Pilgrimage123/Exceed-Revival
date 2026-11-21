@@ -44,6 +44,22 @@ _Avoid_: Fighter readiness, port status
 The complete set of public game state plus a player's own private hand and known deck order, excluding all hidden opponent cards.
 _Avoid_: Game state, private state
 
+**Enemy CPU**:
+The opponent seat controlled by the AI at the selected difficulty tier.
+_Avoid_: Opponent AI, bot
+
+**Trainer**:
+The human-perspective advisory engine that evaluates positions at full-strength GTO strictly from the player's Information Set.
+_Avoid_: Hint engine, advisor
+
+**Beginner Coach**:
+The plain-language onboarding presentation layer offering on-demand move tips and contextual mode guidance without raw search metrics.
+_Avoid_: Onboarding tips, tutorial mode
+
+**Study Mode**:
+The opt-in glass-box presentation layer exposing search lines, Nash mixes, opponent hand-threat probabilities, and post-strike EV review.
+_Avoid_: Debug overlay, pro HUD
+
 **Strike Preview**:
 A pure, fog-of-war-safe projection of a candidate attack's post-`Before` Arena Space, Range coverage, projected damage, and lethal status derived solely from the active player's `Information Set`.
 _Avoid_: Attack sim, hover calc

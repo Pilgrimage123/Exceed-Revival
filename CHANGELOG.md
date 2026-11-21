@@ -29,6 +29,8 @@ detailed rationale that already lives there.
 
 ## 2026-11-21 — Domain modeling (GLOSSARY, ADRs) and Protocol v1 / Rust core fixes
 
+- Implemented the **Trainer & Study Mode** UI and bridge (`NativeCpuAI.advise()`, `GameController.toggleStudyMode()`/`suggestStrike()`, and `trainerPanelHTML()` in `game/render.js`) with strict Information-Set isolation, Strike/Defense card suggestions, `NativeDiagnostics` rendering, and graceful fallback on `partial` matchups.
+- Added `Enemy CPU`, `Trainer`, `Beginner Coach`, and `Study Mode` to `GLOSSARY.md` and recorded `docs/adr/0004-trainer-information-set-isolation.md` for strict Information-Set isolation and presentation tiers.
 - Added `GLOSSARY.md` and `docs/adr/0001-differential-promotion-gate.md`, `0002-embedded-dependency-free-wasm.md`, and `0003-async-worker-and-sunset-lifecycle.md` establishing canonical domain terms, the Differential Promotion Gate, embedded WASM packaging, and the sunset plan for `src/ai/layer1/*` and `game/ai.js`.
 - Fixed `isNativeActionLegal` in `game/ai.js` to accept arena space `0` (`0..8`), fixed `solve_zero_sum_cfr` exploitability and availability-normalized IS-PUCT in `native/src/lib.rs`, and aligned UTF-8 FNV-1a canonical trace hashing across Rust, TS, and JS.
 - Expanded Protocol v1 (`src/ai/native-protocol.ts`, `game/native-ai.js`) with `seed`, `turnNumber`, `activePlayer`, `overdriveKeys`, `sealedKeys`, `eddiePos`, `knownDeckTop`/`Bottom`, and `chooseStrikeAction`/`chooseDefenseAction` hooks, and added `parity` manifest tracking to `scripts/export-card-dsl.mjs`.

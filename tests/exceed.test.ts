@@ -766,3 +766,70 @@ test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Ke
   assert.equal(res.nativeExUidsOk, true);
   assert.equal(res.illegalMoveRejected, false);
 });
+
+test('Trainer & Study Mode degrade cleanly on partial matchups and render NativeDiagnostics when advised', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    studyToggled: boolean;
+    partialSource: string;
+    partialHasNote: boolean;
+    partialStrikeHintOk: boolean;
+    modernSource: string;
+    modernTopLinesCount: number;
+    renderedHasDiagnostics: boolean;
+    renderedHasUndefined: boolean;
+  }>(`
+    (() => {
+      G = new GameController('ryu', 'ken', 'champion', {});
+      G.mode = 'awaiting_action';
+      G.engine.active = G.humanId;
+      G.toggleStudyMode();
+      const studyToggled = G.studyMode === true;
+
+      // 1. Partial/classic fallback degrades cleanly with a status note
+      G.suggestMove();
+      const partialSource = G.trainerReport.source;
+      const partialHasNote = typeof G.trainerReport.note === 'string' && G.trainerReport.note.length > 0;
+      G.suggestStrike(false);
+      const partialStrikeHintOk = typeof G.hintText === 'string' && G.hintText.length > 0 && G.trainerReport.kind === 'strike';
+
+      // 2. Registered Modern Native backend with advise() populates NativeDiagnostics
+      NativeCpuAI.registerBackend({
+        protocolVersion: 1,
+        chooseNeutralAction: () => ({ type: 'prepare' }),
+        advise: (kind, snap) => ({
+          action: { type: 'prepare' },
+          diagnostics: {
+            topLines: [{ label: 'Prepare', visits: 120, qValue: 0.42 }],
+            nashMix: [{ label: 'Sweep', probability: 0.6 }, { label: 'Grasp', probability: 0.4 }],
+            beliefThreats: [{ cardKey: 'hadoken', probAtLeastOne: 0.75, probExReady: 0.15 }],
+          },
+        }),
+      });
+      G.suggestMove();
+      const modernSource = G.trainerReport.source;
+      const modernTopLinesCount = G.trainerReport.diagnostics.topLines.length;
+      const html = trainerPanelHTML(G);
+      const renderedHasDiagnostics = html.includes('Top lines:') && html.includes('Nash mix:') && html.includes('Opponent threats:');
+      const renderedHasUndefined = html.includes('undefined') || html.includes('NaN');
+      return {
+        studyToggled,
+        partialSource,
+        partialHasNote,
+        partialStrikeHintOk,
+        modernSource,
+        modernTopLinesCount,
+        renderedHasDiagnostics,
+        renderedHasUndefined,
+      };
+    })()
+  `);
+  assert.equal(res.studyToggled, true);
+  assert.equal(res.partialSource, 'classic');
+  assert.equal(res.partialHasNote, true);
+  assert.equal(res.partialStrikeHintOk, true);
+  assert.equal(res.modernSource, 'modern');
+  assert.equal(res.modernTopLinesCount, 1);
+  assert.equal(res.renderedHasDiagnostics, true);
+  assert.equal(res.renderedHasUndefined, false);
+});
