@@ -372,7 +372,10 @@ function rangeChipHTML(inRange) {
 // (strike_select/defend_select tile builders), so ordinary hand displays
 // elsewhere (Change Cards, discard-to-seven, Move's Force picker, etc.) don't
 // grow dead hover handlers for a distance concept that doesn't apply there.
-function rangeHoverAttrs(band) {
+function rangeHoverAttrs(band, uid, isEX) {
+  if (uid && typeof EventBus !== 'undefined') {
+    return ` onmouseenter="G.onCardHover('${uid}', ${!!isEX})" onmouseleave="G.onCardHoverEnd()"`;
+  }
   if (!band) return '';
   return ` onmouseenter="highlightBand(${band[0]},${band[1]})" onmouseleave="clearBand()"`;
 }
@@ -381,9 +384,11 @@ function cardTile(c, opts = {}) {
   const cls = ['card-tile', c.type];
   if (opts.selected) cls.push('selected');
   if (opts.disabled) cls.push('disabled');
+  if (opts.lethalAura) cls.push('lethal-aura');
   if (opts.highlight === 'strike') cls.push('highlight-strike');
   else if (opts.highlight === 'boost') cls.push('highlight-boost');
-  return `<div class="${cls.join(' ')}" data-uid="${c.uid}" ${opts.onclick ? `onclick="${opts.onclick}"` : ''}${rangeHoverAttrs(opts.band)}>
+  const hoverUid = opts.hoverPreview ? c.uid : null;
+  return `<div class="${cls.join(' ')}" data-uid="${c.uid}" ${opts.draggable ? 'draggable="true" ondragstart="G.onCardDragStart(event, \'' + c.uid + '\')"' : ''} ${opts.onclick ? `onclick="${opts.onclick}"` : ''}${rangeHoverAttrs(opts.band, hoverUid, !!opts.isEX)}>
     <div class="card-name">${esc(c.name)}${c.isEX ? ' (EX)' : ''}${gaugeCostBadge(c)}${rangeChipHTML(opts.rangeChip)}</div>
     <div class="strike-part">
       <div class="card-stats">${statLine(c)}</div>
@@ -403,7 +408,7 @@ function cardTile(c, opts = {}) {
 // `dist`: current board distance, when known \u2014 drives the same range-chip/hover-band
 // treatment as cardTile() (see strike_select/defend_select below), using the base
 // card's printed range since pairing for EX doesn't change range, only pow/spd/arm/grd.
-function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null) {
+function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine = null, player = null) {
   const seen = new Set();
   const tiles = [];
   for (let i = 0; i < hand.length; i++) {
@@ -411,9 +416,12 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null) {
       if (hand[i].key === hand[j].key && !seen.has(hand[i].key)) {
         seen.add(hand[i].key);
         const a = hand[i], b = hand[j];
+        if (engine && player && a.type === 'ultra' && typeof engine.canPayUltra === 'function' && !engine.canPayUltra(player, a)) {
+          continue;
+        }
         const exCard = { ...a, name: a.name + ' (EX)', pow: a.pow + 1, spd: a.spd + 1, arm: a.arm + 1, grd: a.grd + 1 };
         const inRange = (dist != null && a.range) ? (dist >= a.range[0] && dist <= a.range[1]) : null;
-        tiles.push(`<div class="card-tile ${a.type} ex-tile ${highlight === 'strike' ? 'highlight-strike' : ''}" onclick="${onClickFn(a.uid, b.uid)}"${rangeHoverAttrs(a.range)}>
+        tiles.push(`<div class="card-tile ${a.type} ex-tile ${highlight === 'strike' ? 'highlight-strike' : ''}" onclick="${onClickFn(a.uid, b.uid)}"${rangeHoverAttrs(a.range, a.uid, true)}>
           <div class="card-name">${esc(exCard.name)}${rangeChipHTML(inRange)}</div>
           <div class="strike-part">
             <div class="card-stats">${statLine(exCard)}</div>
@@ -458,12 +466,14 @@ function boardHTML(engine) {
   const p1 = engine.P('p1'), p2 = engine.P('p2');
   const humanPos = (G ? G.human() : p1).pos;
   const currentFx = G && G.currentFx;
+  const p1Facing = p1.pos <= p2.pos ? 'facing-right' : 'facing-left';
+  const p2Facing = p2.pos < p1.pos ? 'facing-right' : 'facing-left';
   let cells = '';
   for (let i = 0; i < BOARD_SIZE; i++) {
     let occupant = '';
-    if (p1.pos === i && p2.pos === i) occupant = `<div class="token you" data-pid="p1" title="You">${fxBadgeHTML(currentFx, 'p1')}${fighterSilhouette(p1.characterKey)}</div><div class="token cpu" data-pid="p2" title="CPU">${fxBadgeHTML(currentFx, 'p2')}${fighterSilhouette(p2.characterKey)}</div>`;
-    else if (p1.pos === i) occupant = `<div class="token you" data-pid="p1" title="You">${fxBadgeHTML(currentFx, 'p1')}${fighterSilhouette(p1.characterKey)}</div>`;
-    else if (p2.pos === i) occupant = `<div class="token cpu" data-pid="p2" title="CPU">${fxBadgeHTML(currentFx, 'p2')}${fighterSilhouette(p2.characterKey)}</div>`;
+    if (p1.pos === i && p2.pos === i) occupant = `<div class="token you ${p1Facing}" data-pid="p1" title="You">${fxBadgeHTML(currentFx, 'p1')}${fighterSilhouette(p1.characterKey)}</div><div class="token cpu ${p2Facing}" data-pid="p2" title="CPU">${fxBadgeHTML(currentFx, 'p2')}${fighterSilhouette(p2.characterKey)}</div>`;
+    else if (p1.pos === i) occupant = `<div class="token you ${p1Facing}" data-pid="p1" title="You">${fxBadgeHTML(currentFx, 'p1')}${fighterSilhouette(p1.characterKey)}</div>`;
+    else if (p2.pos === i) occupant = `<div class="token cpu ${p2Facing}" data-pid="p2" title="CPU">${fxBadgeHTML(currentFx, 'p2')}${fighterSilhouette(p2.characterKey)}</div>`;
     // Eddie (Zato-1) is a third thing that can be standing here — never a fighter
     // token, since he isn't a character and nothing collides with him, so he renders
     // as a marker layered alongside whoever else is in the space.
@@ -472,7 +482,10 @@ function boardHTML(engine) {
     }
     const dist = Math.abs(i - humanPos);
     const selfCls = i === humanPos ? ' band-self' : '';
-    cells += `<div class="cell${selfCls}" data-dist="${dist}"><span class="cell-dist">${dist}</span>${occupant}</div>`;
+    const canClickMove = G && G.mode === 'awaiting_action' && i !== p1.pos && i !== p2.pos;
+    const cellClick = canClickMove ? ` onclick="G.clickBoardSpace(${i})"` : '';
+    const moveCls = canClickMove ? ' cell-movable' : '';
+    cells += `<div class="cell${selfCls}${moveCls}" data-dist="${dist}" data-space="${i}"${cellClick}><span class="cell-dist">${dist}</span>${occupant}</div>`;
   }
   const skipBtn = (G && G.fxPlaying) ? `<button class="fx-skip-btn" onclick="G.skipFx()">Skip ⏭</button>` : '';
   // A Zato-1 in the match gets a second readout: with Eddie on the board his
@@ -482,7 +495,12 @@ function boardHTML(engine) {
   const eddieReadout = eddieOwner
     ? ` &nbsp;|&nbsp; Eddie (${eddieOwner.id === (G ? G.humanId : 'p1') ? 'yours' : 'CPU'}): space ${eddieOwner.eddiePos + 1}, Range <b>${Math.abs(eddieOwner.eddiePos - (eddieOwner.id === p1.id ? p2 : p1).pos)}</b> to ${eddieOwner.id === p1.id ? p2.name : p1.name}`
     : '';
-  return `<div class="board">${cells}</div>
+  const tlSlot = (G && G.mode === 'strike_result' && engine.lastStrikeInfo && typeof StrikePlaybackController !== 'undefined')
+    ? StrikePlaybackController.timelineBarHTML(engine.lastStrikeInfo, (engine.lastStrikeInfo.timeline || []).length - 1)
+    : '';
+  return `<div id="trigger-timeline-slot">${tlSlot}</div>
+  <div id="clash-banner-slot"></div>
+  <div class="board" ondragover="event.preventDefault()" ondrop="G && G.onBoardDrop(event)">${cells}</div>
     <div class="range-readout">Range: <b>${engine.range(p1, p2)}</b>${eddieReadout}${skipBtn}</div>`;
 }
 
@@ -543,33 +561,92 @@ function charActionLabel(player) {
   return (firstSentence ? firstSentence[0] : withoutPrefix).trim();
 }
 
+function deckWarningState(player) {
+  const deck = player.deck.length;
+  const discard = player.discard.length;
+  const used = !!player.reshuffleUsed;
+  if ((used && deck <= 2) || (!used && (deck + discard) <= 3)) {
+    return { cls: 'deck-red', icon: '⚠ ', title: used ? 'Reshuffle already used — emptying Deck loses immediately!' : 'Critically low Deck + Discard!' };
+  }
+  if ((used && deck <= 5) || (!used && deck <= 3)) {
+    return { cls: 'deck-amber', icon: '', title: used ? 'Low deck (no reshuffle remaining)' : 'Reshuffle imminent' };
+  }
+  return { cls: 'deck-healthy', icon: '', title: TERM_HELP['Deck'] };
+}
+
+function normalMatrixData(opp) {
+  const char = CHARACTERS[opp.characterKey] || {};
+  const pool = char.normals || NORMALS;
+  const publicCards = [
+    ...(opp.discard || []),
+    ...(opp.gauge || []),
+    ...(opp.sealedCards || []),
+    ...(opp.overdrive || []),
+    ...((opp.boostsInPlay || []).map(b => b.card)),
+  ];
+  if (opp.strikeState && opp.strikeState.faceUp && opp.strikeState.card) {
+    publicCards.push(opp.strikeState.card);
+  }
+  const counts = {};
+  for (const c of publicCards) {
+    if (c && c.key) counts[c.key] = (counts[c.key] || 0) + 1;
+  }
+  let totalRemaining = 0;
+  const rows = pool.map(n => {
+    const used = Math.min(2, counts[n.key] || 0);
+    const rem = 2 - used;
+    totalRemaining += rem;
+    return { key: n.key, name: n.name, used, rem };
+  });
+  return { rows, totalRemaining, totalMax: pool.length * 2 };
+}
+
+function normalMatrixHTML(opp) {
+  const data = normalMatrixData(opp);
+  return `<div class="normal-matrix-popover" onclick="event.stopPropagation()">
+    <div class="nm-header"><span>Opponent Normals (${data.totalRemaining}/${data.totalMax} hidden)</span><button type="button" class="nm-close" onclick="G.toggleNormalMatrix()">✕</button></div>
+    <div class="nm-grid">
+      ${data.rows.map(r => `<div class="nm-cell ${r.rem === 0 ? 'nm-exhausted' : ''}">
+        <span class="nm-name">${esc(r.name)}</span>
+        <span class="nm-pips">${r.used >= 1 ? '☑' : '☐'}${r.used >= 2 ? '☑' : '☐'}</span>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function lifeBar(g, who) {
   const player = who === 'human' ? g.human() : g.ai();
   const label = (CHARACTERS[player.characterKey].name) + (who === 'human' ? ' (You)' : ` (CPU \u2014 ${g.difficulty.label})`);
   const accentClass = who === 'human' ? 'you-accent' : 'cpu-accent';
   const silhouetteAccent = who === 'human' ? 'accent-you' : 'accent-cpu';
   const pct = Math.max(0, Math.round((player.life / player.maxLife) * 100));
-  return `<div class="life-panel ${accentClass}" onclick="G.openInfo('${who}')" role="button" tabindex="0">
+  const lowHpCls = player.life > 0 && player.life <= 6 ? ' low-hp' : '';
+  const exceedAuraCls = who === 'human' && g.engine.canExceed(player) ? ' exceed-ready-aura' : '';
+  const deckState = deckWarningState(player);
+  const nmInfo = who === 'ai' ? normalMatrixData(player) : null;
+  return `<div class="life-panel ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0">
     <div class="life-top-row">
       ${fighterSilhouette(player.characterKey, silhouetteAccent)}
       <div class="life-main">
         <div class="life-header">
           <span class="pname">${esc(label)} ${player.exceeded ? '<span class="exceeded-badge">EXCEEDED</span>' : ''}</span>
-          <span class="life-num">${player.life}/${player.maxLife}</span>
+          <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : ''}</span>
         </div>
-        <div class="life-bar-track"><div class="life-bar-fill" style="width:${pct}%"></div></div>
+        <div class="life-bar-track"><div class="life-bar-fill" style="width:${pct}%"></div>${who === 'ai' ? '<div class="opp-projected-dmg"></div>' : ''}</div>
       </div>
     </div>
     <div class="resource-row">
       <span title="${esc(TERM_HELP['Hand'])}">Hand ${player.hand.length}</span>
-      <span title="${esc(TERM_HELP['Deck'])}">Deck ${player.deck.length}</span>
+      <span class="deck-pill ${deckState.cls}" title="${esc(deckState.title)}">${deckState.icon}Deck ${player.deck.length}</span>
       <span title="${esc(TERM_HELP['Gauge'])}">Gauge ${player.gauge.length}</span>
       <span title="${esc(TERM_HELP['Discard'])}">Discarded ${player.discard.length}</span>
+      ${who === 'ai' ? `<button type="button" class="nm-toggle-btn" onclick="event.stopPropagation(); G.toggleNormalMatrix()">Normals [${nmInfo.totalRemaining}/${nmInfo.totalMax}]</button>` : ''}
       ${player.overdrive && player.overdrive.length
         ? `<span title="${esc(TERM_HELP['Overdrive'])}">Overdrive ${player.overdrive.length}</span>`
         : ''}
       ${player.extraActionsRemaining > 0 ? `<span title="${esc(TERM_HELP['Actions'])}">Actions ${player.extraActionsRemaining}</span>` : ''}
     </div>
+    ${who === 'ai' && g.showNormalMatrix ? normalMatrixHTML(player) : ''}
     <div class="innate-line">${esc(charInnateLine(player))}</div>
     ${player.boostsInPlay.length ? `<div class="boosts-active">${player.boostsInPlay.map(b => {
       const effect = boostEffectSummary(b.card);
@@ -598,6 +675,7 @@ function actionButtons(g) {
       label: char.canExceedAction === false ? 'Exceed [\u2014]' : `Exceed [${g.engine.exceedCostFor(p)}]`,
       sub: p.exceeded ? 'Already Exceeded' : (char.canExceedAction === false ? 'Via Reshuffle only' : (canExceed ? 'Flip your character' : 'Not enough Gauge')),
       disabled: !canExceed,
+      extraCls: canExceed ? 'exceed-btn-ready' : '',
     },
     // Only shown when the character actually HAS a chooseable Innate/Exceeded
     // action — Cammy and Zangief are pure passive Strike modifiers with no
@@ -620,7 +698,7 @@ function actionButtons(g) {
     { fn: 'G.actionReshuffle()', icon: '\u267B', label: 'Reshuffle', sub: p.reshuffleUsed ? 'Already used' : 'Once per game', disabled: p.reshuffleUsed },
   ];
   return `<div class="action-grid">${actions.map(a => `
-    <button class="action-btn ${a.primary ? 'action-primary' : ''}" onclick="${a.fn}" ${a.disabled ? 'disabled' : ''}>
+    <button class="action-btn ${a.primary ? 'action-primary' : ''} ${a.extraCls || ''}" onclick="${a.fn}" ${a.disabled ? 'disabled' : ''}>
       <span class="action-icon">${a.icon}</span>
       <span class="action-label">${esc(a.label)}</span>
       <span class="action-sub">${esc(a.sub)}</span>
@@ -629,7 +707,17 @@ function actionButtons(g) {
 
 function handHTML(g, opts = {}) {
   const p = g.human();
-  return `<div class="hand-row">${p.hand.map(c => cardTile(c, opts.tileOpts ? opts.tileOpts(c) : {})).join('')}${opts.exTiles || ''}</div>`;
+  let memoMap = null;
+  if (typeof PreviewMemo !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
+    const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
+    memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p);
+  }
+  return `<div class="hand-row">${p.hand.map(c => {
+    const baseOpts = opts.tileOpts ? opts.tileOpts(c) : {};
+    const memo = memoMap && memoMap.get(c.uid || c.key);
+    const lethalAura = !!(memo && memo.base && memo.base.isPublicStateLethal && !baseOpts.disabled);
+    return cardTile(c, { ...baseOpts, lethalAura });
+  }).join('')}${opts.exTiles || ''}</div>`;
 }
 
 // ---------------- Fight log: rounds grouped, HP shown, newest first ----------------
@@ -1169,12 +1257,13 @@ function paint() {
     // the chip answers "is this card in range at the moment it's set," not "will it
     // still be in range once it activates," which can differ for an advance/close card.
     const dist = engine.range(p, opp);
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist);
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p);
     bottomPanel = `<h3>Strike \u2014 set a card face down</h3>
       ${handHTML(G, { tileOpts: (c) => ({
         onclick: `G.pickStrikeCard('${c.uid}')`,
         highlight: 'strike',
         band: c.range,
+        hoverPreview: true,
         rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
       }), exTiles })}
       ${exTiles ? '<div class="ex-hint">Cards marked (EX) pair two copies for +1 to all stats \u2014 the extra copy is discarded on reveal.</div>' : ''}
@@ -1203,6 +1292,7 @@ function paint() {
       onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
       highlight: 'strike',
       band: c.range,
+      hoverPreview: true,
       rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
     });
     if (forcedUid) {
@@ -1210,7 +1300,7 @@ function paint() {
         ${handHTML(G, { tileOpts: (c) => c.uid === forcedUid ? defendTileOpts(c) : { disabled: true } })}
         <div class="ex-hint">You must defend with ${esc(G.sel.forcedName)} \u2014 CPU's Focus named it.</div>`;
     } else {
-      const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist);
+      const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
       bottomPanel = `<h3>CPU struck${wildSwingNote}${faceUpNote}! Choose your defense card.</h3>
         ${handHTML(G, { tileOpts: defendTileOpts, exTiles })}
         <button class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing (top of deck)</button>`;
@@ -1452,6 +1542,17 @@ function paint() {
   }
 
   const humanHandVisible = ['awaiting_action', 'move_setup', 'changecards_setup', 'special_move1', 'char_exceed_strike_choice', 'char_exceed_action_choice'].includes(G.mode);
+  const isMainAction = G.mode === 'awaiting_action';
+  const selCard = isMainAction && G.selectedActionCardUid ? G.human().hand.find(c => c.uid === G.selectedActionCardUid) : null;
+  const hasEXPair = selCard && G.human().hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(G.human(), selCard));
+  const preCommitBar = selCard ? `<div class="precommit-bar">
+    <span>Selected: <b>${esc(selCard.name)}</b></span>
+    <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')">Play as Strike</button>
+    ${hasEXPair ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('ex')">EX Strike (+1 All)</button>` : ''}
+    <button type="button" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>
+    <button type="button" class="cancel-btn" onclick="G.cancelActionCard()">Cancel</button>
+  </div>` : '';
+  const boostDropZone = isMainAction ? `<div class="boost-drop-zone" ondragover="event.preventDefault()" ondrop="G.onBoostDrop(event)">Drop card here to <b>Boost</b> (or drag onto Arena to <b>Strike</b>)</div>` : '';
 
   app.innerHTML = `
     <div class="top-bar">
@@ -1462,10 +1563,24 @@ function paint() {
     <div class="mid-row">
       ${logHTML(engine)}
     </div>
-    ${humanHandVisible ? `<div class="section-label">Your hand</div>${handHTML(G, { tileOpts: () => ({ disabled: true }) })}` : ''}
+    ${humanHandVisible ? `<div class="section-label">Your hand ${isMainAction ? '<span class="hand-hint">(Click or drag a card; click an Arena Space to Move)</span>' : ''}</div>${handHTML(G, { tileOpts: isMainAction ? (c) => ({
+      selected: G.selectedActionCardUid === c.uid,
+      hoverPreview: true,
+      draggable: true,
+      onclick: `G.selectActionCard('${c.uid}')`,
+    }) : () => ({ disabled: true }) })}` : ''}
+    ${preCommitBar}
+    ${boostDropZone}
     <div class="bottom-panel">${coachPanelHTML(G.mode)}${bottomPanel}</div>
     ${G.infoModal ? infoModalHTML(G) : ''}
   `;
   applyPendingShake(app);
+  const vig = typeof document !== 'undefined' ? document.getElementById('vignette-overlay') : null;
+  if (vig && vig.classList) {
+    const human = G.human();
+    const isLow = !!(human && human.life > 0 && human.life <= 6 && !engine.gameOver);
+    if (isLow) vig.classList.add('active');
+    else vig.classList.remove('active');
+  }
 }
 

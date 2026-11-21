@@ -312,10 +312,19 @@ class Engine {
     for (let i = 0; i < n; i++) {
       if (player.deck.length === 0) {
         if (!player.reshuffleUsed && player.discard.length > 0) {
-          this.logMsg(`${player.name}'s deck is empty — automatic reshuffle.`);
+          this.logMsg(`${player.name}'s deck is empty — automatic reshuffle.`, 'reshuffle', player.id);
           player.deck = shuffle(player.discard, this.rng);
           player.discard = [];
           player.reshuffleUsed = true;
+          if (typeof EventBus !== 'undefined') {
+            EventBus.emit('OnDeckReshuffled', {
+              playerId: player.id,
+              auto: true,
+              reshuffleUsed: true,
+              deckCount: player.deck.length,
+              discardCount: 0,
+            });
+          }
         } else if (player.discard.length > 0) {
           // already used the automatic reshuffle
           this.logMsg(`${player.name} has no cards left to draw and no reshuffle left — LOSS.`);
@@ -370,6 +379,15 @@ class Engine {
     player.discard = [];
     player.reshuffleUsed = true;
     this.logMsg(`${player.name} reshuffles their discard into their deck.`, 'reshuffle', player.id);
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnDeckReshuffled', {
+        playerId: player.id,
+        auto: false,
+        reshuffleUsed: true,
+        deckCount: player.deck.length,
+        discardCount: 0,
+      });
+    }
     // Season 5 Astral Heat: a BlazBlue fighter's Astral starts out of play entirely
     // and comes to hand instead of the end-of-turn draw on the turn they take the
     // Reshuffle ACTION. Deliberately here and not in draw()'s own empty-deck
@@ -463,6 +481,54 @@ class Engine {
   // ---------- movement helpers ----------
   clampPos(p) { return Math.max(0, Math.min(BOARD_SIZE - 1, p)); }
 
+  // Pure movement path simulator shared with SimulateStrikePreview.
+  // mode: 'advance' | 'close' | 'retreat'
+  // Returns { path: number[], endSpace: number, didCrossUp: boolean, wallTruncated: boolean }
+  static simulateMovementPath(fromSpace, oppSpace, amount, mode, opts = {}) {
+    const n = Math.max(0, amount | 0);
+    const blocksPassThrough = !!opts.blocksPassThrough;
+    const allowPass = mode === 'advance' && !blocksPassThrough;
+    const path = [fromSpace];
+    if (n === 0) {
+      return { path, endSpace: fromSpace, didCrossUp: false, wallTruncated: false };
+    }
+    const dirToOpp = fromSpace <= oppSpace ? 1 : -1;
+    const dir = mode === 'retreat' ? -dirToOpp : dirToOpp;
+    let pos = fromSpace;
+    let remaining = n;
+    let didCrossUp = false;
+    let wallTruncated = false;
+
+    while (remaining > 0) {
+      const next = pos + dir;
+      if (next < 0 || next >= BOARD_SIZE) {
+        wallTruncated = true;
+        break;
+      }
+      if (next === oppSpace && mode !== 'retreat') {
+        if (!allowPass) {
+          // Close stops adjacent; wall/pass-block also stops adjacent
+          break;
+        }
+        const landing = next + dir;
+        if (landing < 0 || landing >= BOARD_SIZE) {
+          wallTruncated = true;
+          break;
+        }
+        pos = landing;
+        didCrossUp = true;
+        path.push(pos);
+        remaining -= 1;
+        continue;
+      }
+      pos = next;
+      path.push(pos);
+      remaining -= 1;
+    }
+
+    return { path, endSpace: pos, didCrossUp, wallTruncated };
+  }
+
   // Advance: move toward opponent, may pass through/switch sides. amount = max spaces.
   // `forced` = "this is the opponent Pulling the mover, not the mover moving under
   // their own power". Pull is implemented as an advance of the TARGET (pushToward /
@@ -472,25 +538,11 @@ class Engine {
   // cappedSelfMove's own comment) explicitly says it must not.
   advanceSelf(mover, opponent, amount, allowPass, forced) {
     if (!forced) amount = this.cappedSelfMove(mover, amount); // Iron Tager's "move only 2 instead"
-    const dir = mover.pos <= opponent.pos ? 1 : -1;
-    let remaining = amount;
-    let pos = mover.pos;
-    while (remaining > 0) {
-      const next = pos + dir;
-      if (next < 0 || next > BOARD_SIZE - 1) break;
-      if (next === opponent.pos) {
-        // Zangief's Siberian Blizzard: "Opponents can't move past you" — the
-        // TARGET (opponent here) blocks the MOVER from jumping over them this
-        // Strike, same as the plain !allowPass case (stop adjacent instead).
-        if (!allowPass || opponent.strikeState.blocksOpponentPassThrough) { break; }
-        // stepping onto opponent's space is not allowed; jump over it (costs 1 of the amount)
-        const landing = next + dir;
-        if (landing < 0 || landing > BOARD_SIZE - 1) { break; }
-        pos = landing; remaining -= 1; continue;
-      }
-      pos = next; remaining -= 1;
-    }
-    mover.pos = pos;
+    const mode = allowPass ? 'advance' : 'close';
+    const res = Engine.simulateMovementPath(mover.pos, opponent.pos, amount, mode, {
+      blocksPassThrough: !!opponent.strikeState.blocksOpponentPassThrough,
+    });
+    mover.pos = res.endSpace;
   }
 
   // Close: like advance but stops at range 1, never passes.
@@ -500,9 +552,8 @@ class Engine {
 
   retreatSelf(mover, opponent, amount) {
     amount = this.cappedSelfMove(mover, amount); // Iron Tager's "move only 2 instead"
-    const dir = mover.pos <= opponent.pos ? -1 : 1;
-    let pos = mover.pos + dir * amount;
-    mover.pos = this.clampPos(pos);
+    const res = Engine.simulateMovementPath(mover.pos, opponent.pos, amount, 'retreat');
+    mover.pos = res.endSpace;
   }
 
   // ---- PAID movement (the "Move" action) ----
@@ -966,6 +1017,9 @@ class Engine {
     const char = CHARACTERS[player.characterKey];
     player.exceeded = true;
     this.logMsg(`${player.name} Exceeds! (${char.name} — ${char.exceedText})`, 'exceed', player.id);
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnExceedActivated', { playerId: player.id, characterKey: player.characterKey });
+    }
     if (char.onExceed) char.onExceed(this, player, this.P(this.other(player.id)));
   }
 
@@ -980,6 +1034,9 @@ class Engine {
     else player.discard.push(...spent);
     player.exceeded = true;
     this.logMsg(`${player.name} Exceeds! (${char.name} — ${char.exceedText})`, 'exceed', player.id);
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnExceedActivated', { playerId: player.id, characterKey: player.characterKey });
+    }
     let mayStrike = false, mayAction = false;
     if (char.onExceed) {
       const result = char.onExceed(this, player, this.P(this.other(player.id))) || {};
@@ -1272,6 +1329,14 @@ class Engine {
       // sites — e.g. ui.js passes "your Move" for the human, "CPU's Move" for AI).
       const verb = player.name === 'You' ? 'pay' : 'pays';
       this.logMsg(`${player.name} ${verb} ${forceValue} Force for ${reason || 'a cost'}: ${spent.map(c => c.name).join(', ')} discarded.`, 'force', player.id);
+      if (typeof EventBus !== 'undefined') {
+        EventBus.emit('OnForcePitched', {
+          playerId: player.id,
+          forceValue,
+          hasUltra: spent.some(c => c && c.type === 'ultra'),
+          reason: reason || 'cost',
+        });
+      }
     }
     return spent;
   }
@@ -2117,9 +2182,25 @@ class Engine {
         [D.id]: sideInfoOf(D, dCard, dStats, defenderSel),
       },
       events: [],
+      timeline: [],
     };
     const strikeInfo = this.lastStrikeInfo;
     const recordStrikeEvent = (evt) => { strikeInfo.events.push(evt); };
+    const pushTimeline = (step) => {
+      strikeInfo.timeline.push({
+        p1Pos: this.P('p1').pos,
+        p2Pos: this.P('p2').pos,
+        p1Life: this.P('p1').life,
+        p2Life: this.P('p2').life,
+        ...step,
+      });
+    };
+    pushTimeline({
+      phase: 'reveal',
+      actor: strikeInfo.firstId,
+      speedWinner: strikeInfo.firstId,
+      speedTie: aStats.spd === dStats.spd,
+    });
 
     const engine = this;
     function* activateStep(whoTag) {
@@ -2203,6 +2284,7 @@ class Engine {
           engine.logMsg(`${attacker.name} retreats ${engine.spaceWord(attCard.hooks.optionalRetreat)} (${attCard.name}).`);
         }
       }
+      pushTimeline({ phase: 'before', actor: attacker.id, sideSwapped: !!ctx.sideSwapped });
       // Note: a `ctx.selfArmorOverride` field applied here (mutating attStats.arm
       // right after the Before-hook) used to exist for Sickle Storm's "Lose all
       // Armor". Removed — see the `selfArmorZero` comment in liveStats above:
@@ -2282,6 +2364,7 @@ class Engine {
       // is a per-activation ctx flag set by that card's Before hook just above.
       const inRange = !rangeImmune && !attCard.alwaysMiss && !burstTimeBlocked && !ctx.selfCannotHit && !defender.strikeState.unhittable &&
         ((attCard.range && rng >= attCard.range[0] && rng <= maxR) || passiveRangeInclude);
+      pushTimeline({ phase: 'range', actor: attacker.id, hitLanded: !!inRange, range: rng });
       if (burstTimeBlocked) engine.logMsg(`${attacker.name}'s ${attCard.name} does not hit \u2014 no Continuous Boost in play.`, 'miss', defender.id, { attackerId: attacker.id });
 
       // Range check as data (see lastStrikeInfo above). Recorded HERE, not at
@@ -2497,6 +2580,16 @@ class Engine {
           attackerId: attacker.id, defenderId: defender.id, cardName: attCard.name,
           effPow, effArm, effGrd, dealt, defenderLifeAfter: defender.life,
         });
+        pushTimeline({
+          phase: 'hit',
+          actor: attacker.id,
+          defenderId: defender.id,
+          damageDealt: dealt,
+          effectiveArmor: effArm,
+          effectiveGuard: effGrd,
+          guardBroken: dealt > effGrd,
+          confirmedLethal: defender.life <= 0,
+        });
       } else {
         if (rangeImmune) {
           engine.logMsg(`${attacker.name}'s ${attCard.name} misses \u2014 ${defender.name} is immune to attacks at range ${rng} this Strike.`, 'miss', defender.id, { attackerId: attacker.id });
@@ -2552,6 +2645,7 @@ class Engine {
       for (const b of attacker.boostsInPlay) {
         if (ctx.hitLanded && b.card.boost.onHit) b.card.boost.onHit({ engine, player: attacker, opponent: defender });
       }
+      pushTimeline({ phase: 'after', actor: attacker.id, hitLanded: !!ctx.hitLanded });
       return ctx;
     }
 
@@ -2583,6 +2677,14 @@ class Engine {
       if (dmg > grd && !stunImmune) {
         secondHappens = false;
         stunnedPlayerId = secondPlayer.id;
+        pushTimeline({
+          phase: 'stunned',
+          actor: secondPlayer.id,
+          stunned: true,
+          guardBroken: true,
+          damageDealt: dmg,
+          effectiveGuard: grd,
+        });
         this.logMsg(`${secondPlayer.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${secondCard.name} is discarded.`, 'stun', secondPlayer.id);
         secondPlayer.discard.push(secondCard);
         if (second === 'A') aCard = null; else dCard = null;
@@ -2672,6 +2774,7 @@ class Engine {
     // Card-level cleanup effects (Nagoriyuki's Specials have "Cleanup: Draw 4. Discard 2.")
     this.triggerCardCleanup(A, aCard);
     this.triggerCardCleanup(D, dCard);
+    pushTimeline({ phase: 'cleanup', actor: null, confirmedLethal: this.gameOver || this.P('p1').life <= 0 || this.P('p2').life <= 0 });
     // Character-level CLEANUP hooks (Platinum the Trinity's Innate/Exceed are both
     // "Cleanup: You may reveal the top card of your deck..."). Distinct from
     // onAfterStrike below, and deliberately ordered here — after the boost sweep and

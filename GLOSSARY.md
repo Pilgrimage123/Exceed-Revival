@@ -43,3 +43,19 @@ _Avoid_: Fighter readiness, port status
 **Information Set**:
 The complete set of public game state plus a player's own private hand and known deck order, excluding all hidden opponent cards.
 _Avoid_: Game state, private state
+
+**Strike Preview**:
+A pure, fog-of-war-safe projection of a candidate attack's post-`Before` Arena Space, Range coverage, projected damage, and lethal status derived solely from the active player's `Information Set`.
+_Avoid_: Attack sim, hover calc
+
+**Public-State Lethal**:
+A pre-reveal indicator that a playable attack deals damage greater than or equal to the opponent's remaining life against currently visible board modifiers, before hidden opponent responses are known.
+_Avoid_: Guaranteed kill, sure lethal
+
+**Confirmed Lethal**:
+A post-reveal KO state verified by deterministic Strike resolution after both attacks are face-up.
+_Avoid_: Hover lethal, predicted KO
+
+**Trigger Timeline**:
+The ordered two-pass sequence of Strike resolution phases (`Reveal & Speed`, `Faster: Before -> Range -> Hit & Damage -> After`, `Slower: Before -> Range -> Hit & Damage -> After or STUNNED`, `Cleanup`).
+_Avoid_: Combat log, beat list
