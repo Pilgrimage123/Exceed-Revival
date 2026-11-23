@@ -511,7 +511,7 @@ function boardHTML(engine) {
     }
     const dist = Math.abs(i - humanPos);
     const selfCls = i === humanPos ? ' band-self' : '';
-    const canClickMove = G && G.mode === 'awaiting_action' && i !== p1.pos && i !== p2.pos;
+    const canClickMove = G && G.mode === 'awaiting_action' && engine.active === G.humanId && i !== p1.pos && i !== p2.pos;
     const cellClick = canClickMove ? ` onclick="G.clickBoardSpace(${i})"` : '';
     const moveCls = canClickMove ? ' cell-movable' : '';
     cells += `<div class="cell${selfCls}${moveCls}" data-dist="${dist}" data-space="${i}"${cellClick}><span class="cell-dist">${dist}</span>${occupant}</div>`;
@@ -524,8 +524,11 @@ function boardHTML(engine) {
   const eddieReadout = eddieOwner
     ? ` &nbsp;|&nbsp; Eddie (${eddieOwner.id === (G ? G.humanId : 'p1') ? 'yours' : 'CPU'}): space ${eddieOwner.eddiePos + 1}, Range <b>${Math.abs(eddieOwner.eddiePos - (eddieOwner.id === p1.id ? p2 : p1).pos)}</b> to ${eddieOwner.id === p1.id ? p2.name : p1.name}`
     : '';
+  const tlStepIdx = (engine.lastStrikeInfo && typeof StrikePlaybackController !== 'undefined' && typeof StrikePlaybackController.getCurrentStepIdx === 'function')
+    ? StrikePlaybackController.getCurrentStepIdx(engine.lastStrikeInfo)
+    : ((engine.lastStrikeInfo && engine.lastStrikeInfo.timeline) || []).length - 1;
   const tlSlot = (G && G.mode === 'strike_result' && engine.lastStrikeInfo && typeof StrikePlaybackController !== 'undefined')
-    ? StrikePlaybackController.timelineBarHTML(engine.lastStrikeInfo, (engine.lastStrikeInfo.timeline || []).length - 1)
+    ? StrikePlaybackController.timelineBarHTML(engine.lastStrikeInfo, tlStepIdx)
     : '';
   return `<div id="trigger-timeline-slot">${tlSlot}</div>
   <div id="clash-banner-slot"></div>
@@ -1138,7 +1141,7 @@ function paint() {
       bottomPanel = `<h3>Your turn \u2014 choose an action</h3>
         <div class="btn-row">
           <button onclick="G.suggestMove()">Suggest a move</button>
-          <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+          <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
         </div>
         ${hint}
         ${actionButtons(G)}`;
@@ -1301,7 +1304,7 @@ function paint() {
       ${exTiles ? '<div class="ex-hint">Cards marked (EX) pair two copies for +1 to all stats \u2014 the extra copy is discarded on reveal.</div>' : ''}
       <div class="btn-row">
         <button onclick="G.suggestStrike(false)">Suggest a card</button>
-        <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+        <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
       </div>
       ${trainerPanelHTML(G)}
       <button class="big-btn wildswing-btn" onclick="G.pickWildSwing()">Wild Swing (top of deck)</button>
@@ -1341,7 +1344,7 @@ function paint() {
       bottomPanel = `<h3>CPU struck${wildSwingNote}${faceUpNote}! Choose your defense card.</h3>
         <div class="btn-row">
           <button onclick="G.suggestStrike(true)">Suggest a card</button>
-          <button class="cancel-btn" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
+          <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
         </div>
         ${trainerPanelHTML(G)}
         ${handHTML(G, { tileOpts: defendTileOpts, exTiles })}
@@ -1584,7 +1587,7 @@ function paint() {
   }
 
   const humanHandVisible = ['awaiting_action', 'move_setup', 'changecards_setup', 'special_move1', 'char_exceed_strike_choice', 'char_exceed_action_choice'].includes(G.mode);
-  const isMainAction = G.mode === 'awaiting_action';
+  const isMainAction = G.mode === 'awaiting_action' && engine.active === G.humanId;
   const selCard = isMainAction && G.selectedActionCardUid ? G.human().hand.find(c => c.uid === G.selectedActionCardUid) : null;
   const hasEXPair = selCard && G.human().hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(G.human(), selCard));
   const preCommitBar = selCard ? `<div class="precommit-bar">

@@ -135,3 +135,61 @@ test('Normal Matrix tracks GG_NORMALS and resets discard on reshuffle; deckWarni
   assert.equal(result.amber.cls, 'deck-amber');
   assert.equal(result.redPost.cls, 'deck-red');
 });
+
+test('pickExactForceCards handles 1-Force + 2-Force parity and UI action/board handlers guard active human turn', () => {
+  const ctx = loadGameSandbox();
+  const result = vm.runInContext(`(() => {
+    const ctrl = new GameController('ryu', 'ken', 'champion');
+    G = ctrl;
+    ctrl.mode = 'awaiting_action';
+    const p1 = ctrl.human();
+    const p2 = ctrl.ai();
+    p1.pos = 2;
+    p2.pos = 6;
+
+    // Parity test: one 1-Force normal + one 2-Force Ultra paying cost 2 must select the Ultra
+    const hadoken = SimulateStrikePreview.resolveCardByKey('hadoken_ryu');
+    const metsu = SimulateStrikePreview.resolveCardByKey('metsu_hadoken');
+    const normal = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'u_norm' };
+    const ultra = { ...metsu, uid: 'u_ultra' };
+    p1.hand = [normal, ultra];
+    p1.gauge = [];
+    const exact2 = ctrl.engine.pickExactForceCards(p1, 2);
+
+    // Unpayable exact Force 1 when holding only an Ultra
+    p1.hand = [ultra];
+    const impossible1 = ctrl.engine.pickExactForceCards(p1, 1);
+
+    // Direct-move with only an Ultra to a 1-space target must NOT trap in move_force_select
+    ctrl.engine.active = 'p1';
+    ctrl.clickBoardSpace(3);
+    const modeAfterImpossibleMove = ctrl.mode;
+
+    // During CPU's turn, human card selection and direct board-click must be ignored
+    p1.hand = [normal, ultra];
+    ctrl.engine.active = 'p2';
+    ctrl.selectActionCard('u_norm');
+    const selectedDuringCpuTurn = ctrl.selectedActionCardUid;
+    ctrl.clickBoardSpace(3);
+    const modeDuringCpuTurn = ctrl.mode;
+
+    return {
+      hadokenName: hadoken && hadoken.name,
+      metsuType: metsu && metsu.type,
+      exact2,
+      impossible1,
+      modeAfterImpossibleMove,
+      selectedDuringCpuTurn,
+      modeDuringCpuTurn,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(result.hadokenName, 'Hadoken');
+  assert.equal(result.metsuType, 'ultra');
+  assert.deepEqual(Array.from(result.exact2), ['u_ultra']);
+  assert.equal(result.impossible1, null);
+  assert.equal(result.modeAfterImpossibleMove, 'awaiting_action');
+  assert.equal(result.selectedDuringCpuTurn, null);
+  assert.equal(result.modeDuringCpuTurn, 'awaiting_action');
+});
+

@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Exceed Fighting System</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,700;0,800;1,800;1,900&family=JetBrains+Mono:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0f1218; --panel:#1c2330; --panel-2:#26304a; --line:#4a5a7f;
@@ -16,11 +19,12 @@
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;background:var(--bg);color:var(--text);
     font-family:'Segoe UI',Roboto,-apple-system,sans-serif;font-size:16px;}
-  #app{max-width:900px;margin:0 auto;padding:14px 14px 40px;}
+  #app{max-width:900px;margin:0 auto;padding:10px 14px 40px;}
+  .top-util-bar{max-width:900px;margin:0 auto;padding:10px 14px 0;display:flex;justify-content:flex-end;align-items:center;gap:8px;position:relative;}
   /* A full 7-card hand is ~1090px of card tiles, so at 900px the last two cards sit
      outside the .hand-row and can only be reached by scrolling it — even on a 1920px
      screen with a third of the window empty. Widen the column when there's room. */
-  @media (min-width:1220px){ #app{max-width:1180px;} }
+  @media (min-width:1220px){ #app,.top-util-bar{max-width:1180px;} }
   #app.screen-shake{animation:screenShake 0.45s cubic-bezier(.36,.07,.19,.97) both;}
   @keyframes screenShake{
     0%{transform:translate(0,0);} 10%{transform:translate(-8px,2px);} 20%{transform:translate(7px,-3px);}
@@ -56,7 +60,7 @@
   .life-bar-fill{height:100%;background:linear-gradient(90deg,#f87171,#facc15,#4ade80);}
   .you-accent .life-bar-fill{background:linear-gradient(90deg,#0f766e,var(--you));}
   .cpu-accent .life-bar-fill{background:linear-gradient(90deg,#7c2d12,var(--cpu));}
-  .resource-row{display:flex;gap:8px 10px;font-size:12px;color:var(--text-dim);flex-wrap:wrap;font-weight:600;}
+  .resource-row{display:flex;align-items:center;gap:6px 10px;font-size:12px;color:var(--text-dim);flex-wrap:wrap;font-weight:600;}
   .innate-line{margin-top:6px;font-size:11.5px;color:#d6d0ff;background:#241a42;border-radius:6px;padding:5px 7px;}
   .boosts-active{margin-top:5px;display:flex;flex-direction:column;gap:3px;}
   .boost-active-item{font-size:11.5px;color:#e3d6ff;background:#241a42;border-radius:6px;padding:4px 7px;line-height:1.35;}
@@ -102,13 +106,13 @@
   .fx-badge.fx-heal{border-color:#5cffb0;}
   @keyframes fxPop{from{transform:translateX(-50%) scale(.5);opacity:0;}to{transform:translateX(-50%) scale(1);opacity:1;}}
   .fx-skip-btn{margin-left:8px;background:var(--panel-2);border:1px solid var(--line);color:var(--text-dim);
-    border-radius:6px;padding:2px 9px;font-size:12.5px;cursor:pointer;}
+    border-radius:6px;padding:3px 9px;min-height:0;font-size:12.5px;cursor:pointer;}
   .fx-skip-btn:hover{color:var(--text);border-color:var(--text-dim);}
 
   .mid-row{margin:8px 0;}
   .log-panel{background:#05070a;border:1px solid var(--line);border-radius:10px;padding:8px;
     max-height:280px;overflow-y:auto;font-size:13.5px;color:#c7cfe4;
-    font-family:'Segoe UI',Roboto,-apple-system,"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;}
+    font-family:'Segoe UI',Roboto,-apple-system,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji";}
   .log-line{padding:3px 4px;}
   .log-line.plain{color:#9aa5c0;}
   .round-card{background:#141a28;border:1.5px solid var(--line);border-radius:10px;margin-bottom:8px;padding:8px 10px;}
@@ -239,19 +243,15 @@
   .diff-badge.champion{background:#4a2f8b;color:#e3d6ff;}
   .diff-badge.warrior{background:#5a2a1a;color:#ffb599;}
   .diff-badge.student{background:#164a44;color:#7ff0da;}
-  /* Top-right, not bottom-right: the in-game action grid and fighter-select cards
-     both live near the bottom of the page at the small viewports this project
-     targets, so a fixed bottom-corner button risks sitting on top of them once the
-     page is short enough that #app's bottom edge reaches the viewport bottom. The
-     top-right corner is reliably empty across every screen this shell has (title
-     banner and section headers are centered, never flush right), and living OUTSIDE
-     #app (see the HTML move) is what makes it survive render()'s full #app repaint
-     once a game is in progress — see HANDOFF.md §1's "How to Play trap" note.*/
-  .rules-btn{position:fixed;top:14px;right:14px;background:#c23b45;border:none;border-radius:8px;
-    padding:9px 14px;color:#fff;font-weight:800;font-size:13px;cursor:pointer;z-index:1000;
+  /* Top utility bar buttons live OUTSIDE #app (so they survive render()'s full
+     #app repaint once a game is in progress — see HANDOFF.md §1) and sit in
+     normal document flow above #app so they never overlap the CPU HP panel when
+     scrolled or on narrow viewports. */
+  .rules-btn{background:#c23b45;border:none;border-radius:8px;
+    padding:0 14px;height:34px;min-height:34px;display:inline-flex;align-items:center;color:#fff;font-weight:800;font-size:13px;cursor:pointer;
     box-shadow:0 3px 10px rgba(194,59,69,.4);transition:transform .15s,box-shadow .15s;}
-  .rules-btn:hover{background:#d04d57;transform:scale(1.05);box-shadow:0 5px 14px rgba(194,59,69,.6);}
-  @media (max-width:420px){ .rules-btn{top:8px;right:8px;padding:7px 10px;font-size:11.5px;} }
+  .rules-btn:hover{background:#d04d57;transform:scale(1.03);box-shadow:0 5px 14px rgba(194,59,69,.6);}
+  @media (max-width:420px){ .top-util-bar{padding:8px 10px 0;gap:6px;} .rules-btn{padding:0 10px;height:32px;min-height:32px;font-size:11.5px;} .settings-btn{padding:0 9px;height:32px;min-height:32px;font-size:11.5px;} }
 
   /* ---- Title-screen onboarding additions ---- */
   .economy-note{max-width:520px;margin:0 auto 6px;background:rgba(107,125,179,.08);
@@ -332,26 +332,601 @@
   .card-usage-guide p{font-size:13px;color:#b7c0d6;margin:6px 0;line-height:1.5;}
   .card-usage-guide b{color:#ab8ff2;font-weight:700;}
   .opponent-line{font-weight:700;color:var(--cpu);margin:-6px 0 4px;}
-  .htp-section{margin-bottom:16px;}
-  .htp-section h3{margin:0 0 6px;font-size:15px;}
-  .htp-section p, .htp-section li{font-size:13.5px;color:var(--text-dim);line-height:1.5;}
-  .htp-toggle-row{display:flex;gap:8px;margin-bottom:14px;}
-  .htp-toggle-row button{flex:1;padding:8px;border-radius:8px;border:2px solid var(--line);background:transparent;color:var(--text-dim);font-weight:700;}
-  .htp-toggle-row button.active{border-color:var(--you);color:var(--text);background:rgba(77,230,209,.1);}
   .kw-term{color:var(--text);font-weight:800;}
-  .htp-icon-note{font-size:12.5px;color:var(--text-dim);margin:0 0 6px;font-style:italic;}
-  .htp-icon-list{list-style:none;margin:0 0 14px;padding:0;}
-  .htp-icon-list li{display:flex;align-items:baseline;gap:8px;padding:4px 0;}
-  .htp-icon-glyph{font-size:18px;line-height:1;flex-shrink:0;min-width:22px;text-align:center;
-    font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;}
 
-  .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,.82);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(5,7,10,.86);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px;}
   .modal-panel{background:var(--panel);border:2px solid var(--line);border-radius:16px;max-width:520px;width:100%;
     max-height:88vh;overflow-y:auto;padding:0;}
   .modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;
     border-bottom:2px solid var(--line);position:sticky;top:0;background:var(--panel);}
   .modal-close{min-height:40px;padding:8px 14px;}
   .modal-body{padding:16px 18px 24px;}
+
+  /* ============================================================
+     ARCADE FIGHTER COMMAND MANUAL (#howToPlayOverlay)
+     ============================================================ */
+  #howToPlayOverlay{padding:16px;z-index:1050;background:rgba(5,7,12,.88);}
+  .htp-modal-panel{
+    width:min(1140px,96vw);height:min(88vh,820px);max-width:none;max-height:none;
+    overflow:hidden;border-radius:6px;border:1px solid #3c4d73;
+    background:#0c101a;box-shadow:0 28px 80px rgba(0,0,0,.78);
+    display:flex;flex-direction:column;
+    font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;
+    animation:htpEnter .18s cubic-bezier(.16,1,.3,1);
+  }
+  @keyframes htpEnter{from{opacity:0;transform:translateY(10px) scale(.985);}to{opacity:1;transform:translateY(0) scale(1);}}
+  .htp-shell{display:flex;flex-direction:column;height:100%;min-height:0;color:#f5f7fc;}
+  .htp-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
+
+  /* Top arcade banner */
+  .htp-topbar{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;
+    padding:14px 22px;border-bottom:2px solid #2b3854;
+    background:
+      linear-gradient(108deg, rgba(77,230,209,.12) 0%, rgba(16,22,36,0) 36%, rgba(255,107,87,.11) 100%),
+      repeating-linear-gradient(-45deg, rgba(255,255,255,.022) 0 6px, transparent 6px 12px),
+      #101624;
+  }
+  .htp-brand{display:flex;align-items:baseline;gap:12px;min-width:0;}
+  .htp-brand-mark{
+    font-family:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+    font-size:28px;font-weight:900;font-style:italic;letter-spacing:.05em;line-height:1;
+    color:#4de6d1;text-shadow:0 2px 0 rgba(0,0,0,.6);white-space:nowrap;
+  }
+  .htp-brand-title{
+    margin:0;font-family:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+    font-size:24px;font-weight:800;font-style:italic;letter-spacing:.04em;text-transform:uppercase;
+    color:#f5f7fc;line-height:1;white-space:nowrap;
+  }
+  .htp-topbar-actions{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .htp-quick-cta{
+    min-height:40px;padding:8px 18px;border:1px solid #4de6d1;background:#123836;color:#4de6d1;
+    font-family:'Barlow Condensed','Plus Jakarta Sans',sans-serif;font-size:16px;font-weight:800;
+    letter-spacing:.05em;text-transform:uppercase;white-space:nowrap;text-align:center;
+    border-radius:0;clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);
+    transition:transform .16s cubic-bezier(.16,1,.3,1),background .16s;
+  }
+  .htp-quick-cta:hover{background:#184f4c;transform:translateY(-1px);}
+  .htp-close-btn{
+    width:40px;height:40px;min-height:40px;padding:0;display:inline-flex;align-items:center;justify-content:center;
+    border-radius:4px;border:1px solid #3c4d73;background:#161e30;color:#d6def0;font-size:17px;font-weight:800;
+    transition:border-color .15s,color .15s,background .15s;
+  }
+  .htp-close-btn:hover{border-color:#ff6b57;color:#fff;background:#2b1920;}
+
+  /* Workspace split: left arcade rail + scrollable stage */
+  .htp-workspace{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:228px 1fr;overflow:hidden;}
+  .htp-rail{
+    background:#0f1421;border-right:1px solid #26324d;padding:16px 12px;
+    display:flex;flex-direction:column;gap:8px;overflow-y:auto;
+  }
+  .htp-rail-btn{
+    display:flex;align-items:center;gap:11px;width:100%;min-height:48px;padding:10px 14px;
+    border:1px solid #232f48;border-radius:4px;background:#131a2a;color:#b8c3dc;
+    text-align:left;cursor:pointer;white-space:nowrap;
+    transition:transform .15s cubic-bezier(.16,1,.3,1),border-color .15s,background .15s,color .15s;
+  }
+  .htp-rail-btn:hover{border-color:#536996;color:#f5f7fc;background:#182238;}
+  .htp-rail-btn.active{
+    border-color:#4de6d1;background:linear-gradient(95deg,rgba(77,230,209,.18),rgba(20,29,48,.96) 72%);
+    color:#ffffff;transform:translateX(3px);
+  }
+  .htp-rail-num{
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;
+    color:#6b7db3;font-variant-numeric:tabular-nums;
+  }
+  .htp-rail-btn.active .htp-rail-num{color:#4de6d1;}
+  .htp-rail-label{font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;}
+
+  .htp-stage{flex:1 1 auto;min-height:0;overflow-y:auto;padding:18px 26px 28px;background:#0c101a;outline:none;}
+  .htp-pane{display:flex;flex-direction:column;gap:14px;max-width:860px;}
+
+  /* Section header typography */
+  .htp-section-head{display:flex;flex-direction:column;gap:4px;padding-bottom:10px;border-bottom:1px solid #24304a;}
+  .htp-kicker{
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;
+    letter-spacing:.08em;text-transform:uppercase;color:#4de6d1;
+  }
+  .htp-title{
+    margin:0;font-family:'Barlow Condensed','Arial Narrow',Impact,sans-serif;
+    font-size:clamp(24px,2.8vw,31px);font-weight:800;font-style:italic;letter-spacing:.02em;
+    line-height:1.08;color:#ffffff;text-wrap:balance;text-transform:none;
+  }
+  .htp-lead{margin:0;font-size:14px;line-height:1.52;color:#c3cde2;max-width:72ch;}
+  .htp-lead strong{color:#ffffff;font-weight:700;}
+
+  /* Structural panels */
+  .htp-panel{
+    background:#131928;border:1px solid #283552;border-radius:6px;padding:14px 18px;
+    display:flex;flex-direction:column;gap:11px;
+  }
+  .htp-panel-head{display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px;}
+  .htp-panel-head h4{
+    margin:0;padding:0;border:none;font-family:'Barlow Condensed',sans-serif;
+    font-size:20px;font-weight:800;font-style:italic;letter-spacing:.03em;color:#f5f7fc;text-transform:uppercase;
+  }
+  .htp-panel-sub{font-size:12.5px;color:#9aa8c7;font-weight:500;}
+
+  /* 01. Fight Basics: brief strip + loop diagram + 9-space stage + move list + seasons */
+  .htp-brief-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .htp-brief-block{
+    background:#131928;border:1px solid #283552;border-radius:6px;padding:12px 14px;
+    display:flex;flex-direction:column;gap:3px;
+  }
+  .htp-brief-num{
+    font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:800;font-style:italic;
+    color:#f7c65a;line-height:1;font-variant-numeric:tabular-nums;
+  }
+  .htp-brief-label{font-size:13.5px;font-weight:800;color:#ffffff;margin-top:2px;}
+  .htp-brief-block p{margin:3px 0 0;font-size:12.5px;line-height:1.45;color:#bcc6dc;}
+
+  .htp-loop-grid{display:grid;grid-template-columns:1fr auto 1fr auto 1fr;align-items:stretch;gap:8px;}
+  .htp-loop-node{
+    background:#0d121e;border:1px solid #2a3754;border-radius:5px;padding:11px 13px;
+    display:flex;flex-direction:column;gap:4px;
+  }
+  .htp-loop-node.loop-hit{border-top:3px solid #4de6d1;}
+  .htp-loop-node.loop-miss{border-top:3px solid #ff6b57;}
+  .htp-loop-node.loop-force{border-top:3px solid #ab8ff2;}
+  .htp-loop-step{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;color:#8c9bc0;}
+  .htp-loop-title{font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:800;color:#ffffff;letter-spacing:.02em;}
+  .htp-loop-node p{margin:0;font-size:12.5px;line-height:1.45;color:#bcc6dc;}
+  .htp-loop-node strong{color:#f5f7fc;}
+  .htp-loop-arrow{display:flex;align-items:center;justify-content:center;color:#55668c;font-size:17px;font-weight:800;}
+
+  .htp-inline-switch{display:inline-flex;background:#0a0e18;border:1px solid #2a3754;border-radius:5px;padding:3px;gap:4px;}
+  .htp-seg-btn{
+    min-height:34px;padding:5px 12px;border:1px solid transparent;border-radius:4px;
+    background:transparent;color:#9aa8c7;font-size:12.5px;font-weight:700;text-align:center;white-space:nowrap;
+  }
+  .htp-seg-btn:hover{color:#ffffff;border-color:transparent;}
+  .htp-seg-btn.active{background:#1b2640;color:#ffffff;border-color:#4a5e8c;}
+  .htp-seg-btn.active.p1{background:#113936;color:#4de6d1;border-color:#4de6d1;}
+  .htp-seg-btn.active.p2{background:#472017;color:#ff8a73;border-color:#ff6b57;}
+
+  .htp-range-readout-row{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;font-size:13.5px;color:#bcc6dc;}
+  .htp-range-metric{
+    font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#f7c65a;
+    background:#0b0f19;border:1px solid #344468;padding:5px 12px;border-radius:4px;font-variant-numeric:tabular-nums;
+  }
+  .htp-range-metric strong{font-size:16px;color:#ffffff;}
+
+  .htp-stage-track{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;}
+  .htp-stage-cell{
+    height:54px;min-height:48px;padding:0;border-radius:4px;border:1px solid #304063;background:#0e1422;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;position:relative;
+    transition:border-color .15s,background .15s,transform .15s;
+  }
+  .htp-stage-cell:hover{border-color:#4de6d1;background:#162038;transform:translateY(-1px);}
+  .htp-stage-cell.in-gap{background:rgba(247,198,90,.09);border-color:rgba(247,198,90,.35);}
+  .htp-stage-cell.has-p1{background:rgba(77,230,209,.14);border-color:#4de6d1;}
+  .htp-stage-cell.has-p2{background:rgba(255,107,87,.14);border-color:#ff6b57;}
+  .htp-cell-idx{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:#6c7da3;}
+  .htp-fighter-chip{
+    font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:900;font-style:italic;
+    padding:3px 9px;border-radius:3px;line-height:1;letter-spacing:.04em;
+  }
+  .htp-fighter-chip.p1{background:#4de6d1;color:#052622;}
+  .htp-fighter-chip.p2{background:#ff6b57;color:#290a04;}
+
+  .htp-bench-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;}
+  .htp-bench-card{
+    background:#0d121e;border:1px solid #26334f;border-radius:5px;padding:10px 12px;
+    display:flex;flex-direction:column;gap:4px;transition:border-color .15s,opacity .15s;
+  }
+  .htp-bench-card.is-in{border-color:#4ade80;background:rgba(74,222,128,.07);}
+  .htp-bench-card.is-out{opacity:.68;}
+  .htp-bench-top{display:flex;justify-content:space-between;align-items:center;gap:6px;}
+  .htp-bench-name{font-size:13.5px;font-weight:800;color:#ffffff;}
+  .htp-bench-status{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;letter-spacing:.04em;}
+  .htp-bench-status.in{color:#4ade80;}
+  .htp-bench-status.out{color:#f87171;}
+  .htp-bench-meta{display:flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#c3cde2;font-variant-numeric:tabular-nums;}
+  .htp-bench-role{font-size:11.5px;color:#8c9bc0;}
+
+  /* Command Move List table */
+  .htp-cmd-table{display:flex;flex-direction:column;border:1px solid #25314d;border-radius:5px;overflow:hidden;}
+  .htp-cmd-head-row,.htp-cmd-row{
+    display:grid;grid-template-columns:180px 115px 1fr;align-items:center;gap:12px;padding:10px 14px;
+  }
+  .htp-cmd-head-row{
+    background:#0b0f19;border-bottom:1px solid #283552;
+    font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#8c9bc0;
+  }
+  .htp-cmd-row{background:#101624;border-bottom:1px solid #1e2840;font-size:13.5px;}
+  .htp-cmd-row:last-child{border-bottom:none;}
+  .htp-cmd-row:nth-child(even){background:#131a2b;}
+  .htp-cmd-name-col{display:flex;align-items:center;gap:10px;}
+  .htp-keycap{
+    width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:#f5f7fc;
+    background:#0a0e17;border:1px solid #415278;border-bottom-width:2px;border-radius:4px;
+  }
+  .htp-cmd-name{font-weight:800;color:#ffffff;}
+  .htp-cmd-cost{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;white-space:nowrap;}
+  .htp-cmd-cost.cost-strike{color:#4de6d1;}
+  .htp-cmd-cost.cost-force{color:#c4b5fd;}
+  .htp-cmd-cost.cost-gauge{color:#ff6f8f;}
+  .htp-cmd-cost.cost-free{color:#4ade80;}
+  .htp-cmd-cost.cost-once{color:#f7c65a;}
+  .htp-cmd-cost.cost-special{color:#93c5fd;}
+  .htp-cmd-desc{color:#c3cde2;line-height:1.45;font-size:13px;}
+
+  .htp-season-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;}
+  .htp-season-box{background:#0d121e;border:1px solid #26334f;border-radius:5px;padding:14px;display:flex;flex-direction:column;gap:5px;}
+  .htp-season-tag{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;}
+  .htp-season-tag.sf{color:#f7c65a;}
+  .htp-season-tag.gg{color:#ff6f8f;}
+  .htp-season-tag.bb{color:#4de6d1;}
+  .htp-season-box h5{margin:0;font-size:14.5px;font-weight:800;color:#ffffff;}
+  .htp-season-box p{margin:0;font-size:12.5px;line-height:1.5;color:#bcc6dc;}
+  .htp-season-box strong{color:#ffffff;}
+
+  /* 02. Interactive Card Anatomy */
+  .htp-arch-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+  .htp-arch-btn{
+    min-height:46px;padding:8px 14px;border-radius:5px;border:1px solid #2b3854;background:#131928;
+    display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;text-align:left;
+    transition:border-color .15s,background .15s,transform .15s;
+  }
+  .htp-arch-btn:hover{border-color:#5b71a1;transform:translateY(-1px);}
+  .htp-arch-type{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;text-transform:uppercase;color:#9aa8c7;}
+  .htp-arch-name{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:800;font-style:italic;color:#ffffff;}
+  .htp-arch-btn.active.normal{border-color:#6b7db3;background:rgba(107,125,179,.2);}
+  .htp-arch-btn.active.normal .htp-arch-type{color:#9db0e8;}
+  .htp-arch-btn.active.special{border-color:#ab8ff2;background:rgba(171,143,242,.18);}
+  .htp-arch-btn.active.special .htp-arch-type{color:#d3c2ff;}
+  .htp-arch-btn.active.ultra{border-color:#ff6f8f;background:rgba(255,111,143,.18);}
+  .htp-arch-btn.active.ultra .htp-arch-type{color:#ff9fb5;}
+
+  .htp-inspector-layout{display:grid;grid-template-columns:306px 1fr;gap:18px;align-items:start;}
+  .htp-card-stage{display:flex;justify-content:center;}
+  .htp-live-card{
+    width:100%;max-width:306px;background:#151c2c;border:3px solid #6b7db3;border-radius:10px;
+    padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 16px 40px rgba(0,0,0,.45);
+    transition:box-shadow .16s,border-color .16s;
+  }
+  .htp-live-card.card-normal{border-color:#6b7db3;}
+  .htp-live-card.card-special{border-color:#ab8ff2;}
+  .htp-live-card.card-ultra{border-color:#ff6f8f;}
+  .htp-live-card.frame-focused{box-shadow:0 0 0 3px #f7c65a, 0 18px 44px rgba(0,0,0,.55);}
+
+  .htp-frame-tab{
+    width:100%;min-height:30px;padding:5px 9px;border-radius:5px;border:1px solid #2f3e60;background:#0d121e;
+    display:flex;align-items:center;justify-content:space-between;
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;letter-spacing:.05em;color:#c3cde2;
+  }
+  .htp-card-zone{
+    width:100%;min-height:32px;padding:6px 9px;border-radius:6px;border:1px solid transparent;
+    background:#101624;color:#f5f7fc;text-align:left;cursor:pointer;position:relative;
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    transition:border-color .15s,background .15s,transform .15s;
+  }
+  .htp-card-zone:hover,.htp-frame-tab:hover{border-color:#4de6d1;background:#18243a;}
+  .htp-card-zone.is-active,.htp-frame-tab.is-active{
+    border-color:#f7c65a;background:rgba(247,198,90,.12);box-shadow:inset 0 0 0 1px rgba(247,198,90,.4);
+  }
+  .htp-zone-dot{
+    width:20px;height:20px;flex-shrink:0;border-radius:3px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;
+    background:#222e48;color:#b8c3dc;
+  }
+  .is-active .htp-zone-dot{background:#f7c65a;color:#0b0e16;}
+
+  .htp-live-name{font-family:'Barlow Condensed',sans-serif;font-size:23px;font-weight:900;font-style:italic;color:#ffffff;line-height:1.05;}
+  .htp-live-gauge{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:#ff6f8f;margin-left:auto;}
+  .htp-live-free-tag{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#7e8eb3;margin-left:auto;}
+
+  .htp-live-stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;flex:1;}
+  .htp-stat-cell{
+    background:#090d16;border:1px solid #283552;border-radius:4px;padding:5px 2px;
+    display:flex;flex-direction:column;align-items:center;gap:1px;
+  }
+  .htp-stat-k{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#8c9bc0;}
+  .htp-stat-v{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:#ffffff;font-variant-numeric:tabular-nums;}
+
+  .htp-live-body{font-size:12.5px;line-height:1.45;color:#d6def0;flex:1;}
+  .htp-zone-crit.has-crit{background:rgba(247,198,90,.09);border-color:rgba(247,198,90,.35);}
+  .htp-zone-crit.no-crit{opacity:.75;}
+  .htp-live-crit{font-size:12px;font-weight:700;color:#f7c65a;flex:1;}
+  .htp-zone-crit.no-crit .htp-live-crit{color:#8c9bc0;font-weight:500;font-style:italic;}
+
+  .htp-zone-split{min-height:28px;padding:4px 8px;background:transparent;}
+  .htp-split-line{flex:1;height:0;border-top:2px dashed #4a5a7f;}
+  .htp-split-tag{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;color:#8c9bc0;white-space:nowrap;}
+
+  .htp-live-boost-title{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:900;letter-spacing:.05em;color:#ab8ff2;}
+  .htp-live-boost-kind{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#9aa8c7;margin-left:auto;}
+  .htp-live-btext-wrap{display:flex;flex-direction:column;gap:4px;flex:1;}
+  .htp-live-force{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;color:#ab8ff2;}
+  .htp-live-force.free{color:#4ade80;}
+  .htp-live-bbody{font-size:12.5px;line-height:1.45;color:#e3d6ff;}
+
+  .htp-inspector-readout{display:flex;flex-direction:column;gap:14px;}
+  .htp-readout-card{
+    background:#131928;border:1px solid #f7c65a;border-radius:6px;padding:16px 18px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .htp-readout-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+  .htp-readout-step{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;color:#f7c65a;letter-spacing:.05em;}
+  .htp-readout-nav{display:flex;gap:8px;}
+  .htp-readout-title{margin:0;padding:0;border:none;font-family:'Barlow Condensed',sans-serif;font-size:24px;font-weight:800;font-style:italic;color:#ffffff;text-transform:none;}
+  .htp-readout-rule{margin:0;font-size:14px;line-height:1.6;color:#d6def0;}
+
+  .htp-tactical-box{
+    background:#131928;border:1px solid #283552;border-radius:6px;padding:16px 18px;
+    display:flex;flex-direction:column;gap:10px;
+  }
+  .htp-tactical-head{
+    font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:800;font-style:italic;
+    letter-spacing:.03em;color:#4de6d1;text-transform:uppercase;
+  }
+  .htp-tactical-row{display:flex;flex-direction:column;gap:2px;padding-top:8px;border-top:1px solid #212c46;}
+  .htp-tactical-row:first-of-type{padding-top:0;border-top:none;}
+  .htp-tactical-label{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;text-transform:uppercase;color:#9aa8c7;}
+  .htp-tactical-row p{margin:0;font-size:13px;line-height:1.52;color:#c3cde2;}
+
+  .htp-zone-index{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;}
+  .htp-zone-index-btn{
+    min-height:38px;padding:6px 10px;border-radius:4px;border:1px solid #24304a;background:#0f1421;
+    color:#aebad6;font-size:12px;font-weight:600;display:flex;align-items:center;gap:8px;cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .htp-zone-index-btn:hover{border-color:#4de6d1;color:#ffffff;}
+  .htp-zone-index-btn.active{border-color:#f7c65a;background:rgba(247,198,90,.12);color:#ffffff;}
+  .htp-zone-num{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;color:#f7c65a;}
+
+  /* 03. Strike Clash Lab */
+  .htp-preset-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .htp-preset-btn{
+    min-height:52px;padding:8px 11px;border-radius:5px;border:1px solid #2b3854;background:#131928;
+    display:flex;flex-direction:column;gap:2px;text-align:left;cursor:pointer;
+    transition:border-color .15s,background .15s,transform .15s;
+  }
+  .htp-preset-btn:hover{border-color:#4de6d1;transform:translateY(-1px);}
+  .htp-preset-btn.active{border-color:#f7c65a;background:rgba(247,198,90,.12);}
+  .htp-preset-title{font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;font-style:italic;color:#ffffff;line-height:1.1;}
+  .htp-preset-sub{font-size:11px;line-height:1.3;color:#9aa8c7;font-weight:500;}
+
+  .htp-clash-controls{display:grid;grid-template-columns:1fr 192px 1fr;gap:12px;align-items:stretch;}
+  .htp-clash-corner{
+    background:#131928;border:1px solid #2b3854;border-radius:6px;padding:11px 14px;
+    display:flex;flex-direction:column;gap:8px;
+  }
+  .htp-clash-corner.p1{border-top:3px solid #4de6d1;}
+  .htp-clash-corner.p2{border-top:3px solid #ff6b57;}
+  .htp-corner-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .htp-corner-tag{font-family:'Barlow Condensed',sans-serif;font-size:19px;font-weight:800;font-style:italic;letter-spacing:.04em;}
+  .htp-corner-tag.p1{color:#4de6d1;}
+  .htp-corner-tag.p2{color:#ff6b57;}
+  .htp-corner-hp{font-family:'JetBrains Mono',monospace;font-size:13.5px;font-weight:800;color:#ffffff;font-variant-numeric:tabular-nums;}
+
+  .htp-mini-hp-track{height:9px;border-radius:2px;background:#080b12;border:1px solid #2b3854;overflow:hidden;}
+  .htp-mini-hp-fill{height:100%;transition:width .24s cubic-bezier(.16,1,.3,1);}
+  .htp-mini-hp-fill.p1{background:linear-gradient(90deg,#117a70,#4de6d1);}
+  .htp-mini-hp-fill.p2{background:linear-gradient(90deg,#99291b,#ff6b57);}
+
+  .htp-field-label{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;color:#9aa8c7;text-transform:uppercase;}
+  .htp-select{
+    width:100%;min-height:38px;padding:6px 10px;border-radius:4px;border:1px solid #3c4d73;
+    background:#0c111d;color:#f5f7fc;font-family:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+  }
+  .htp-corner-stats{
+    display:grid;grid-template-columns:repeat(5,1fr);gap:4px;
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;
+  }
+  .htp-corner-stats span{
+    background:#0b0f19;border:1px solid #24304a;border-radius:4px;padding:4px 2px;text-align:center;color:#e4eaf7;
+  }
+  .htp-mod-row{display:flex;gap:8px;}
+  .htp-mod-btn{
+    flex:1;min-height:36px;padding:5px 8px;border-radius:4px;border:1px solid #354569;background:#0e1422;
+    color:#b8c3dc;font-size:12px;font-weight:700;text-align:center;white-space:nowrap;
+  }
+  .htp-mod-btn.active{border-color:#f7c65a;background:rgba(247,198,90,.16);color:#f7c65a;}
+
+  .htp-clash-center{
+    background:#101522;border:1px solid #283552;border-radius:6px;padding:11px 10px;
+    display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:8px;
+  }
+  .htp-vs-mark{
+    font-family:'Barlow Condensed',sans-serif;font-size:30px;font-weight:800;font-style:italic;
+    color:#f7c65a;line-height:1;letter-spacing:.06em;
+  }
+  .htp-center-group{display:flex;flex-direction:column;align-items:center;gap:5px;width:100%;}
+  .htp-center-label{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;color:#8c9bc0;text-transform:uppercase;}
+  .htp-dist-row{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;width:100%;}
+  .htp-dist-btn{
+    min-height:32px;padding:4px;border-radius:4px;border:1px solid #304063;background:#0c111d;
+    color:#aebad6;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:800;text-align:center;
+  }
+  .htp-dist-btn.active{border-color:#4de6d1;background:#123836;color:#4de6d1;}
+  .htp-resolve-btn{
+    width:100%;min-height:38px;padding:6px 12px;border:1px solid #f7c65a;background:#3a2c0f;color:#ffe299;
+    font-family:'Barlow Condensed',sans-serif;font-size:17px;font-weight:800;font-style:italic;
+    letter-spacing:.05em;text-transform:uppercase;text-align:center;border-radius:0;
+    clip-path:polygon(8px 0,100% 0,calc(100% - 8px) 100%,0 100%);
+  }
+  .htp-resolve-btn:hover{background:#4f3b13;color:#ffffff;}
+
+  .htp-clash-verdict{
+    display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    background:#151d30;border:1px solid #4de6d1;border-radius:5px;padding:10px 14px;
+  }
+  .htp-clash-verdict.verdict-p2{border-color:#ff6b57;background:rgba(255,107,87,.1);}
+  .htp-clash-verdict.verdict-trade{border-color:#f7c65a;background:rgba(247,198,90,.09);}
+  .htp-clash-verdict.verdict-whiff{border-color:#64748b;background:rgba(100,116,139,.12);}
+  .htp-verdict-label{
+    font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:800;letter-spacing:.06em;
+    color:#071b19;background:#4de6d1;padding:3px 8px;border-radius:3px;
+  }
+  .htp-clash-verdict.verdict-p2 .htp-verdict-label{background:#ff6b57;color:#290a04;}
+  .htp-clash-verdict.verdict-trade .htp-verdict-label{background:#f7c65a;color:#221604;}
+  .htp-clash-verdict.verdict-whiff .htp-verdict-label{background:#94a3b8;color:#0f172a;}
+  .htp-verdict-text{font-size:14px;font-weight:700;color:#ffffff;}
+
+  .htp-beat-list{display:flex;flex-direction:column;gap:8px;}
+  .htp-beat-row{
+    display:flex;gap:12px;align-items:flex-start;background:#121826;border:1px solid #26334f;
+    border-radius:5px;padding:11px 14px;
+  }
+  .htp-beat-row.phase-stun{border-color:#ff6b57;background:rgba(255,107,87,.09);}
+  .htp-beat-row.phase-guard{border-color:#60a5fa;background:rgba(96,165,250,.08);}
+  .htp-beat-num{
+    width:24px;height:24px;flex-shrink:0;border-radius:3px;background:#0b0f19;border:1px solid #354569;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:#4de6d1;
+  }
+  .htp-beat-main{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .htp-beat-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .htp-beat-badge{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:800;letter-spacing:.04em;
+    padding:2px 7px;border-radius:3px;background:#202b44;color:#d6def0;
+  }
+  .htp-beat-badge.phase-hit{background:rgba(77,230,209,.18);color:#4de6d1;}
+  .htp-beat-badge.phase-stun,.htp-beat-badge.phase-stun_skip{background:rgba(255,107,87,.22);color:#ff8a73;}
+  .htp-beat-badge.phase-guard{background:rgba(96,165,250,.22);color:#93c5fd;}
+  .htp-beat-badge.phase-miss{background:rgba(148,163,184,.18);color:#cbd5e1;}
+  .htp-beat-badge.phase-speed{background:rgba(247,198,90,.18);color:#f7c65a;}
+  .htp-beat-title{font-size:13.5px;font-weight:800;color:#ffffff;}
+  .htp-beat-detail{margin:0;font-size:13px;line-height:1.48;color:#b8c3dc;}
+
+  /* 04. FX & Combat Icons */
+  .htp-filter-bar{display:flex;flex-wrap:wrap;gap:8px;}
+  .htp-filter-btn{
+    min-height:38px;padding:7px 14px;border-radius:4px;border:1px solid #2c3a58;background:#121826;
+    color:#b8c3dc;font-size:12.5px;font-weight:700;white-space:nowrap;text-align:center;
+    transition:border-color .15s,background .15s,color .15s;
+  }
+  .htp-filter-btn:hover{border-color:#536996;color:#ffffff;}
+  .htp-filter-btn.active{border-color:#4de6d1;background:rgba(77,230,209,.14);color:#4de6d1;}
+
+  .htp-icon-group-note{margin:0;font-size:13px;color:#9aa8c7;line-height:1.5;}
+  .htp-icon-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .htp-icon-card{
+    display:flex;align-items:flex-start;gap:12px;background:#0d121e;border:1px solid #24304a;
+    border-radius:5px;padding:12px;
+  }
+  .htp-icon-token{
+    width:40px;height:40px;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;
+    font-size:20px;border-radius:5px;
+    font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;
+  }
+  .htp-icon-token.board-style{background:#080b12;border:1.5px solid #4a5a7f;box-shadow:0 3px 10px rgba(0,0,0,.45);}
+  .htp-icon-token.kind-hit{border-color:#ff5d5d;}
+  .htp-icon-token.kind-stun{border-color:#f7c65a;}
+  .htp-icon-token.kind-armor{border-color:#60a5fa;}
+  .htp-icon-token.log-style{background:#151d30;border:1px solid #2b3854;}
+  .htp-icon-copy{display:flex;flex-direction:column;gap:3px;min-width:0;}
+  .htp-icon-title{font-size:13.5px;font-weight:800;color:#ffffff;}
+  .htp-icon-copy p{margin:0;font-size:12.5px;line-height:1.45;color:#bcc6dc;}
+
+  /* 05. Searchable Glossary & FGC */
+  .htp-ladder-strip{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;}
+  .htp-ladder-cell{
+    background:#0c111d;border:1px solid #283552;border-radius:4px;padding:8px 6px;
+    display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center;
+  }
+  .htp-ladder-spd{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:800;color:#4de6d1;font-variant-numeric:tabular-nums;}
+  .htp-ladder-name{font-size:12px;font-weight:800;color:#ffffff;}
+  .htp-ladder-rng{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:#9aa8c7;}
+
+  .htp-search-toolbar{display:flex;gap:10px;align-items:center;}
+  .htp-search-input{
+    flex:1;min-height:44px;padding:10px 14px;border-radius:5px;border:1px solid #3c4d73;
+    background:#0d121e;color:#ffffff;font-family:inherit;font-size:14px;font-weight:500;
+  }
+  .htp-search-input::placeholder{color:#7e8eb3;}
+  .htp-search-input:focus{outline:none;border-color:#4de6d1;box-shadow:0 0 0 2px rgba(77,230,209,.25);}
+
+  .htp-glossary-meta{font-family:'JetBrains Mono',monospace;font-size:12px;color:#9aa8c7;margin-bottom:10px;font-variant-numeric:tabular-nums;}
+  .htp-glossary-meta strong{color:#ffffff;}
+  .htp-glossary-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .htp-gloss-card{
+    background:#131928;border:1px solid #26334f;border-radius:5px;padding:13px 15px;
+    display:flex;flex-direction:column;gap:5px;
+  }
+  .htp-gloss-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+  .htp-gloss-term{font-size:14.5px;font-weight:800;color:#ffffff;}
+  .htp-gloss-cat{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#8c9bc0;white-space:nowrap;}
+  .htp-gloss-def{margin:0;font-size:13px;line-height:1.52;color:#c3cde2;}
+  .htp-mark{background:rgba(247,198,90,.28);color:#fff2cc;padding:0 2px;border-radius:2px;}
+
+  .htp-empty-state{
+    background:#131928;border:1px solid #2b3854;border-radius:6px;padding:28px 20px;
+    text-align:center;display:flex;flex-direction:column;align-items:center;gap:8px;
+  }
+  .htp-empty-title{font-size:15px;font-weight:800;color:#ffffff;}
+  .htp-empty-state p{margin:0;font-size:13px;color:#9aa8c7;}
+
+  /* Shared buttons + Footer */
+  .htp-mini-btn{
+    min-height:38px;padding:7px 14px;border-radius:4px;border:1px solid #354569;background:#161e30;
+    color:#d6def0;font-size:12.5px;font-weight:700;text-align:center;white-space:nowrap;
+    transition:border-color .15s,background .15s,color .15s;
+  }
+  .htp-mini-btn:hover:not(:disabled){border-color:#4de6d1;color:#ffffff;}
+  .htp-mini-btn.primary{border-color:#4de6d1;background:#123836;color:#4de6d1;}
+  .htp-mini-btn.primary:hover:not(:disabled){background:#194e4b;color:#ffffff;}
+
+  .htp-footer{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    padding:12px 22px;border-top:1px solid #26324d;background:#0f1421;
+  }
+  .htp-keyhints{
+    display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;
+    font-size:11.5px;color:#8c9bc0;
+  }
+  .htp-footer-nav{display:flex;align-items:center;gap:8px;}
+
+  .htp-modal-panel button:focus-visible,.htp-modal-panel select:focus-visible,.htp-modal-panel input:focus-visible{
+    outline:2px solid #4de6d1;outline-offset:2px;
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    .htp-modal-panel{animation:none;}
+    .htp-rail-btn,.htp-stage-cell,.htp-mini-hp-fill,.htp-quick-cta{transition:none;}
+  }
+
+  /* Responsive tablet/mobile Command Manual */
+  @media (max-width: 880px){
+    #howToPlayOverlay{padding:8px;}
+    .htp-modal-panel{width:100%;height:94vh;}
+    .htp-workspace{grid-template-columns:1fr;grid-template-rows:auto 1fr;}
+    .htp-rail{
+      flex-direction:row;border-right:none;border-bottom:1px solid #26324d;
+      padding:10px 12px;gap:6px;overflow-x:auto;overflow-y:hidden;
+    }
+    .htp-rail-btn{width:auto;min-height:44px;padding:8px 12px;flex-shrink:0;}
+    .htp-rail-btn.active{transform:none;}
+    .htp-stage{padding:16px 16px 24px;}
+    .htp-brief-strip,.htp-season-grid,.htp-arch-bar,.htp-preset-grid{grid-template-columns:1fr;}
+    .htp-loop-grid{grid-template-columns:1fr;}
+    .htp-loop-arrow{transform:rotate(90deg);padding:2px 0;}
+    .htp-bench-grid{grid-template-columns:repeat(2,1fr);}
+    .htp-inspector-layout{grid-template-columns:1fr;}
+    .htp-clash-controls{grid-template-columns:1fr;}
+    .htp-icon-grid,.htp-glossary-grid{grid-template-columns:1fr;}
+    .htp-ladder-strip{grid-template-columns:repeat(4,1fr);}
+    .htp-cmd-head-row{display:none;}
+    .htp-cmd-row{grid-template-columns:1fr auto;gap:6px 10px;}
+    .htp-cmd-desc{grid-column:1 / -1;}
+  }
+  @media (max-width: 560px){
+    .htp-topbar{padding:10px 12px;gap:10px;}
+    .htp-brand{flex-direction:column;align-items:flex-start;gap:1px;overflow:hidden;}
+    .htp-brand-mark{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-style:normal;letter-spacing:.12em;text-shadow:none;}
+    .htp-brand-title{font-size:19px;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
+    .htp-topbar-actions{gap:6px;}
+    .htp-quick-cta{min-height:36px;padding:6px 12px;font-size:13.5px;clip-path:polygon(6px 0,100% 0,calc(100% - 6px) 100%,0 100%);}
+    .htp-close-btn{width:36px;height:36px;min-height:36px;font-size:15px;}
+    .htp-keyhints{display:none;}
+    .htp-footer{padding:10px 14px;justify-content:flex-end;}
+    .htp-zone-index{grid-template-columns:1fr;}
+    .htp-stage-cell{height:44px;min-height:44px;}
+    .htp-fighter-chip{font-size:14px;padding:2px 5px;}
+  }
   .deck-ref{margin-top:8px;}
   .ref-card-row{background:#141a28;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px;}
   .ref-card-title{font-weight:800;font-size:14px;margin-bottom:4px;}
@@ -394,7 +969,7 @@
   .clash-pill.whiff{background:rgba(255,95,109,.2);color:#ff8a95;}
   .clash-pill.var{background:rgba(247,198,90,.2);color:#f7c65a;border:1px solid #f7c65a;}
   .clash-pill.ex{background:rgba(247,198,90,.2);color:#f7c65a;}
-  .clash-toggle{font-size:11px;font-weight:700;padding:3px 8px;border-radius:6px;border:1px solid var(--you);background:rgba(77,230,209,.1);color:var(--you);cursor:pointer;}
+  .clash-toggle{font-size:11px;font-weight:700;padding:3px 8px;min-height:0;border-radius:6px;border:1px solid var(--you);background:rgba(77,230,209,.1);color:var(--you);cursor:pointer;}
   .clash-toggle.active{background:var(--you);color:#0f1218;}
   .tag-ignore{font-style:normal;font-size:10px;font-weight:800;color:#f7c65a;margin-left:4px;}
 
@@ -428,34 +1003,39 @@
   .guard-shield.held{background:rgba(96,165,250,.18);color:#93c5fd;border:1px solid #60a5fa;}
   .guard-shield.cracked{background:rgba(255,95,109,.25);color:#ff5f6d;border:1px solid #ff5f6d;animation:shieldCrack .45s ease;}
   @keyframes shieldCrack{0%{transform:scale(1.25)}50%{transform:rotate(-6deg) scale(1.1)}100%{transform:scale(1)}}
-  .tl-skip-btn{font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid var(--line);background:#252f46;color:var(--text);cursor:pointer;}
+  .tl-skip-btn{font-size:11px;padding:2px 8px;min-height:0;border-radius:5px;border:1px solid var(--line);background:#252f46;color:var(--text);cursor:pointer;}
   .checkmate-flash{font-size:44px;font-weight:900;letter-spacing:4px;color:#fff;text-shadow:0 0 24px #ff5f6d,0 0 48px #ff5f6d;background:rgba(15,18,24,.78);padding:14px 36px;border:3px solid #ff5f6d;border-radius:14px;animation:checkmatePop .35s cubic-bezier(.2,.9,.3,1.2);}
   .checkmate-flash.reduced{animation:none;}
   @keyframes checkmatePop{0%{transform:scale(.6);opacity:0}100%{transform:scale(1);opacity:1}}
 
-  .deck-pill{padding:1px 6px;border-radius:4px;font-weight:700;}
+  .deck-pill{display:inline-flex;align-items:center;padding:2px 7px;border-radius:5px;font-weight:700;line-height:1.25;}
   .deck-pill.deck-healthy{background:rgba(96,165,250,.16);color:#93c5fd;}
   .deck-pill.deck-amber{background:rgba(247,198,90,.2);color:#f7c65a;}
   .deck-pill.deck-red{background:rgba(255,95,109,.24);color:#ff5f6d;border:1px solid #ff5f6d;}
 
-  .nm-toggle-btn{font-size:11px;font-weight:700;padding:2px 7px;border-radius:5px;border:1px solid var(--line);background:#1b2336;color:var(--text);cursor:pointer;}
-  .normal-matrix-popover{margin-top:8px;background:#101521;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;}
-  .nm-header{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;font-weight:800;margin-bottom:6px;color:var(--text);}
-  .nm-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:0 4px;}
-  .nm-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;}
-  .nm-cell{display:flex;justify-content:space-between;align-items:center;background:#182032;border:1px solid var(--line);border-radius:5px;padding:4px 6px;font-size:11px;}
+  .nm-toggle-btn{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 8px;min-height:0;line-height:1.3;border-radius:5px;border:1px solid var(--line);background:#1b2336;color:var(--text);cursor:pointer;}
+  .normal-matrix-popover{margin-top:8px;background:#101521;border:1.5px solid var(--line);border-radius:8px;padding:8px 10px;max-width:100%;overflow-x:auto;}
+  .nm-header{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:11.5px;font-weight:800;margin-bottom:6px;color:var(--text);}
+  .nm-close{background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;padding:2px 6px;min-height:0;line-height:1;}
+  .nm-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:5px;}
+  .nm-cell{display:flex;justify-content:space-between;align-items:center;gap:4px;min-width:0;background:#182032;border:1px solid var(--line);border-radius:5px;padding:4px 6px;font-size:11px;}
+  .nm-cell span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .nm-cell.nm-exhausted{opacity:.42;text-decoration:line-through;}
-  .nm-pips{font-size:12px;letter-spacing:1px;}
+  .nm-pips{font-size:12px;letter-spacing:1px;flex-shrink:0;}
 
   .cell.cell-movable{cursor:pointer;}
   .cell.cell-movable:hover{box-shadow:inset 0 0 0 2px rgba(77,230,209,.65);}
   .hand-hint{font-size:11px;font-weight:500;color:var(--text-dim);margin-left:6px;}
   .precommit-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#182032;border:1.5px solid var(--you);border-radius:10px;padding:8px 12px;margin:8px 0;}
+  .precommit-bar .big-btn,.precommit-bar .cancel-btn{width:auto;display:inline-flex;align-items:center;justify-content:center;margin-top:0;padding:7px 14px;min-height:36px;font-size:13.5px;}
+  .precommit-bar button{min-height:36px;padding:7px 14px;font-size:13.5px;}
+  .study-toggle-btn{background:transparent;color:var(--text-dim);border-color:var(--line);}
+  .study-toggle-btn.active{border-color:var(--you);color:var(--you);background:var(--you-dim);}
   .boost-drop-zone{border:1.5px dashed var(--line);border-radius:8px;padding:7px 12px;text-align:center;font-size:12px;color:var(--text-dim);margin:6px 0;background:rgba(107,125,179,.06);}
 
   /* --- M3: Settings Popover & Colorblind-Safe Patterns --- */
-  .settings-btn{position:fixed;top:10px;right:126px;z-index:95;padding:7px 11px;border-radius:8px;border:1px solid var(--line);background:#1b2336;color:var(--text);font-size:12px;font-weight:700;cursor:pointer;}
-  #settings-popover{position:fixed;top:48px;right:16px;z-index:130;width:270px;background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.65);font-size:12.5px;}
+  .settings-btn{height:34px;min-height:34px;padding:0 11px;display:inline-flex;align-items:center;gap:4px;border-radius:8px;border:1px solid var(--line);background:#1b2336;color:var(--text);font-size:12px;font-weight:700;cursor:pointer;}
+  #settings-popover{position:absolute;top:calc(100% + 6px);right:14px;z-index:1010;width:min(270px,calc(100vw - 28px));background:var(--panel);border:2px solid var(--line);border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(0,0,0,.65);font-size:12.5px;}
   #settings-popover h4{margin:0 0 10px;font-size:13.5px;display:flex;justify-content:space-between;align-items:center;}
   .set-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);gap:8px;}
   .set-row:last-child{border-bottom:none;}
@@ -481,6 +1061,18 @@
 </style>
 </head>
 <body>
+<div class="top-util-bar">
+  <button class="settings-btn" onclick="toggleSettingsPopover()">⚙ Settings</button>
+  <button class="rules-btn" aria-label="Open How to Play Command Manual" onclick="openHowToPlay()">How to Play</button>
+  <div id="settings-popover" style="display:none;">
+    <h4>UX &amp; Accessibility <button type="button" class="nm-close" onclick="toggleSettingsPopover()">✕</button></h4>
+    <div class="set-row"><label for="set-muted">Mute Audio</label><input id="set-muted" type="checkbox" onchange="UXSettings.set('muted', this.checked)"></div>
+    <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" oninput="UXSettings.set('volume', parseFloat(this.value))"></div>
+    <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
+    <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
+    <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
+  </div>
+</div>
 <div id="app">
   <div class="char-select" id="charSelect">
     <svg class="title-banner" viewBox="0 0 520 130" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Exceed">
@@ -560,15 +1152,6 @@
 <div id="vignette-overlay"></div>
 <div id="fx-overlay-root"></div>
 <div id="callout-overlay"></div>
-<button class="settings-btn" onclick="toggleSettingsPopover()">⚙ Settings</button>
-<div id="settings-popover" style="display:none;">
-  <h4>UX &amp; Accessibility <button type="button" class="nm-close" onclick="toggleSettingsPopover()">✕</button></h4>
-  <div class="set-row"><label for="set-muted">Mute Audio</label><input id="set-muted" type="checkbox" onchange="UXSettings.set('muted', this.checked)"></div>
-  <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" oninput="UXSettings.set('volume', parseFloat(this.value))"></div>
-  <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
-  <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
-  <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
-</div>
 <script>
 function toggleSettingsPopover() {
   const el = document.getElementById('settings-popover');
@@ -585,9 +1168,8 @@ function toggleSettingsPopover() {
   }
 }
 </script>
-<button class="rules-btn" onclick="openHowToPlay()">How to Play</button>
-<div class="modal-overlay" id="howToPlayOverlay" style="display:none;" onclick="if(event.target===this) closeHowToPlay()">
-  <div class="modal-panel" id="howToPlayBox"><!-- populated by openHowToPlay() --></div>
+<div class="modal-overlay" id="howToPlayOverlay" style="display:none;" aria-hidden="true" onclick="if(event.target===this) closeHowToPlay()">
+  <div class="modal-panel htp-modal-panel" id="howToPlayBox"><!-- populated by openHowToPlay() --></div>
 </div>
 <!-- EXCEED_BUNDLE_SCRIPTS -->
 <script>
@@ -719,482 +1301,7 @@ function quickStart(){
   startGame('student', { beginner: true });
 }
 
-// ---------------- How to Play ----------------
-// CARD_DIAGRAM_SVG: a labeled picture of one real card (Cross, a Normal — chosen
-// because at 0/0/0 Force/Gauge cost and no Critical text it's the simplest card in
-// the game, so ghost/dashed placeholders can show where the cost badges and
-// Critical line WOULD appear on a card that has them, without cluttering the
-// example with two different real cards). Every value baked into this SVG (name,
-// border color, RNG/POW/SPD/ARM/GRD, strike text, boost text) is read directly off
-// NORMALS.find(c => c.key === 'cross') in cards.js, which in turn is a straight
-// copy of Cross's row on the Normals sheet of EXdata.xlsx — the same source of
-// truth as every other card in the game (see cardTile() in render.js for the
-// actual in-game rendering this diagram is illustrating).
-// IMPORTANT: if the card layout ever changes (new badge, new stat, reordered
-// sections, a different rule for when Critical/Force/Gauge badges show) — the
-// canonical place that changed is cardTile()/statLine()/gaugeCostBadge()/
-// forceCostBadge() in render.js — update THIS diagram to match, or it will teach
-// players to read cards wrong.
-const CARD_DIAGRAM_CROSS = `
-<svg viewBox="0 0 1100 700" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Cross card, labeled">
-  <defs>
-    <marker id="htpArrowA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
-    </marker>
-  </defs>
-  <rect x="400" y="70" width="200" height="250" rx="14" fill="#1c2330" stroke="#6b7db3" stroke-width="3"/>
-  <text x="414" y="98" font-size="17" font-weight="800" fill="#f5f7fc">Cross</text>
-  <line x1="400" y1="112" x2="600" y2="112" stroke="#4a5a7f" stroke-width="1"/>
-  <g font-size="11" font-weight="700" fill="#f5f7fc">
-    <rect x="414" y="122" width="34" height="20" rx="4" fill="#26304a"/><text x="431" y="136" text-anchor="middle">R 1\u20132</text>
-    <rect x="452" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="465" y="136" text-anchor="middle">P 3</text>
-    <rect x="484" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="497" y="136" text-anchor="middle">S 6</text>
-    <rect x="516" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="529" y="136" text-anchor="middle">A 0</text>
-    <rect x="548" y="122" width="26" height="20" rx="4" fill="#26304a"/><text x="561" y="136" text-anchor="middle">G 0</text>
-  </g>
-  <text x="414" y="163" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">After:</tspan> Retreat 3.</text>
-  <line x1="410" y1="195" x2="590" y2="195" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
-  <text x="414" y="222" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
-  <text x="414" y="250" font-size="12" fill="#e3d6ff">Advance up to 3.</text>
-
-  <g font-size="24" font-weight="800" fill="#ff9500">
-    <path d="M260,90 L402,75" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="10" y="80" text-anchor="start">Border color</text>
-    <text x="10" y="110" text-anchor="start">= card type</text>
-
-    <path d="M260,250 L412,92" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="10" y="240" text-anchor="start">Card name =</text>
-    <text x="10" y="270" text-anchor="start">Strike headline</text>
-
-    <path d="M260,410 L416,126" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="10" y="400" text-anchor="start">Stats row:</text>
-    <text x="10" y="430" text-anchor="start">R / P / S / A / G</text>
-
-    <path d="M260,570 L416,158" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="10" y="560" text-anchor="start">Strike text =</text>
-    <text x="10" y="590" text-anchor="start">attack effect</text>
-
-    <path d="M740,90 L602,196" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="1090" y="80" text-anchor="end">Dashed divider \u2014</text>
-    <text x="1090" y="110" text-anchor="end">no Critical here</text>
-
-    <path d="M740,250 L480,220" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="1090" y="240" text-anchor="end">"BOOST" label =</text>
-    <text x="1090" y="270" text-anchor="end">Boost headline</text>
-
-    <path d="M740,410 L530,248" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowA)" fill="none"/>
-    <text x="1090" y="400" text-anchor="end">Boost text =</text>
-    <text x="1090" y="430" text-anchor="end">face-up effect</text>
-  </g>
-</svg>
-`;
-
-const CARD_DIAGRAM_HADOKEN = `
-<svg viewBox="0 0 1100 760" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Hadoken card, labeled">
-  <defs>
-    <marker id="htpArrowB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
-    </marker>
-  </defs>
-  <rect x="400" y="60" width="200" height="300" rx="14" fill="#1c2330" stroke="#a56bf2" stroke-width="3"/>
-  <text x="414" y="88" font-size="17" font-weight="800" fill="#f5f7fc">Hadoken</text>
-  <line x1="400" y1="102" x2="600" y2="102" stroke="#4a5a7f" stroke-width="1"/>
-  <g font-size="11" font-weight="700" fill="#f5f7fc">
-    <rect x="414" y="112" width="34" height="20" rx="4" fill="#26304a"/><text x="431" y="126" text-anchor="middle">R 3\u20136</text>
-    <rect x="452" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="465" y="126" text-anchor="middle">P 4</text>
-    <rect x="484" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="497" y="126" text-anchor="middle">S 4</text>
-    <rect x="516" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="529" y="126" text-anchor="middle">A 0</text>
-    <rect x="548" y="112" width="26" height="20" rx="4" fill="#26304a"/><text x="561" y="126" text-anchor="middle">G 0</text>
-  </g>
-  <text x="414" y="153" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Hit:</tspan> Gauge +1.</text>
-  <text x="414" y="171" font-size="12" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">After:</tspan> Return to deck top, Gauge +1.</text>
-  <rect x="410" y="191" width="180" height="18" rx="4" fill="rgba(255,207,107,0.1)" stroke="#ffcf6b" stroke-width="1.5"/>
-  <text x="420" y="204" font-size="10.5" fill="#ffcf6b"><tspan font-weight="800">Critical:</tspan> Speed +2 (\u2192 6).</text>
-  <line x1="410" y1="225" x2="590" y2="225" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
-  <text x="414" y="252" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
-  <text x="414" y="280" font-size="12" fill="#e3d6ff">+2 Power to next Strike.</text>
-  <text x="414" y="298" font-size="12" fill="#e3d6ff">+1 Armor.</text>
-
-  <g font-size="24" font-weight="800" fill="#ff9500">
-    <path d="M260,90 L402,65" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="10" y="80" text-anchor="start">Border color =</text>
-    <text x="10" y="110" text-anchor="start">Special (purple)</text>
-
-    <path d="M260,250 L416,116" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="10" y="240" text-anchor="start">Stats row:</text>
-    <text x="10" y="270" text-anchor="start">Range 3\u20136 band</text>
-
-    <path d="M260,410 L416,160" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="10" y="400" text-anchor="start">Strike text =</text>
-    <text x="10" y="430" text-anchor="start">Hit / After effects</text>
-
-    <path d="M260,575 L412,200" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="10" y="560" text-anchor="start">"Critical:" \u2014</text>
-    <text x="10" y="590" text-anchor="start">pay 1 Gauge to</text>
-    <text x="10" y="620" text-anchor="start">unlock it</text>
-
-    <path d="M740,90 L602,226" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="1090" y="80" text-anchor="end">Dashed divider =</text>
-    <text x="1090" y="110" text-anchor="end">Strike / Boost split</text>
-
-    <path d="M740,250 L480,254" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="1090" y="240" text-anchor="end">"BOOST" label =</text>
-    <text x="1090" y="270" text-anchor="end">Boost headline</text>
-
-    <path d="M740,410 L530,285" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowB)" fill="none"/>
-    <text x="1090" y="400" text-anchor="end">Boost text \u2014</text>
-    <text x="1090" y="430" text-anchor="end">free (no Force badge)</text>
-  </g>
-</svg>
-`;
-
-const CARD_DIAGRAM_METSU = `
-<svg viewBox="0 0 1100 700" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:900px;display:block;margin:0 auto;" role="img" aria-label="Diagram of the Metsu Shoryuken card, labeled">
-  <defs>
-    <marker id="htpArrowC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#8a97b8"/>
-    </marker>
-  </defs>
-  <rect x="400" y="60" width="210" height="290" rx="14" fill="#1c2330" stroke="#d56aa8" stroke-width="3"/>
-  <text x="414" y="86" font-size="14" font-weight="800" fill="#f5f7fc">Metsu Shoryuken</text>
-  <rect x="414" y="94" width="46" height="17" rx="4" fill="rgba(213,106,168,0.15)" stroke="#d56aa8" stroke-width="1.5"/>
-  <text x="437" y="106.5" font-size="9.5" fill="#d56aa8" text-anchor="middle" font-weight="700">[4G]</text>
-  <line x1="400" y1="120" x2="610" y2="120" stroke="#4a5a7f" stroke-width="1"/>
-  <g font-size="11" font-weight="700" fill="#f5f7fc">
-    <rect x="414" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="427" y="144" text-anchor="middle">R 1</text>
-    <rect x="446" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="459" y="144" text-anchor="middle">P 7</text>
-    <rect x="478" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="491" y="144" text-anchor="middle">S 5</text>
-    <rect x="510" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="523" y="144" text-anchor="middle">A 0</text>
-    <rect x="542" y="130" width="26" height="20" rx="4" fill="#26304a"/><text x="555" y="144" text-anchor="middle">G 0</text>
-  </g>
-  <text x="414" y="171" font-size="11.5" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Before:</tspan> If opp. initiated: Speed +3 (\u2192 8).</text>
-  <text x="414" y="189" font-size="11.5" fill="#b7c0d6"><tspan font-weight="800" fill="#f5f7fc">Hit:</tspan> Stun immunity.</text>
-  <line x1="410" y1="215" x2="600" y2="215" stroke="#4a5a7f" stroke-width="1.5" stroke-dasharray="5,4"/>
-  <text x="414" y="242" font-size="15" font-weight="800" fill="#ab8ff2">BOOST</text>
-  <rect x="414" y="252" width="66" height="17" rx="4" fill="rgba(171,143,242,0.12)" stroke="#ab8ff2" stroke-width="1.5"/>
-  <text x="447" y="264.5" font-size="9.5" fill="#ab8ff2" text-anchor="middle">[1 Force]</text>
-  <text x="414" y="290" font-size="12" fill="#e3d6ff">Move 2, then Strike.</text>
-
-  <g font-size="24" font-weight="800" fill="#ff9500">
-    <path d="M260,90 L402,65" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="10" y="80" text-anchor="start">Border color =</text>
-    <text x="10" y="110" text-anchor="start">Ultra (pink)</text>
-
-    <path d="M260,250 L416,135" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="10" y="240" text-anchor="start">Stats row:</text>
-    <text x="10" y="270" text-anchor="start">Range 1, Power 7</text>
-
-    <path d="M260,410 L416,175" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="10" y="400" text-anchor="start">Strike text =</text>
-    <text x="10" y="430" text-anchor="start">Speed bonus,</text>
-    <text x="10" y="460" text-anchor="start">Stun immune</text>
-
-    <path d="M260,590 L416,255" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="10" y="580" text-anchor="start">[1 Force] =</text>
-    <text x="10" y="610" text-anchor="start">cost to Boost</text>
-
-    <path d="M740,90 L462,100" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="1090" y="80" text-anchor="end">[4G] = Gauge cost</text>
-    <text x="1090" y="110" text-anchor="end">to Strike</text>
-
-    <path d="M740,250 L605,216" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="1090" y="240" text-anchor="end">Dashed divider =</text>
-    <text x="1090" y="270" text-anchor="end">Strike / Boost split</text>
-
-    <path d="M740,410 L480,290" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="1090" y="400" text-anchor="end">Boost text = move,</text>
-    <text x="1090" y="430" text-anchor="end">then Strike is forced</text>
-
-    <path d="M740,590 L440,244" stroke="#8a97b8" stroke-width="1.6" marker-end="url(#htpArrowC)" fill="none"/>
-    <text x="1090" y="580" text-anchor="end">"BOOST" label =</text>
-    <text x="1090" y="610" text-anchor="end">Boost headline</text>
-  </g>
-</svg>
-`;
-
-const HOWTOPLAY_INTRO = `
-  <div class="htp-section">
-    <h3>The goal</h3>
-    <p>Reduce your opponent's Life to 0 before they do the same to you. Each fighter starts at 30 Life.</p>
-  </div>
-  <div class="htp-section">
-    <h3>Before the first turn: Mulligan</h3>
-    <p>Once, for free, you may set aside any number of cards from your opening hand (including none, or all of them), draw that many replacements, then your set-aside cards are shuffled back into your deck. The CPU does this too, automatically.</p>
-  </div>
-  <div class="htp-section">
-    <h3>Each turn, pick one action</h3>
-    <ul>
-      <li><span class="kw-term">Prepare</span> — draw a card.</li>
-      <li><span class="kw-term">Move</span> — pay Force (discard cards from hand or Gauge) to advance, retreat, or close distance.</li>
-      <li><span class="kw-term">Change Cards</span> — discard some cards, draw that many back.</li>
-      <li><span class="kw-term">Boost</span> — play a card face-up for its Boost effect instead of attacking with it.</li>
-      <li><span class="kw-term">Exceed</span> — once per game, spend Gauge equal to your character's Exceed cost (2–3 depending on fighter) to permanently power up your character's Innate action.</li>
-      <li><span class="kw-term">Reshuffle</span> — once per game, shuffle your discard pile back into your deck (cannot Reshuffle if your deck is already full).</li>
-      <li><span class="kw-term">Strike</span> — set a card face-down as your attack. Your opponent picks their own card to defend with, then both flip. See "Winning a Strike," below, for how the flip is resolved.</li>
-      <li>Some fighters also have a character action (the star-icon button) — see "Your fighter," below.</li>
-    </ul>
-    <p>After any non-Strike action (Prepare, Move, Change Cards, Boost, or your character action), your turn ends and you draw 1 card. If your hand exceeds 7 cards, you must discard down to 7 before your opponent's turn begins.</p>
-  </div>
-  <div class="htp-section">
-    <h3>Reading a card</h3>
-    <p>Every card is really two halves in one, split by a dashed line: a face-down <b>Strike</b> side (top) and a face-up <b>Boost</b> side (bottom). Here are the key parts, with real-game examples:</p>
-    <ul>
-      <li><b>Border color</b> — blue: Normal (shared by every fighter, 2 copies each in every deck). Purple: Special (character-unique, 2 copies each). Pink: Ultra (character-unique, costs Gauge to Strike with).</li>
-      <li><span class="kw-term">Range (RNG)</span> — the distance band this card works at. A single number means only that exact distance; a span like 1–2 means anywhere in that range.</li>
-      <li><span class="kw-term">Power (POW)</span> — damage dealt on a hit, before the defender's Armor is subtracted.</li>
-      <li><span class="kw-term">Speed (SPD)</span> — higher Speed resolves first in a Strike.</li>
-      <li><span class="kw-term">Armor (ARM)</span> — subtracted from incoming Power; can reduce a hit to 0 damage.</li>
-      <li><span class="kw-term">Guard (GRD)</span> — if damage taken exceeds this, the card is Stunned (see Stun, below).</li>
-      <li><b>Strike side</b> — headlined by the card's own name, then the stats row plus the card's text for when it's set face-down as your attack (with keywords like <b>Before:</b>/<b>Hit:</b>/<b>After:</b> shown bold).</li>
-      <li><b>Boost side</b>, below the dashed line — headlined by the word "BOOST" in bold, then the card's alternate effect if played face-up via the Boost action. A <span class="kw-term">\u23F1 1</span> next to "BOOST" means this Boost is Cancelable (see Cancel, below).</li>
-      <li><span class="kw-term">[N Force]</span> next to the Boost text — the Force cost to play it as a Boost. No badge means free.</li>
-    </ul>
-  </div>
-
-  <div class="htp-section">
-    <h3>Cross (Normal) + Run Boost</h3>
-    ${CARD_DIAGRAM_CROSS}
-    <div class="card-usage-guide">
-      <h4>Strike (Speed 6, Range 1–2):</h4>
-      <p><b>After:</b> Retreat 3 — Fast spacing tool. Creates distance into Hadoken range or escapes pressure. Weak if cornered (no room to retreat).</p>
-      <h4>Boost (Instant, Free):</h4>
-      <p><b>Advance up to 3.</b> Primary gap-closer or escape tool. Use to enter Hadoken range or un-corner yourself. Avoid burning both copies early.</p>
-      <h4>Overall use:</h4>
-      <p>Up close → Cross Strike or Run Boost to create distance for Hadoken loops. Keep in mulligan if you already have Hadoken.</p>
-    </div>
-  </div>
-
-  <div class="htp-section">
-    <h3>Hadoken (Special) + Defensive Boost</h3>
-    ${CARD_DIAGRAM_HADOKEN}
-    <div class="card-usage-guide">
-      <h4>Strike (Speed 4, Range 3–6):</h4>
-      <p><b>Core long-range tool.</b> Gauge recursion (return to deck + Gauge from discard on Hit/After) creates strong loops that force opponents in. Critical (+2 Speed → Speed 6) enables zoning pressure. Gauge-negative early if your discard is empty.</p>
-      <h4>Boost (Continuous, Free):</h4>
-      <p><b>+2 Power +1 Armor.</b> Solid defensive/offensive buff; is like an extra copy of Grasp Boost (+2 Power) when opponent can escape zoning.</p>
-      <h4>Overall use:</h4>
-      <p>Zone and loop once you have 1+ Gauge for Critical. Push with Donkey Kick/One Inch Punch into Hadoken range, then recur. Threat of Critical Hadoken is Ryu's main long-range win condition.</p>
-    </div>
-  </div>
-
-  <div class="htp-section">
-    <h3>Metsu Shoryuken (Ultra, 4G) + Lightning Reflexes Boost</h3>
-    ${CARD_DIAGRAM_METSU}
-    <div class="card-usage-guide">
-      <h4>Strike (Speed 5, Range 1, costs 4 Gauge):</h4>
-      <p><b>Powerful reversal check.</b> Becomes Speed 8 if opponent initiated, discouraging Range 1 engagement. Stun Immunity on hit locks out defensive Stun strategies.</p>
-      <h4>Boost (Instant, 1 Force):</h4>
-      <p><b>Move 2, then Strike.</b> High-tempo reposition. Use to threaten Critical Hadoken loops, close on zoners, or set up finishing checkmates. Not Cancelable — the follow-up Strike is a forced, automatic part of the Boost, not a separate action you can chain further.</p>
-      <h4>Overall use:</h4>
-      <p>Hold as Range 1 deterrent (implied threat is huge). Use the boost for fast reposition + immediate Strike into favorable ranges or winning setups. Save Gauge for this over Exceed Mode in most closing scenarios.</p>
-    </div>
-  </div>
-
-  <div class="htp-section">
-    <h3>Reading the board</h3>
-    <p>Fighters move along a 9-space track. <span class="kw-term">Range</span> is the distance between you and your opponent — most attacks only work within a specific range band, so positioning is half the game.</p>
-  </div>
-  <div class="htp-section">
-    <h3>Winning a Strike</h3>
-    <p>Whoever's card has the higher <span class="kw-term">Speed</span> resolves first. If your card is in range and beats the opponent's <span class="kw-term">Armor</span> with your <span class="kw-term">Power</span>, you deal damage. If that damage exceeds the Guard of whichever card hasn't activated yet, that card is <span class="kw-term">Stunned</span>: it's discarded without dealing damage or triggering any of its own effects (unless its owner has Stun Immunity that Strike).</p>
-  </div>
-  <div class="htp-section">
-    <h3>Your fighter</h3>
-    <p>Each fighter has an <span class="kw-term">Innate</span> ability, always active. Some Innates are a per-turn action (the star-icon button, usable instead of Prepare/Move/etc.); others are a passive effect that just applies automatically. Once you <span class="kw-term">Exceed</span>, your Innate is permanently replaced by a stronger Exceeded version for the rest of the game. Check your character panel for your fighter's exact Innate/Exceeded text.</p>
-  </div>
-  <div class="htp-section">
-    <h3>Critical (Street Fighter)</h3>
-    <p>Street Fighter characters can pay 1 Gauge when they set an attack card during a Strike — independently on either side — to unlock all of that card's "Critical:" text for that Strike. If you don't pay, any Critical text on the card simply does nothing. You can even pay on a card with no Critical text at all, as a bluff. Guilty Gear and BlazBlue fighters do not use the Critical mechanic.</p>
-  </div>
-`;
-
-const HOWTOPLAY_KEYWORDS = [
-  ['Life', 'Your health. Starts at 30. Hit 0 and you lose.'],
-  ['Range', 'The distance between the two fighters right now. Each card only works within its own printed range band.'],
-  ['Power (POW)', 'How much damage a card deals if it hits, before the defender\'s Armor is subtracted.'],
-  ['Speed (SPD)', 'Determines who resolves first in a Strike. Higher Speed also usually determines who "wins" a clash.'],
-  ['Armor (ARM)', 'Subtracted from incoming Power. Can reduce a hit to 0 damage.'],
-  ['Guard (GRD)', 'If the damage you take in a Strike exceeds your Guard, and your own card hasn\'t activated yet this Strike, your card is Stunned (see Stun, below).'],
-  ['Force', 'A resource you pay by discarding cards from hand (or Gauge) — used for Move and some Boosts. Every card is worth 1 Force, except Ultras, which are worth 2.'],
-  ['Gauge', 'A resource pool built up by card and Boost effects. Spent on Ultra Strikes, on Exceeding, and on paying for a Critical.'],
-  ['Boost', 'Playing a card face-up for its secondary effect (a buff, a draw, movement, etc.) instead of attacking with it that turn.'],
-  ['Exceed', 'A one-time, permanent power-up available once your Gauge reaches your character\'s Exceed cost. Upgrades your Innate action into a stronger Exceeded action.'],
-  ['Ultra', 'Your character\'s strongest attacks. Cost Gauge to use as a Strike. Also usable as a Boost like any other card — its Boost side costs Force (sometimes 0), not Gauge; only Striking with an Ultra costs Gauge.'],
-  ['EX Strike', 'Set two copies of the same card together as your Strike for +1 to every stat (Power, Speed, Armor, Guard) that exchange — the second copy is discarded on reveal.'],
-  ['Wild Swing', 'Set the top card of your deck face-down, sight unseen, instead of a card from hand — your only option if your hand is empty, and always an option otherwise.'],
-  ['Advantage', 'A bonus some cards grant. Whoever holds Advantage takes the next turn, instead of turns simply alternating — if both players would gain it, the most recent grant wins.'],
-  ['Stun', 'If a card takes damage exceeding its Guard before it has activated this Strike, it\'s Stunned: discarded immediately without dealing damage or triggering any of its own effects — unless its owner has Stun Immunity that Strike. Only the card that would resolve second (by Speed) can be Stunned this way.'],
-  ['Critical', 'A Street Fighter mechanic: an optional 1-Gauge payment Street Fighter characters can make when setting an attack card during a Strike. If paid, all of that card\'s "Critical:" text applies for that Strike; if not, it does nothing. Legal to pay on a card with no Critical text, as a bluff.'],
-  ['Cancel', 'Some Boosts are marked Cancelable (\u23F1 1 on the card). After one of those fully resolves, you may spend 1 Gauge to immediately take another action instead of ending your turn \u2014 the Boost itself already finished normally, Cancel doesn\'t undo or interrupt it. No hard limit on chaining: as long as your next action is also a Cancelable Boost and you still have Gauge, you can Cancel again.'],
-];
-
-// Fighting Games Terminology Useful for Exceed Strategy — common FGC shorthand
-// that appears frequently when discussing Exceed matchups, gameplans, and decisions.
-const HOWTOPLAY_FGC_TERMS = [
-  {
-    heading: 'Archetypes & Playstyles',
-    terms: [
-      ['Shoto', 'Balanced all-rounder with fireball (projectile), dragon punch (reversal), and solid normals at multiple ranges (classic Ryu/Ken archetype).'],
-      ['Zoner', 'Character who controls space from long range and forces the opponent to approach (e.g., Guile, Sagat).'],
-      ['Rushdown', 'Aggressive style focused on closing distance and applying constant pressure.'],
-      ['Grappler', 'Character built around strong close-range options, command grabs, or high-reward hits once in (e.g., Zangief).'],
-      ['Footsies', 'Mid-range spacing game of poking, whiff punishing, and controlling distance without fully committing.'],
-    ],
-  },
-  {
-    heading: 'Key Combat Concepts',
-    terms: [
-      ['Punish', 'Hitting the opponent for a recoverable mistake (whiffed attack, unsafe option, or bad positioning).'],
-      ['Reversal', 'Strong defensive option used when the opponent initiates (often a DP-style attack with speed or positioning benefits).'],
-      ['Poke', 'Fast, relatively safe attack used to check approaches or control space.'],
-      ['Whiff', 'An attack that misses. In Exceed this can still trigger After effects and create punish opportunities.'],
-      ['Mix-up / 50/50', 'Situation where the defender has no perfect answer and must guess correctly between options.'],
-      ['Confirm', 'Successfully converting a hit, advantage, or read into a stronger follow-up or setup.'],
-      ['Safe / Unsafe', 'Whether an attack loses badly to common answers or leaves you vulnerable.'],
-      ['Frame advantage / Advantage', 'Tempo control. In Exceed this maps closely to gaining the next turn (Advantage) or winning speed interactions.'],
-      ['Corner', 'Edge of the board. Limits retreat options and amplifies pressure or carry potential.'],
-      ['Zoning', 'Controlling the board from long range and denying approaches.'],
-      ['Pressure', 'Sequence of threats that keeps the opponent reacting and limits their options.'],
-      ['Checkmate', 'Guaranteed winning line once the opponent\u2019s outs are exhausted.'],
-      ['Throw / Command grab', 'High-reward close-range option that bypasses certain defenses (often represented by Grasp or specific specials).'],
-      ['Anti-air', 'Tool used to beat jumping or advancing approaches (in Exceed this is often a fast or well-timed reversal/special at the relevant range).'],
-    ],
-  },
-  {
-    heading: 'Resource & Decision Terms',
-    terms: [
-      ['Meter', 'General resource (Gauge in Exceed). Spending it for power, speed, or special effects.'],
-      ['Conversion', 'Turning a successful interaction into meaningful damage, positioning, or resource gain.'],
-      ['Reset', 'Ending a sequence in a way that restarts pressure or creates a new mix-up instead of a hard knockdown.'],
-      ['Option select', 'Playing in a way that covers multiple possible opponent responses with one action.'],
-    ],
-  },
-  {
-    heading: 'Expanded Common Shorthand',
-    terms: [
-      ['R#', 'Range (R1, R2, R1\u20133, R3\u20136, etc.).'],
-      ['[0\u20137]', 'Quick notation for Normals by Speed: 0 = Block, 1 = Focus, 2 = Sweep, 3 = Spike, 4 = Dive, 5 = Assault, 6 = Cross, 7 = Grasp. (Example: \u201c732\u201d = Grasp + Spike + Sweep)'],
-      ['UA', 'Unique Ability (character ability), sometimes called Innate.'],
-      ['DP', 'Dragon Punch-style reversal (Shoryuken, etc.).'],
-      ['OS', 'Option select.'],
-      ['CC / CC#', 'Change Cards (spend Force to draw).'],
-      ['WS', 'Wild Swing.'],
-      ['EX', 'EX Attack (two copies of the same card).'],
-      ['Adv', 'Advantage (next turn).'],
-      ['Crit', 'Critical (Season 3 Gauge spend).'],
-      ['Oki', 'Okizeme / wake-up pressure (situations after knockdown or strong positioning).'],
-      ['Meaty', 'Timing an attack to hit as the opponent becomes actionable again.'],
-      ['Fuzzy', 'Overlapping options that cover multiple timings or ranges.'],
-    ],
-  },
-];
-
-// Effects iconography guide — the emoji vocabulary the FX layer (board badges,
-// paced Strike playback, log-line prefixes) actually uses. See engine.js's
-// FX_ICONS for where the glyph itself is defined; `fxIcon(kind)` (also in
-// engine.js, loaded via __BUNDLE__ above this script) reads it here so the two
-// can never drift apart — only the label/description text is hand-authored,
-// same "canonical source elsewhere, describe it here" pattern the card-reading
-// diagrams above already use (see that section's own comment). Grouped to match
-// how a player encounters them: what shows up ON THE BOARD during a Strike
-// first (most players' first question), then everything else that only ever
-// appears as a log-line prefix. Keep in sync with engine.js's FX_ICONS/logMsg
-// call sites if a kind is ever added, renamed, or retired — same standing rule
-// HANDOFF.md §7 already states for "Reading a card" above.
-const HOWTOPLAY_ICON_GROUPS = [
-  {
-    heading: 'On the board, during a Strike',
-    note: 'These float above a fighter’s cell for a beat while an exchange plays out step by step — use the Skip button next to the range readout to jump straight to the result.',
-    items: [
-      ['hit', 'Hit', 'Damage connected. The number under the icon is how much Life was lost.'],
-      ['miss', 'Miss', 'The attack didn’t connect — out of range, or the defender was immune to it this Strike.'],
-      ['stun', 'Stun', 'Damage exceeded Guard: the not-yet-activated card is discarded without dealing damage or triggering its own effects.'],
-      ['move', 'Move', 'Advance, Retreat, Close, or an interactive push/pull moved a fighter. The number is spaces moved; watch the stand slide to its new cell.'],
-      ['armor', 'Armor', 'Force spent on Block (or a card’s own Armor bonus) reduced incoming damage. The number is the Armor gained.'],
-      ['damage', 'Non-lethal damage', 'Damage from an effect that can’t reduce Life below 1 (distinct from a normal Hit).'],
-      ['ex', 'EX pair', 'A paired second copy of the same card was discarded to power up an EX Strike.'],
-    ],
-  },
-  {
-    heading: 'Everywhere else — the fight log',
-    note: 'These prefix the matching log line instead of floating on the board — they’re not tied to a position on the track the way the events above are.',
-    items: [
-      ['draw', 'Draw', 'One or more cards were drawn (Prepare, end-of-turn draw, mulligan, a card/boost effect, etc.).'],
-      ['discard', 'Discard', 'One or more cards left hand or play for the discard pile. The log line always still names the card(s) — the icon is decoration, never the only record.'],
-      ['gauge', 'Gauge', 'Gauge was gained, spent, or a card moved into/out of the Gauge pool.'],
-      ['force', 'Force', 'A Force cost was paid (Move, a Boost, an optional card effect) by discarding cards.'],
-      ['boost', 'Boost', 'A card was played face-up for its Boost effect, or a continuous Boost came into or stayed in play.'],
-      ['boostexpire', 'Boost expires', 'A timed continuous Boost’s clock ran out and it converted to Gauge.'],
-      ['sustain', 'Sustain', 'A continuous Boost was kept in play past the point it would normally leave.'],
-      ['seal', 'Seal', 'A card was removed from play into a sealed area (Happy Chaos) instead of being discarded or Gauged.'],
-      ['reshuffle', 'Reshuffle', 'A discard pile was shuffled back into its deck (the once-per-game action, or an automatic empty-deck reshuffle).'],
-      ['heal', 'Heal', 'Life was gained, capped at maximum.'],
-      ['exceed', 'Exceed', 'A fighter permanently flipped into their stronger Exceeded Innate.'],
-      ['revert', 'Revert', 'An Exceeded fighter flipped back to their un-Exceeded Innate.'],
-      ['overdrive', 'Overdrive', 'A BlazBlue fighter’s Overdrive area lost a card at the start of their turn, triggering its effect.'],
-      ['advantage', 'Advantage', 'A fighter gained Advantage — they take the next turn instead of turns simply alternating.'],
-      ['action', 'Bonus action', 'An effect granted an extra action this turn (e.g. discarding a Boost from play for more actions).'],
-      ['immune', 'Immune / blocked', 'Something was prevented outright — a Stun resisted, a move blocked, an unaffordable card ruled invalid.'],
-    ],
-  },
-];
-
-function openHowToPlay(){
-  showHowToPlayTab('intro');
-  document.getElementById('howToPlayOverlay').style.display = 'flex';
-}
-function closeHowToPlay(){
-  document.getElementById('howToPlayOverlay').style.display = 'none';
-}
-function howToPlayIconsBody(){
-  return `
-    <div class="htp-section">
-      <p>The FX layer overlays these emoji on the board and in the fight log while an exchange resolves, so you can read what just happened without parsing every sentence in the log.</p>
-      ${HOWTOPLAY_ICON_GROUPS.map(group => `
-        <h4>${group.heading}</h4>
-        <p class="htp-icon-note">${group.note}</p>
-        <ul class="htp-icon-list">
-          ${group.items.map(([kind, label, def]) => `<li><span class="htp-icon-glyph">${fxIcon(kind)}</span><b>${label}</b> \u2014 ${def}</li>`).join('')}
-        </ul>
-      `).join('')}
-    </div>
-  `;
-}
-function showHowToPlayTab(tab){
-  const box = document.getElementById('howToPlayBox');
-  const body = tab === 'intro' ? HOWTOPLAY_INTRO : tab === 'icons' ? howToPlayIconsBody() : `
-    <div class="htp-section">
-      <p>Every keyword used on cards and in the log, in one place.</p>
-      <ul>
-        ${HOWTOPLAY_KEYWORDS.map(([term, def]) => `<li><span class="kw-term">${term}</span> \u2014 ${def}</li>`).join('')}
-      </ul>
-    </div>
-    <div class="htp-section">
-      <h3>Fighting Games Terminology Useful for Exceed Strategy</h3>
-      <p>These are common FGC terms that appear frequently when discussing Exceed matchups, gameplans, and decisions.</p>
-      ${HOWTOPLAY_FGC_TERMS.map(group => `
-        <h4>${group.heading}</h4>
-        <ul>
-          ${group.terms.map(([term, def]) => `<li><b>${term}</b> \u2014 ${def}</li>`).join('')}
-        </ul>
-      `).join('')}
-    </div>
-  `;
-  box.innerHTML = `
-    <div class="modal-header">
-      <h2>How to Play</h2>
-      <button class="modal-close" onclick="closeHowToPlay()">\u2715</button>
-    </div>
-    <div class="modal-body">
-      <div class="htp-toggle-row">
-        <button class="${tab === 'intro' ? 'active' : ''}" onclick="showHowToPlayTab('intro')">New player intro</button>
-        <button class="${tab === 'icons' ? 'active' : ''}" onclick="showHowToPlayTab('icons')">Effects iconography</button>
-        <button class="${tab === 'keywords' ? 'active' : ''}" onclick="showHowToPlayTab('keywords')">Complete keyword glossary</button>
-      </div>
-      ${body}
-    </div>
-  `;
-}
+// How to Play logic & interactive Command Manual live in game/howtoplay.js
 renderCharSelect();
 </script>
 </body>

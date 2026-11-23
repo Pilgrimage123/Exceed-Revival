@@ -133,6 +133,8 @@ class GameController {
     // real exchange rather than a one-sided one.
     this.beginnerHasDealtDamage = false;
     this.beginnerHasTakenDamage = false;
+    this.selectedActionCardUid = null;
+    this.showNormalMatrix = false;
   }
 
   // True once the beginner-mode Critical prompt should start appearing (always true
@@ -695,7 +697,7 @@ class GameController {
   }
 
   // ----- Move action -----
-  startMove() { this.mode = 'move_setup'; this.sel = { dir: null, spaces: 0 }; render(); }
+  startMove() { this.selectedActionCardUid = null; this.mode = 'move_setup'; this.sel = { dir: null, spaces: 0 }; render(); }
   setMoveDir(dir) {
     const player = this.human(), opp = this.ai();
     const maxSpaces = this.engine.maxUsefulSpaces(player, opp, dir);
@@ -753,7 +755,7 @@ class GameController {
   // many are DRAWN is their Force value, which is not the same number once an Ultra
   // (worth 2) or Guile's Innate is involved — render.js shows the projected draw.
   changeCardsPoolSize() { const p = this.human(); return p.hand.length + p.gauge.length; }
-  startChangeCards() { this.mode = 'changecards_setup'; this.sel = { n: Math.min(1, this.changeCardsPoolSize()) }; render(); }
+  startChangeCards() { this.selectedActionCardUid = null; this.mode = 'changecards_setup'; this.sel = { n: Math.min(1, this.changeCardsPoolSize()) }; render(); }
   adjustChangeCards(delta) {
     this.sel.n = Math.max(1, Math.min(this.changeCardsPoolSize(), this.sel.n + delta));
     render();
@@ -836,10 +838,11 @@ class GameController {
   }
 
   // ----- Boost action (handles Block/Focus naming) -----
-  startBoost() { this.mode = 'boost_select'; this.sel = {}; render(); }
+  startBoost() { this.selectedActionCardUid = null; this.mode = 'boost_select'; this.sel = {}; render(); }
   pickBoostCard(uid) {
     const player = this.human();
     const card = player.hand.find(c => c.uid === uid);
+    if (!card || !card.boost) { this.mode = 'awaiting_action'; render(); return; }
     const need = this.engine.cardBoostForce(card);
     this.sel = { cardUid: uid, need, chosen: [] };
     if (need > 0) { this.mode = 'boost_force_select'; render(); return; }
@@ -1177,7 +1180,7 @@ class GameController {
   }
 
   // ----- Strike action (with EX support + Reading constraint) -----
-  startStrike() { this.mode = 'strike_select'; this.sel = {}; render(); }
+  startStrike() { this.selectedActionCardUid = null; this.mode = 'strike_select'; this.sel = {}; render(); }
   pickStrikeCard(uid) { this.doHumanStrike({ type: 'hand', uid }); }
   pickExStrike(uid1, uid2) { this.doHumanStrike({ type: 'ex', uid1, uid2 }); }
   pickWildSwing() { this.doHumanStrike({ type: 'wildswing' }); }
@@ -2023,7 +2026,7 @@ class GameController {
   }
 
   selectActionCard(uid) {
-    if (this.mode !== 'awaiting_action' || this.engine.gameOver) return;
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     this.selectedActionCardUid = (this.selectedActionCardUid === uid) ? null : uid;
     render();
   }
@@ -2036,7 +2039,7 @@ class GameController {
   confirmActionCard(actionType) {
     const uid = this.selectedActionCardUid;
     this.selectedActionCardUid = null;
-    if (!uid || this.mode !== 'awaiting_action') return;
+    if (!uid || this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     const p = this.human();
     if (actionType === 'strike') {
       this.mode = 'strike_select';
@@ -2055,13 +2058,13 @@ class GameController {
   }
 
   onCardDragStart(ev, uid) {
-    if (this.mode !== 'awaiting_action' || !ev || !ev.dataTransfer) return;
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
     ev.dataTransfer.setData('text/plain', uid);
     ev.dataTransfer.effectAllowed = 'move';
   }
 
   onBoardDrop(ev) {
-    if (this.mode !== 'awaiting_action' || !ev || !ev.dataTransfer) return;
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
     ev.preventDefault();
     const uid = ev.dataTransfer.getData('text/plain');
     if (!uid) return;
@@ -2075,7 +2078,7 @@ class GameController {
   }
 
   onBoostDrop(ev) {
-    if (this.mode !== 'awaiting_action' || !ev || !ev.dataTransfer) return;
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
     ev.preventDefault();
     const uid = ev.dataTransfer.getData('text/plain');
     if (!uid) return;
@@ -2089,42 +2092,29 @@ class GameController {
   }
 
   clickBoardSpace(spaceIdx) {
-    if (this.mode !== 'awaiting_action' || this.engine.gameOver) return;
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     const player = this.human(), opp = this.ai();
     if (spaceIdx === player.pos || spaceIdx === opp.pos) return;
-    const allPool = [...player.hand, ...player.gauge];
-    const totalForce = this.engine.sumForceValue(player, allPool.map(c => c.uid));
-    if (totalForce <= 0) return;
 
     const dirToOpp = player.pos < opp.pos ? 1 : -1;
     const delta = spaceIdx - player.pos;
     const isAdvance = (delta * dirToOpp) > 0;
     const dir = isAdvance ? 'advance' : 'retreat';
     let spaces = Math.abs(delta);
-    let force = spaces;
 
     if (isAdvance) {
       const crossedOpp = (opp.pos - player.pos) * dirToOpp > 0 && (spaceIdx - opp.pos) * dirToOpp > 0;
       if (crossedOpp) spaces = Math.abs(delta) - 1;
       const sim = this.engine.simulateAdvance(player.pos, opp.pos, spaces);
       if (sim.pos !== spaceIdx) return;
-      force = sim.force;
     }
-    if (force <= 0 || force > totalForce) return;
+    const force = this.forceForMove(player, opp, dir, spaces);
+    if (force <= 0) return;
+    const suggested = this.engine.pickExactForceCards(player, force);
+    if (!suggested) return;
 
-    // Pre-highlight suggested low-value Force cards (1-Force cards first)
-    const sorted = [...allPool].sort((a, b) => this.engine.forceValueOfCard(a) - this.engine.forceValueOfCard(b));
-    const suggested = [];
-    let acc = 0;
-    for (const c of sorted) {
-      const v = this.engine.forceValueOfCard(c);
-      if (acc + v <= force) {
-        suggested.push(c.uid);
-        acc += v;
-      }
-      if (acc === force) break;
-    }
-    this.sel = { dir, spaces, force, chosen: acc === force ? suggested : [] };
+    this.selectedActionCardUid = null;
+    this.sel = { dir, spaces, force, chosen: suggested };
     this.mode = 'move_force_select';
     render();
   }

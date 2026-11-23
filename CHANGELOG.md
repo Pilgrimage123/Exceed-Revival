@@ -11,6 +11,22 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-23 — How to Play overhaul: Arcade Fighter Command Manual (`game/howtoplay.js`)
+
+- Replaced the legacy static How to Play modal with a modular Arcade Fighter Command Manual (`game/howtoplay.js`, registered in `scripts/build-game.mjs`) featuring 5 navigable sections: `01 Fight Basics` (with an interactive 9-space Range Visualizer and Turn Command List), `02 Card Anatomy` (live Normal/Special/Ultra inspector synced to `NORMALS` and `CHARACTERS.ryu.specials`), `03 Strike Clash Lab` (interactive Speed/Range/Armor/Guard/Stun/EX/Critical/Reversal simulator), `04 Combat Icons` (filterable on-board FX and fight log legend), and `05 Glossary & FGC` (Normals Speed Ladder + live-searchable rules & FGC lexicon).
+- Updated `game/shell.html` with responsive fighting-game command-manual styling (`Barlow Condensed` display italics, `Plus Jakarta Sans` prose, `JetBrains Mono` tabular stats, mobile horizontal section rail) while preserving `#howToPlayOverlay` outside `#app` for mid-match persistence.
+- Updated `game/input.js` so `Escape` closes the Command Manual even when focused in the search box, `?` toggles it, `ArrowLeft`/`ArrowRight` and `1`–`5` navigate sections while open, and underlying match hotkeys are blocked.
+- Added unit and DOM sandbox coverage in `tests/howtoplay.test.ts` and wired it into `npm test`.
+- Added standalone Markdown documentation in `HOW_TO_PLAY.md` and linked it from `README.md`.
+
+## 2026-11-22 — Bug fixes: native Card DSL artifact, exact Force parity, active-turn guards, and HUD layout polish
+
+- Regenerated `native/generated/card-dsl.json` via `npm run native:export-roster` (fixing `tests/native-protocol.test.ts` `ENOENT`) and included `tests/strike-preview.test.ts` in `npm test`.
+- Fixed `SimulateStrikePreview.resolveCardByKey` (`game/preview.js`) to index `CHARACTERS[k].specials` and `.normals` instead of nonexistent `.cards`, restoring Special/Ultra continuous boost resolution and Clash Summary Banner labels across all 41 fighters.
+- Fixed `Engine.pickExactForceCards` parity bug when combining 1-Force cards and 2-Force Ultras, and hardened `clickBoardSpace` and `pickBoostCard` against unpayable Force/missing boost cards.
+- Gated `selectActionCard`, `confirmActionCard`, drag/drop, `clickBoardSpace`, `boardHTML` movable cells, `isMainAction`, and keyboard action hotkeys (`game/input.js`) on `engine.active === humanId`; enabled `Escape` to close `#howToPlayOverlay` and `#settings-popover` on all screens.
+- Fixed `StrikePlaybackController` timeline reset on re-renders (`getCurrentStepIdx`), moved `Settings`/`How to Play` into a non-overlapping top utility bar outside `#app`, made `.nm-grid` responsive to prevent mobile horizontal overflow, fixed compact button `min-height` stretching `.resource-row`/`.deck-pill`/`.precommit-bar`/Study Mode toggle, and fixed `.log-panel` emoji font fallback spacing (`sans-serif` before emoji fonts).
+
 ## 2026-11-21 — Dead code removal, hot-loop performance overhaul, `strikeState`, and `Card DSL` `beforeMove`
 
 - Removed dead AI Studio/React/Vite/Gemini scaffold (`src/App.tsx`, `src/main.tsx`, `src/index.css`, `index.html`, `vite.config.ts`, `.env.example`, `metadata.json`, `bun.lock`) and 14 unused npm dependencies from `package.json`.

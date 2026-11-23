@@ -168,5 +168,12 @@ const StrikePlaybackController = (() => {
     if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
   }
 
-  return { start, stop, skip, timelineBarHTML };
+  function getCurrentStepIdx(strikeInfo) {
+    if (activeStrikeInfo && strikeInfo && activeStrikeInfo === strikeInfo && activeStepIdx > 0) {
+      return Math.min(activeStepIdx - 1, (strikeInfo.timeline || []).length - 1);
+    }
+    return Math.max(0, ((strikeInfo && strikeInfo.timeline) || []).length - 1);
+  }
+
+  return { start, stop, skip, timelineBarHTML, getCurrentStepIdx };
 })();

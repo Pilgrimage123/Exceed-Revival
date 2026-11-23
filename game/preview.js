@@ -13,8 +13,11 @@ const SimulateStrikePreview = (() => {
       if (typeof GG_NORMALS !== 'undefined') for (const c of GG_NORMALS) _cardIndex[c.key] = c;
       if (typeof CHARACTERS !== 'undefined') {
         for (const ch of Object.values(CHARACTERS)) {
-          if (ch && Array.isArray(ch.cards)) {
-            for (const c of ch.cards) _cardIndex[c.key] = c;
+          if (ch && Array.isArray(ch.specials)) {
+            for (const c of ch.specials) _cardIndex[c.key] = c;
+          }
+          if (ch && Array.isArray(ch.normals)) {
+            for (const c of ch.normals) _cardIndex[c.key] = c;
           }
         }
       }

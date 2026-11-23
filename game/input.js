@@ -10,19 +10,57 @@ const InputManager = (() => {
   }
 
   function handleKeyDown(ev) {
-    if (typeof G === 'undefined' || !G || isTypingInInput(ev)) return;
     const key = ev.key;
+    const htpOpen = (typeof isHowToPlayOpen === 'function' && isHowToPlayOpen())
+      || (() => {
+        const htp = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
+        return !!(htp && htp.style.display !== 'none');
+      })();
+
+    if (key === 'Escape') {
+      if (htpOpen) {
+        if (typeof closeHowToPlay === 'function') closeHowToPlay();
+        else {
+          const htp = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
+          if (htp) htp.style.display = 'none';
+        }
+        return;
+      }
+      const sp = typeof document !== 'undefined' ? document.getElementById('settings-popover') : null;
+      if (sp && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
+      if (typeof G !== 'undefined' && G) {
+        if (G.infoModal) { G.closeInfo(); return; }
+        if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
+        if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
+      }
+      return;
+    }
+
+    if (isTypingInInput(ev)) return;
+
+    if (key === '?') {
+      if (htpOpen) {
+        if (typeof closeHowToPlay === 'function') closeHowToPlay();
+      } else if (typeof openHowToPlay === 'function') {
+        openHowToPlay();
+      }
+      return;
+    }
+
+    if (htpOpen) {
+      if (typeof HowToPlayUI !== 'undefined') {
+        if (key === 'ArrowLeft') { ev.preventDefault(); HowToPlayUI.stepTab(-1); return; }
+        if (key === 'ArrowRight') { ev.preventDefault(); HowToPlayUI.stepTab(1); return; }
+        if (key >= '1' && key <= '5') { ev.preventDefault(); HowToPlayUI.jumpTabIndex(parseInt(key, 10)); return; }
+      }
+      // Block underlying match shortcuts while the Command Manual is open.
+      return;
+    }
+
+    if (typeof G === 'undefined' || !G) return;
 
     if (key === 'Shift') {
       if (typeof EventBus !== 'undefined') EventBus.emit('OnToggleOptionalBranch', { enabled: true });
-      return;
-    }
-    if (key === 'Escape') {
-      if (G.infoModal) { G.closeInfo(); return; }
-      if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
-      if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
-      const sp = document.getElementById('settings-popover');
-      if (sp && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
       return;
     }
     if (key === ' ') {
@@ -38,18 +76,19 @@ const InputManager = (() => {
       G.toggleNormalMatrix();
       return;
     }
+    const isHumanTurn = G.engine && G.engine.active === G.humanId && !G.engine.gameOver;
     if (key === 'e' || key === 'E') {
       if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.getActiveHover()) {
         EventBus.emit('OnToggleEXMode', {});
         return;
       }
-      if (G.mode === 'awaiting_action' && G.engine.canExceed(G.human())) {
+      if (isHumanTurn && G.mode === 'awaiting_action' && G.engine.canExceed(G.human())) {
         G.actionExceed();
       }
       return;
     }
 
-    if (G.mode === 'awaiting_action') {
+    if (isHumanTurn && G.mode === 'awaiting_action') {
       if (key === 's' || key === 'S') { G.startStrike(); return; }
       if (key === 'b' || key === 'B') { G.startBoost(); return; }
       if (key === 'm' || key === 'M') { G.startMove(); return; }

@@ -819,15 +819,20 @@ class Engine {
   // odd/small cost like 1 doesn't get forced to overpay with a 2-Force Ultra),
   // falling back to Ultras only if the remaining cost is still even. Returns
   // null if `cost` can't be paid exactly with what's on hand/gauge.
-  pickExactForceCards(player, cost) {
-    const pool = [...player.hand, ...player.gauge];
+  pickExactForceCards(player, cost, excludeUid = null) {
+    if (cost <= 0) return [];
+    const pool = [...player.hand, ...player.gauge].filter(c => c.uid !== excludeUid);
     const ones = pool.filter(c => this.forceValueOfCard(c) === 1);
     const twos = pool.filter(c => this.forceValueOfCard(c) === 2);
-    const chosen = [];
-    let remaining = cost;
-    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); remaining -= 1; } }
-    for (const c of twos) { if (remaining >= 2) { chosen.push(c.uid); remaining -= 2; } }
-    return remaining === 0 ? chosen : null;
+    let useOnes = Math.min(ones.length, cost);
+    if ((cost - useOnes) % 2 !== 0) useOnes--;
+    if (useOnes < 0) return null;
+    const needTwos = (cost - useOnes) / 2;
+    if (needTwos > twos.length) return null;
+    return [
+      ...ones.slice(0, useOnes).map(c => c.uid),
+      ...twos.slice(0, needTwos).map(c => c.uid),
+    ];
   }
 
   // Vega's Bloody High Claw boost: "your attacks are Critical" — a continuous
