@@ -354,6 +354,9 @@ class GameController {
       }
       this.currentFx = q.shift();
       render();
+      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerFromFx) {
+        HitParticleEngine.triggerFromFx(this.currentFx, this.engine);
+      }
       // Hits get a slightly longer beat than everything else — it's the
       // headline event of an exchange and deserves the extra hold.
       const dur = this.currentFx.kind === 'hit' ? 780 : 520;
@@ -367,6 +370,9 @@ class GameController {
   // wait out a long exchange's full step-by-step playback.
   skipFx() {
     if (this._fxTimer) { clearTimeout(this._fxTimer); this._fxTimer = null; }
+    if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
+      HitParticleEngine.clearCallouts();
+    }
     this.engine.fxQueue.length = 0;
     this.fxPlaying = false;
     this.currentFx = null;

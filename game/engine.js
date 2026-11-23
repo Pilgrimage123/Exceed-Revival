@@ -2574,7 +2574,20 @@ class Engine {
         // the SECOND activation of a Strike, since the slower card resolves after this
         // damage has already been applied. Swept with the other per-Strike flags.
         defender.strikeState.wasHit = true;
-        engine.logMsg(`${attacker.name}'s ${attCard.name} HITS for ${dealt} damage (POW ${effPow} \u2212 ARM ${effArm}). ${defender.name}: ${defender.life}/${defender.maxLife} life.`, 'hit', defender.id, { amount: dealt, attackerId: attacker.id, cardName: attCard.name });
+        engine.logMsg(`${attacker.name}'s ${attCard.name} HITS for ${dealt} damage (POW ${effPow} \u2212 ARM ${effArm}). ${defender.name}: ${defender.life}/${defender.maxLife} life.`, 'hit', defender.id, {
+          amount: dealt,
+          attackerId: attacker.id,
+          defenderId: defender.id,
+          cardName: attCard.name,
+          cardType: attCard.type || 'normal',
+          isEX: !!attCard.isEX,
+          criticalPaid: !!attCriticalPaid,
+          effPow,
+          effArm,
+          effGrd,
+          guardBroken: dealt > effGrd,
+          confirmedLethal: defender.life <= 0,
+        });
         ctx._effGrd = effGrd; ctx._dealt = dealt;
         // The damage math, with Block's reactive Armor already folded into effArm —
         // so the UI can show the same subtraction the engine performed rather than
@@ -2590,10 +2603,15 @@ class Engine {
           actor: attacker.id,
           defenderId: defender.id,
           damageDealt: dealt,
+          effectivePower: effPow,
           effectiveArmor: effArm,
           effectiveGuard: effGrd,
           guardBroken: dealt > effGrd,
           confirmedLethal: defender.life <= 0,
+          cardName: attCard.name,
+          cardType: attCard.type || 'normal',
+          isEX: !!attCard.isEX,
+          criticalPaid: !!attCriticalPaid,
         });
       } else {
         if (rangeImmune) {

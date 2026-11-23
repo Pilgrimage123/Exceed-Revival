@@ -11,6 +11,13 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-23 — Fighting-game Hit Particle & Impact FX Engine (`game/playback.js`, `game/shell.html`)
+
+- Added `HitParticleEngine` (`game/playback.js`), a Canvas + DOM hybrid fighting-game particle and impact choreography engine mounted in `#fx-overlay-root` (outside `#app` so `paint()` re-renders never interrupt active particle bursts).
+- Implemented tiered fighting-game impact escalation (`guard`, `light`, `medium`, `heavy`, `critical`, `ex`, `ultra`, `stun`, `exceed`) featuring multi-point rotating anime starbursts, directional slash blades & attacker-to-defender kinetic beams, concentric shockwaves & hexagonal guard barriers, radial speed lines, procedural jagged lightning arcs, and physics-driven velocity spark streakers, embers, and tumbling polygon shards.
+- Added skewed arcade floating damage & combat callout banners (`HIT!`, `SOLID HIT!`, `ARMOR CRUSH!`, `CRITICAL HIT!!`, `EX IMPACT!!`, `GUARD BREAK!!`, `ULTRA FINISH!!`, `DESTRUCTIVE FINISH!!`, `GUARD HELD!`, `STUNNED!!`, `EXCEED AWAKENED!!`), token hit-flash/knockback recoil & attacker lunge animations, HUD life-panel hit jolts, and tiered screen shake in `game/shell.html`.
+- Enriched `Engine.resolveStrikeSteps` (`game/engine.js`) and `StrikePlaybackController` (`game/playback.js`) hit payloads with card type, EX/Critical flags, effective stats, and guard-break/lethal metadata; wired `HitParticleEngine` into `GameController.playFx`/`skipFx` (`game/ui.js`), `EventBus`, and the How to Play Strike Clash Lab (`game/howtoplay.js`), respecting `UXSettings.get('reducedHitStop')` and `prefers-reduced-motion`.
+
 ## 2026-11-23 — How to Play overhaul: Arcade Fighter Command Manual (`game/howtoplay.js`)
 
 - Replaced the legacy static How to Play modal with a modular Arcade Fighter Command Manual (`game/howtoplay.js`, registered in `scripts/build-game.mjs`) featuring 5 navigable sections: `01 Fight Basics` (with an interactive 9-space Range Visualizer and Turn Command List), `02 Card Anatomy` (live Normal/Special/Ultra inspector synced to `NORMALS` and `CHARACTERS.ryu.specials`), `03 Strike Clash Lab` (interactive Speed/Range/Armor/Guard/Stun/EX/Critical/Reversal simulator), `04 Combat Icons` (filterable on-board FX and fight log legend), and `05 Glossary & FGC` (Normals Speed Ladder + live-searchable rules & FGC lexicon).

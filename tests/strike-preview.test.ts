@@ -496,4 +496,101 @@ test('Right Rail tabs switch between Log, Normals, and Coach, auto-switch on Coa
   assert.ok(res.collapsedHtml.includes('right-rail collapsed'));
 });
 
+test('HitParticleEngine classifies fighting-game hit tiers, spawns multi-layered particle bursts, deduplicates Strike events, and respects reducedHitStop', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    HitParticleEngine.clear();
+
+    const tiers = {
+      guard: HitParticleEngine.classifyHitTier({ damage: 0, effectiveArmor: 2 }),
+      light: HitParticleEngine.classifyHitTier({ damage: 2, cardName: 'Spike' }),
+      medium: HitParticleEngine.classifyHitTier({ damage: 4, cardName: 'Cross', effectiveArmor: 1 }),
+      heavy: HitParticleEngine.classifyHitTier({ damage: 5, cardName: 'Shoryuken' }),
+      crit: HitParticleEngine.classifyHitTier({ damage: 4, cardName: 'Hadoken', criticalPaid: true }),
+      ex: HitParticleEngine.classifyHitTier({ damage: 4, cardName: 'Assault', isEX: true }),
+      guardBreak: HitParticleEngine.classifyHitTier({ damage: 5, cardName: 'Sweep', guardBroken: true }),
+      ultra: HitParticleEngine.classifyHitTier({ damage: 7, cardName: 'Metsu Hadoken', cardType: 'ultra' }),
+      lethal: HitParticleEngine.classifyHitTier({ damage: 6, cardName: 'Metsu Shoryuken', confirmedLethal: true }),
+      stun: HitParticleEngine.classifyHitTier({ kind: 'stun', damage: 5 }),
+      exceed: HitParticleEngine.classifyHitTier({ kind: 'exceed', characterName: 'Ryu' }),
+    };
+
+    // Trigger an Ultra hit and inspect active particle state
+    const burst1 = HitParticleEngine.triggerHit({
+      roundNum: 7,
+      attackerId: 'p1',
+      defenderId: 'p2',
+      damage: 8,
+      cardName: 'Metsu Hadoken',
+      cardType: 'ultra',
+      criticalPaid: true,
+      guardBroken: true,
+      x: 560,
+      y: 260,
+    });
+    const stateAfterSpawn = HitParticleEngine.getState();
+
+    // Duplicate trigger for the same round/attacker/defender/damage within window is deduplicated
+    const dupBurst = HitParticleEngine.triggerHit({
+      roundNum: 7,
+      attackerId: 'p1',
+      defenderId: 'p2',
+      damage: 8,
+      cardName: 'Metsu Hadoken',
+      cardType: 'ultra',
+    });
+    const stateAfterDup = HitParticleEngine.getState();
+
+    // Step physics forward until all particles decay
+    let steps = 0;
+    while (HitParticleEngine.getState().activeCount > 0 && steps < 80) {
+      HitParticleEngine.stepFrame(32);
+      steps++;
+    }
+    const stateAfterDecay = HitParticleEngine.getState();
+
+    // Verify reducedHitStop scales down particle counts and disables shake
+    UXSettings.set('reducedHitStop', true);
+    const reducedHeavy = HitParticleEngine.classifyHitTier({ damage: 6, cardName: 'Shoryuken' });
+    UXSettings.set('reducedHitStop', false);
+
+    return {
+      tiers,
+      burst1,
+      dupId: dupBurst && dupBurst.id,
+      stateAfterSpawn,
+      stateAfterDup,
+      stateAfterDecay,
+      steps,
+      reducedHeavy,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(res.tiers.guard.tier, 'guard');
+  assert.equal(res.tiers.guard.headline, 'GUARD HELD!');
+  assert.equal(res.tiers.light.tier, 'light');
+  assert.equal(res.tiers.medium.tier, 'medium');
+  assert.equal(res.tiers.medium.headline, 'ARMOR CRUSH!');
+  assert.equal(res.tiers.heavy.tier, 'heavy');
+  assert.equal(res.tiers.crit.headline, 'CRITICAL HIT!!');
+  assert.equal(res.tiers.ex.headline, 'EX IMPACT!!');
+  assert.equal(res.tiers.guardBreak.headline, 'GUARD BREAK!!');
+  assert.equal(res.tiers.ultra.tier, 'ultra');
+  assert.equal(res.tiers.ultra.headline, 'ULTRA FINISH!!');
+  assert.equal(res.tiers.lethal.headline, 'DESTRUCTIVE FINISH!!');
+  assert.equal(res.tiers.stun.tier, 'stun');
+  assert.equal(res.tiers.exceed.tier, 'exceed');
+
+  assert.equal(res.burst1.tier, 'ultra');
+  assert.ok(res.stateAfterSpawn.particles > 80, 'Ultra hit should spawn a large burst of particles & shards');
+  assert.ok(res.stateAfterSpawn.slashes >= 5, 'Ultra hit should spawn multi-angle slash streaks + attack beam');
+  assert.ok(res.stateAfterSpawn.rings >= 4, 'Ultra hit should spawn concentric shockwave rings');
+  assert.ok(res.stateAfterSpawn.bolts >= 5, 'Ultra hit should spawn jagged lightning bolts');
+  assert.equal(res.stateAfterDup.totalBursts, res.stateAfterSpawn.totalBursts, 'Duplicate hit event should be deduplicated');
+  assert.equal(res.stateAfterDecay.activeCount, 0, 'All particles and effects should cleanly decay to 0');
+  assert.ok(res.reducedHeavy.particleCount < res.tiers.heavy.particleCount, 'reducedHitStop should scale down particle count');
+  assert.equal(res.reducedHeavy.shakeLevel, 'none', 'reducedHitStop should disable screen shake');
+});
+
+
 

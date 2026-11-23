@@ -1531,13 +1531,50 @@ const HowToPlayUI = (() => {
 
   function runClash(withSfx) {
     state.clash.result = HowToPlayLogic.evaluateClashScenario(state.clash);
+    renderModal();
     if (withSfx) {
       const r = state.clash.result;
       if (r.fighters.p1.stunned || r.fighters.p2.stunned) playSfx('guardBreak');
       else if (r.fighters.p1.hitLanded || r.fighters.p2.hitLanded) playSfx('strikeHit', 4);
       else playSfx('speedResolved', r.speedTie);
+
+      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerHit) {
+        const f1 = r.fighters.p1;
+        const f2 = r.fighters.p2;
+        if (f1.hitLanded) {
+          const c1 = HowToPlayLogic.getCatalogCard(state.clash.p1.cardKey);
+          HitParticleEngine.triggerHit({
+            kind: 'hit',
+            attackerId: 'p1',
+            defenderId: 'p2',
+            damage: f1.damageDealt,
+            cardName: c1 ? c1.name : f1.cardName,
+            cardType: c1 ? c1.type : 'normal',
+            isEX: !!state.clash.p1.ex,
+            criticalPaid: !!state.clash.p1.crit,
+            guardBroken: !!f2.stunned,
+            effectiveArmor: f2.stats ? f2.stats.arm : 0,
+            skipDedup: true,
+          });
+        }
+        if (f2.hitLanded) {
+          const c2 = HowToPlayLogic.getCatalogCard(state.clash.p2.cardKey);
+          HitParticleEngine.triggerHit({
+            kind: 'hit',
+            attackerId: 'p2',
+            defenderId: 'p1',
+            damage: f2.damageDealt,
+            cardName: c2 ? c2.name : f2.cardName,
+            cardType: c2 ? c2.type : 'normal',
+            isEX: !!state.clash.p2.ex,
+            criticalPaid: !!state.clash.p2.crit,
+            guardBroken: !!f1.stunned,
+            effectiveArmor: f1.stats ? f1.stats.arm : 0,
+            skipDedup: true,
+          });
+        }
+      }
     }
-    renderModal();
   }
 
   function setIconsFilter(filter) {
