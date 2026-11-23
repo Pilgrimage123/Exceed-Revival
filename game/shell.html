@@ -1058,20 +1058,215 @@
     .boost-active-item{font-size:10.5px;padding:3px 6px;}
     .tap-hint{display:none;}
   }
+
+  /* ============================================================
+     HORIZONTAL COMPACT GAMEPLAY STAGE (ADR-0007)
+     ============================================================ */
+  body.gameplay-active .top-util-bar{display:none;}
+  #settings-popover{position:fixed;top:48px;right:16px;z-index:1010;width:min(270px,calc(100vw - 28px));}
+
+  .gameplay-stage{
+    display:flex;flex-direction:column;gap:10px;
+    font-family:'Plus Jakarta Sans','Segoe UI',system-ui,sans-serif;
+  }
+  .main-stage{display:flex;flex-direction:column;gap:6px;min-width:0;}
+  .right-rail{
+    display:flex;flex-direction:column;min-width:0;min-height:0;
+    background:#121723;border:1.5px solid #303f60;border-radius:10px;overflow:hidden;
+  }
+  .right-rail.collapsed{align-items:center;justify-content:flex-start;}
+
+  @media (min-width:1024px){
+    body.gameplay-active{height:100dvh;overflow:hidden;}
+    #app.gameplay-stage-active{max-width:none;width:100%;height:100dvh;padding:8px 12px;margin:0;overflow:hidden;}
+    .gameplay-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,28%);gap:10px;height:100%;min-height:0;}
+    .gameplay-stage.rail-collapsed{grid-template-columns:minmax(0,1fr) 44px;}
+    .main-stage{height:100%;min-height:0;}
+    .right-rail{height:100%;min-height:0;}
+  }
+
+  /* Band 1: Slim Fighter HUDs */
+  .slim-hud-row{flex:0 0 auto;display:flex;gap:8px;margin:0;}
+  .slim-hud-bar{
+    padding:7px 10px;border-radius:8px;border-width:1.5px;
+    display:flex;flex-direction:column;gap:4px;min-height:76px;
+  }
+  .slim-hud-bar .fighter-silhouette{width:30px;height:30px;}
+  .slim-hud-bar .pname{font-family:'Barlow Condensed','Arial Narrow',sans-serif;font-size:17px;font-weight:800;letter-spacing:.02em;line-height:1.1;}
+  .slim-hud-bar .life-num{font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:800;}
+  .slim-hud-bar .life-bar-track{height:8px;margin:3px 0 0;}
+  .slim-hud-bar .resource-row{font-family:'JetBrains Mono',monospace;font-size:11px;gap:4px 8px;line-height:1.2;}
+  .striker-hud-badge{
+    display:inline-block;font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:800;
+    background:rgba(77,230,209,.18);color:var(--you);border:1px solid var(--you);
+    padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:middle;
+  }
+  .hud-pills-row{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-height:20px;}
+  .hud-pill{
+    display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;
+    padding:1px 7px;border-radius:5px;border:1px solid #3d4d73;background:#1a2234;color:#d6def0;
+    cursor:pointer;line-height:1.35;white-space:nowrap;
+  }
+  .hud-pill:hover,.hud-pill:focus{border-color:var(--you);color:#fff;outline:none;}
+  .hud-pill.innate-pill{border-color:#6852a8;background:#231b3d;color:#e3d6ff;}
+  .hud-pill.boost-pill{border-color:#536996;background:#18243b;color:#93c5fd;}
+  .pill-expiry{font-style:normal;font-size:9.5px;color:#f7c65a;margin-left:2px;}
+
+  /* Band 2: Flexible 9-Space Arena Stage & Inline Stage Prompt Bar */
+  .arena-stage-band{
+    flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:4px;
+  }
+  .clash-banner-reserved{min-height:34px;margin:0;}
+  .arena-stage-band .board{margin:2px 0;}
+  .arena-stage-band .cell{height:clamp(66px,9.2vh,90px);border-radius:6px;}
+  .arena-stage-band .range-readout{margin:2px 0;font-family:'JetBrains Mono',monospace;font-size:12.5px;}
+
+  .stage-prompt-bar{min-height:0;}
+  .stage-prompt-bar.strike-result-bar,.stage-prompt-bar.active{
+    background:#141a28;border:1px solid #364566;border-radius:8px;padding:6px 10px;
+    display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  }
+  .stage-prompt-bar #trigger-timeline-slot{flex:1 1 auto;min-width:0;margin:0;}
+  .stage-prompt-actions{display:flex;align-items:center;gap:6px;flex-shrink:0;}
+  .stage-prompt-actions button,.stage-prompt-inline button{min-height:32px;padding:4px 11px;font-size:12.5px;margin-top:0;width:auto;}
+  .stage-prompt-inline{display:flex;align-items:center;gap:8px;flex-wrap:wrap;width:100%;}
+  .stage-prompt-title{font-weight:800;font-size:12.5px;color:var(--you);}
+  .stage-prompt-inline .btn-row,.stage-prompt-inline .stepper-row{margin:0;gap:6px;}
+  .stage-prompt-inline .stepper-val{min-width:96px;font-size:12.5px;}
+  .name-choice-inline button{padding:3px 9px;min-height:28px;font-size:11.5px;}
+
+  /* Band 3: Single-Row Action / Selection Prompt Bar */
+  .action-bar-band{flex:0 0 auto;min-height:46px;}
+  .action-bar-row{
+    display:flex;flex-direction:row;align-items:stretch;gap:6px;overflow-x:auto;
+    grid-template-columns:none;padding:2px 0;
+  }
+  .action-bar-row .action-btn{
+    flex:1 1 0;min-width:72px;min-height:44px;padding:5px 8px;border-radius:8px;border-width:1.5px;
+    flex-direction:row;align-items:center;justify-content:center;gap:5px;white-space:nowrap;
+  }
+  .action-bar-row .action-icon{font-size:14px;}
+  .action-bar-row .action-label{font-size:12.5px;font-weight:800;}
+  .action-bar-row .action-sub{display:none;}
+  .action-bar-row .action-primary{grid-column:auto;}
+  .action-prompt-row{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    background:#161d2d;border:1.5px solid #3b4c70;border-radius:8px;padding:6px 10px;min-height:44px;
+  }
+  .action-prompt-row h3.thinking{margin:0;font-size:14px;}
+  .prompt-label{font-size:12.5px;font-weight:700;color:var(--text);margin-right:auto;}
+  .prompt-counter{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--you);}
+  .action-prompt-row button{min-height:32px;padding:4px 12px;font-size:12.5px;margin-top:0;width:auto;}
+  .action-bar-band .precommit-bar{margin:0;padding:6px 10px;min-height:44px;border-radius:8px;}
+
+  .boost-drop-zone.transient-drop-zone{display:none;margin:4px 0 0;padding:5px 10px;border-color:var(--special);background:rgba(171,143,242,.12);color:#e3d6ff;}
+  .boost-drop-zone.transient-drop-zone.drag-active{display:block;}
+
+  /* Band 4: Unified Compact Hand Dock & Tactical Card Tiles */
+  .hand-dock-band{flex:0 0 auto;min-height:140px;}
+  .hand-dock-band .hand-row{
+    display:flex;align-items:stretch;gap:6px;padding:3px 2px 6px;overflow-x:auto;
+  }
+  @media (min-width:1280px){
+    .hand-dock-band .hand-row:not(.hand-row-scroll){overflow-x:visible;}
+    .hand-dock-band .hand-row:not(.hand-row-scroll) .compact-card-tile{flex:1 1 0;max-width:168px;min-width:0;}
+  }
+  .hand-dock-band .hand-row.hand-row-scroll .compact-card-tile{flex:0 0 128px;min-width:112px;}
+  .compact-card-tile{
+    flex:0 0 132px;min-width:112px;padding:7px 8px;border-radius:8px;border-width:2px;
+    display:flex;flex-direction:column;justify-content:space-between;gap:5px;
+  }
+  .card-header-row{display:flex;justify-content:space-between;align-items:flex-start;gap:4px;}
+  .compact-card-tile .card-name{font-size:12.5px;font-weight:800;line-height:1.15;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .card-chips{display:inline-flex;align-items:center;gap:3px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;}
+  .ex-chip,.card-source-badge{
+    font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:800;padding:1px 4px;border-radius:4px;
+  }
+  .ex-chip{background:rgba(255,209,102,.2);color:#ffd166;border:1px solid #ffd166;}
+  .gauge-source-badge{background:rgba(171,143,242,.22);color:#e3d6ff;border:1px solid var(--special);}
+  .compact-card-tile.from-gauge{background:#1d1b30;}
+  .hand-gauge-divider{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    border-left:2px dashed var(--special);padding-left:6px;margin:0 2px;
+  }
+  .gauge-divider-label{
+    writing-mode:vertical-rl;transform:rotate(180deg);font-family:'JetBrains Mono',monospace;
+    font-size:10px;font-weight:800;letter-spacing:.08em;color:var(--special);
+  }
+  .compact-card-tile .card-stats{font-family:'JetBrains Mono',monospace;display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin:0;}
+  .compact-card-tile .stat{font-size:10.5px;padding:2px 4px;text-align:center;}
+  .compact-card-tile .card-boost-tag{margin-top:0;padding-top:4px;font-size:10.5px;line-height:1.25;}
+  .boost-tag-line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .decklook-tile-wrap{display:flex;flex-direction:column;gap:4px;}
+  .decklook-tile-btns{margin:0;gap:4px;}
+  .decklook-tile-btns button{min-height:28px;padding:3px 8px;font-size:11.5px;flex:1;}
+
+  /* Right Rail: Utility Strip, Universal Inspector, Tabbed Lower Panel */
+  .rail-utility-strip{
+    flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:5px;
+    padding:6px 8px;background:#161d2d;border-bottom:1px solid #2b3854;
+  }
+  .rail-utility-strip.collapsed{flex-direction:column;padding:8px 4px;border-bottom:none;}
+  .util-mini-btn,.rail-collapse-btn{
+    min-height:30px;height:30px;padding:0 8px;border-radius:6px;font-size:12px;
+    display:inline-flex;align-items:center;justify-content:center;
+  }
+  .rail-utility-strip .settings-btn,.rail-utility-strip .rules-btn,.rail-utility-strip .study-toggle-btn{
+    min-height:30px;height:30px;padding:0 9px;font-size:11.5px;border-radius:6px;
+  }
+
+  .universal-inspector{
+    flex:0 0 38%;min-height:160px;max-height:44%;overflow-y:auto;
+    padding:10px 12px;border-bottom:1.5px solid #2d3a58;background:#111622;
+  }
+  .inspector-head{display:flex;justify-content:space-between;align-items:center;gap:6px;margin-bottom:6px;}
+  .inspector-title{font-family:'Barlow Condensed','Arial Narrow',sans-serif;font-size:18px;font-weight:800;color:#fff;}
+  .insp-type-badge{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;background:#1e2942;color:#b7c0d6;}
+  .insp-type-badge.special{background:#2d204d;color:#d6bcfa;}
+  .insp-type-badge.ultra{background:#471b2a;color:#ff8fa8;}
+  .inspector-stats{margin-bottom:6px;}
+  .inspector-attack-text{font-size:12.5px;line-height:1.45;color:#dbe2f3;margin-bottom:6px;}
+  .inspector-critical-text{font-size:12px;line-height:1.4;color:#ffcf6b;margin-bottom:6px;}
+  .inspector-boost-box{background:#181e30;border:1px solid #2e3b5c;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.4;color:#e3d6ff;margin-bottom:6px;}
+  .inspector-preview-box{background:#0d1a20;border:1px solid #235c55;border-radius:6px;padding:6px 8px;font-size:11.5px;}
+  .inspector-preview-head{display:flex;align-items:center;gap:6px;font-weight:800;color:var(--you);margin-bottom:3px;}
+  .inspector-preview-stats{font-family:'JetBrains Mono',monospace;font-size:11px;color:#dbe2f3;}
+  .insp-tag{font-size:10px;font-weight:800;padding:1px 5px;border-radius:4px;}
+  .insp-tag.in-range{background:rgba(74,222,128,.18);color:var(--good);}
+  .insp-tag.whiff{background:rgba(248,113,113,.2);color:var(--bad);}
+  .insp-tag.lethal{background:rgba(255,95,109,.22);color:#ff5f6d;border:1px solid #ff5f6d;}
+  .inspector-idle-prompt{font-size:12px;color:var(--text-dim);line-height:1.45;margin-top:6px;}
+  .inspector-dual-cards{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
+  .inspector-dual-col{background:#171e2e;border:1px solid #2d3a58;border-radius:6px;padding:6px 8px;font-size:11.5px;}
+  .dual-col-head{font-weight:800;margin-bottom:4px;font-size:12px;}
+  .dual-card-text{font-size:11px;color:var(--text-dim);line-height:1.35;margin-top:4px;}
+
+  .rail-lower-tabs{flex:1 1 0;min-height:0;display:flex;flex-direction:column;}
+  .rail-tab-bar{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:6px 8px;background:#161d2d;border-bottom:1px solid #2b3854;}
+  .rail-tab-btn{
+    min-height:32px;padding:4px 6px;font-size:12px;font-weight:700;text-align:center;border-radius:6px;
+    background:#121723;border:1px solid #2a3652;color:var(--text-dim);position:relative;
+  }
+  .rail-tab-btn.active{background:#1d2b44;border-color:var(--you);color:#fff;}
+  .coach-unread-dot{color:#f7c65a;margin-left:4px;font-size:11px;}
+  .rail-tab-content{flex:1 1 0;min-height:0;overflow-y:auto;padding:8px 10px;}
+  .rail-tab-content .log-panel{max-height:none;border:none;background:transparent;padding:0;}
+  .rail-coach-actions{margin:0 0 8px;}
+  .rail-coach-actions button{min-height:32px;padding:4px 10px;font-size:12px;}
 </style>
 </head>
 <body>
 <div class="top-util-bar">
   <button class="settings-btn" onclick="toggleSettingsPopover()">⚙ Settings</button>
   <button class="rules-btn" aria-label="Open How to Play Command Manual" onclick="openHowToPlay()">How to Play</button>
-  <div id="settings-popover" style="display:none;">
-    <h4>UX &amp; Accessibility <button type="button" class="nm-close" onclick="toggleSettingsPopover()">✕</button></h4>
-    <div class="set-row"><label for="set-muted">Mute Audio</label><input id="set-muted" type="checkbox" onchange="UXSettings.set('muted', this.checked)"></div>
-    <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" oninput="UXSettings.set('volume', parseFloat(this.value))"></div>
-    <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
-    <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
-    <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
-  </div>
+</div>
+<div id="settings-popover" style="display:none;">
+  <h4>UX &amp; Accessibility <button type="button" class="nm-close" onclick="toggleSettingsPopover()">✕</button></h4>
+  <div class="set-row"><label for="set-muted">Mute Audio</label><input id="set-muted" type="checkbox" onchange="UXSettings.set('muted', this.checked)"></div>
+  <div class="set-row"><label for="set-vol">Volume</label><input id="set-vol" type="range" min="0" max="1" step="0.05" oninput="UXSettings.set('volume', parseFloat(this.value))"></div>
+  <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
+  <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
+  <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
 </div>
 <div id="app">
   <div class="char-select" id="charSelect">

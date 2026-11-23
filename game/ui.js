@@ -135,6 +135,11 @@ class GameController {
     this.beginnerHasTakenDamage = false;
     this.selectedActionCardUid = null;
     this.showNormalMatrix = false;
+    this.rightRailTab = 'log'; // 'log' | 'normals' | 'coach'
+    this.rightRailCollapsed = false;
+    this.inspectorTarget = null; // { kind: 'card' | 'innate' | 'boost', ... } | null
+    this.coachUnreadDot = false;
+    this.draggingCardUid = null;
   }
 
   // True once the beginner-mode Critical prompt should start appearing (always true
@@ -170,10 +175,15 @@ class GameController {
   // otherwise falls back to Classic JS chooseAction/chooseStrikeSelection at randomness=0.
   toggleStudyMode() {
     this.studyMode = !this.studyMode;
+    if (this.studyMode) {
+      this.rightRailCollapsed = false;
+      this.rightRailTab = 'coach';
+      this.coachUnreadDot = false;
+    }
     render();
   }
 
-  suggestMove() {
+  suggestMove(opts = {}) {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
     const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
@@ -202,10 +212,17 @@ class GameController {
       diagnostics: (nativeAdvice && nativeAdvice.diagnostics) || null,
       note: (nativeAdvice && nativeAdvice.note) || null,
     };
+    if (opts && opts.background) {
+      if (this.rightRailTab !== 'coach') this.coachUnreadDot = true;
+    } else {
+      this.rightRailCollapsed = false;
+      this.rightRailTab = 'coach';
+      this.coachUnreadDot = false;
+    }
     render();
   }
 
-  suggestStrike(isDefense) {
+  suggestStrike(isDefense, opts = {}) {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
     const kind = isDefense ? 'defense' : 'strike';
@@ -251,6 +268,13 @@ class GameController {
       diagnostics: (nativeAdvice && nativeAdvice.diagnostics) || null,
       note: (nativeAdvice && nativeAdvice.note) || null,
     };
+    if (opts && opts.background) {
+      if (this.rightRailTab !== 'coach') this.coachUnreadDot = true;
+    } else {
+      this.rightRailCollapsed = false;
+      this.rightRailTab = 'coach';
+      this.coachUnreadDot = false;
+    }
     render();
   }
 
@@ -2007,21 +2031,95 @@ class GameController {
     });
   }
 
+  setRightRailTab(tab) {
+    if (!['log', 'normals', 'coach'].includes(tab)) return;
+    this.rightRailTab = tab;
+    this.showNormalMatrix = (tab === 'normals');
+    if (tab === 'coach') this.coachUnreadDot = false;
+    render();
+  }
+
+  toggleRightRail() {
+    this.rightRailCollapsed = !this.rightRailCollapsed;
+    render();
+  }
+
+  toggleMute() {
+    if (typeof UXSettings !== 'undefined') {
+      UXSettings.set('muted', !UXSettings.get('muted'));
+    }
+    render();
+  }
+
+  findInspectableCard(uid) {
+    if (!uid) return null;
+    const human = this.human();
+    const ai = this.ai();
+    const pools = [
+      (human && human.hand) || [],
+      (human && human.gauge) || [],
+      (this.sel && this.sel.peeked) || [],
+      (this.sel && this.sel.matchingCards) || [],
+      ((human && human.boostsInPlay) || []).map(b => b.card).filter(Boolean),
+      ((ai && ai.boostsInPlay) || []).map(b => b.card).filter(Boolean),
+    ];
+    for (const pool of pools) {
+      const found = pool.find(c => c && (c.uid === uid || c.key === uid));
+      if (found) return found;
+    }
+    return (typeof SimulateStrikePreview !== 'undefined' && SimulateStrikePreview.resolveCardByKey)
+      ? SimulateStrikePreview.resolveCardByKey(uid)
+      : null;
+  }
+
   onCardHover(uid, isEX) {
-    if (typeof EventBus === 'undefined') return;
-    const p = this.human();
-    const card = p && p.hand.find(c => c.uid === uid);
-    if (!card) return;
-    EventBus.emit('OnCardHoverStart', { card, isEX: !!isEX });
+    const baseCard = this.findInspectableCard(uid);
+    if (!baseCard) return;
+    const card = isEX
+      ? { ...baseCard, isEX: true, pow: (baseCard.pow || 0) + 1, spd: (baseCard.spd || 0) + 1, arm: (baseCard.arm || 0) + 1, grd: (baseCard.grd || 0) + 1 }
+      : baseCard;
+    this.inspectorTarget = { kind: 'card', card, rawCard: baseCard, uid, isEX: !!isEX };
+    if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnCardHoverStart', { card: baseCard, isEX: !!isEX });
+    }
   }
 
   onCardHoverEnd() {
-    if (typeof EventBus === 'undefined') return;
-    EventBus.emit('OnCardHoverEnd', {});
+    this.inspectorTarget = null;
+    if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnCardHoverEnd', {});
+    }
+  }
+
+  onHudPillHover(kind, who, boostUid) {
+    const player = who === 'human' ? this.human() : this.ai();
+    if (!player) return;
+    if (kind === 'innate') {
+      this.inspectorTarget = { kind: 'innate', who, player };
+    } else if (kind === 'boost') {
+      const entry = (player.boostsInPlay || []).find(b => b.card && (b.card.uid === boostUid || b.card.key === boostUid));
+      if (!entry) return;
+      this.inspectorTarget = { kind: 'boost', who, player, boostEntry: entry, card: entry.card };
+    }
+    if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
+  }
+
+  onHudPillHoverEnd() {
+    this.inspectorTarget = null;
+    if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
   }
 
   toggleNormalMatrix() {
-    this.showNormalMatrix = !this.showNormalMatrix;
+    if (this.rightRailTab === 'normals' && !this.rightRailCollapsed) {
+      this.rightRailTab = 'log';
+      this.showNormalMatrix = false;
+    } else {
+      this.rightRailCollapsed = false;
+      this.rightRailTab = 'normals';
+      this.showNormalMatrix = true;
+    }
     render();
   }
 
@@ -2058,12 +2156,23 @@ class GameController {
   }
 
   onCardDragStart(ev, uid) {
-    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
-    ev.dataTransfer.setData('text/plain', uid);
-    ev.dataTransfer.effectAllowed = 'move';
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId) return;
+    this.draggingCardUid = uid;
+    if (ev && ev.dataTransfer) {
+      ev.dataTransfer.setData('text/plain', uid);
+      ev.dataTransfer.effectAllowed = 'move';
+    }
+    if (typeof setDragZoneActive === 'function') setDragZoneActive(true);
+  }
+
+  onCardDragEnd() {
+    this.draggingCardUid = null;
+    if (typeof setDragZoneActive === 'function') setDragZoneActive(false);
   }
 
   onBoardDrop(ev) {
+    this.draggingCardUid = null;
+    if (typeof setDragZoneActive === 'function') setDragZoneActive(false);
     if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
     ev.preventDefault();
     const uid = ev.dataTransfer.getData('text/plain');
@@ -2078,6 +2187,8 @@ class GameController {
   }
 
   onBoostDrop(ev) {
+    this.draggingCardUid = null;
+    if (typeof setDragZoneActive === 'function') setDragZoneActive(false);
     if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || !ev || !ev.dataTransfer) return;
     ev.preventDefault();
     const uid = ev.dataTransfer.getData('text/plain');

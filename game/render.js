@@ -402,31 +402,57 @@ function rangeChipHTML(inRange) {
 // elsewhere (Change Cards, discard-to-seven, Move's Force picker, etc.) don't
 // grow dead hover handlers for a distance concept that doesn't apply there.
 function rangeHoverAttrs(band, uid, isEX) {
-  if (uid && typeof EventBus !== 'undefined') {
-    return ` onmouseenter="G.onCardHover('${uid}', ${!!isEX})" onmouseleave="G.onCardHoverEnd()"`;
+  const enterParts = [];
+  const leaveParts = [];
+  if (uid) {
+    const u = esc(uid);
+    enterParts.push(`G && G.onCardHover('${u}', ${!!isEX})`);
+    leaveParts.push(`G && G.onCardHoverEnd()`);
   }
-  if (!band) return '';
-  return ` onmouseenter="highlightBand(${band[0]},${band[1]})" onmouseleave="clearBand()"`;
+  if (band && (!uid || typeof EventBus === 'undefined')) {
+    enterParts.push(`highlightBand(${band[0]},${band[1]})`);
+    leaveParts.push(`clearBand()`);
+  }
+  if (!enterParts.length) return '';
+  return ` onmouseenter="${enterParts.join('; ')}" onmouseleave="${leaveParts.join('; ')}" onfocus="${enterParts.join('; ')}" onblur="${leaveParts.join('; ')}"`;
+}
+
+function compactBoostTagHTML(c) {
+  if (!c || !c.boost) return '<span class="boost-tag-summary">No Boost</span>';
+  const force = (c.boost && c.boost.force) || 0;
+  const contTag = c.boost.continuous ? '<span class="boost-continuous-tag">[Cont]</span>' : '';
+  const cancelTag = c.boost.cancelable ? `<span class="cancelable-tag" title="${esc(TERM_HELP['Cancelable'])}">\u23F11</span>` : '';
+  const summary = boostEffectSummary(c);
+  const shortSummary = summary.length > 48 ? summary.slice(0, 46) + '\u2026' : summary;
+  return `<div class="boost-tag-line">${force > 0 ? `<span class="force-cost">[${force}F]</span>` : ''}${contTag}${cancelTag} <span class="boost-tag-summary">${esc(shortSummary)}</span></div>`;
 }
 
 function cardTile(c, opts = {}) {
-  const cls = ['card-tile', c.type];
+  const cls = ['card-tile', 'compact-card-tile', c.type];
   if (opts.selected) cls.push('selected');
   if (opts.disabled) cls.push('disabled');
   if (opts.lethalAura) cls.push('lethal-aura');
   if (opts.highlight === 'strike') cls.push('highlight-strike');
   else if (opts.highlight === 'boost') cls.push('highlight-boost');
-  const hoverUid = opts.hoverPreview ? c.uid : null;
-  return `<div class="${cls.join(' ')}" data-uid="${c.uid}" ${opts.draggable ? 'draggable="true" ondragstart="G.onCardDragStart(event, \'' + c.uid + '\')"' : ''} ${opts.onclick ? `onclick="${opts.onclick}"` : ''}${rangeHoverAttrs(opts.band, hoverUid, !!opts.isEX)}>
-    <div class="card-name">${esc(c.name)}${c.isEX ? ' (EX)' : ''}${gaugeCostBadge(c)}${rangeChipHTML(opts.rangeChip)}</div>
+  if (c.isEX || opts.isEX) cls.push('ex-tile');
+  if (opts.fromSource === 'gauge') cls.push('from-gauge');
+  const inspectId = c.uid || c.key;
+  const exBadge = (c.isEX || opts.isEX) ? '<span class="ex-chip">EX</span>' : '';
+  const gaugeBadge = opts.fromSource === 'gauge' ? '<span class="card-source-badge gauge-source-badge">GAUGE</span>' : '';
+  const dragAttrs = opts.draggable
+    ? `draggable="true" ondragstart="G.onCardDragStart(event, '${c.uid}')" ondragend="G.onCardDragEnd()"`
+    : '';
+  const tabAttr = opts.onclick || opts.draggable ? ' tabindex="0"' : '';
+  return `<div class="${cls.join(' ')}" data-uid="${c.uid || ''}" ${dragAttrs}${tabAttr} ${opts.onclick ? `onclick="${opts.onclick}"` : ''}${rangeHoverAttrs(opts.band, inspectId, !!(c.isEX || opts.isEX))}>
+    <div class="card-header-row">
+      <span class="card-name">${esc(c.name)}${c.isEX ? ' (EX)' : ''}</span>
+      <span class="card-chips">${gaugeBadge}${exBadge}${gaugeCostBadge(c)}${rangeChipHTML(opts.rangeChip)}</span>
+    </div>
     <div class="strike-part">
       <div class="card-stats">${statLine(c)}</div>
-      <div class="card-text">${boldCardKeywords(esc(c.text || ''))}</div>
-      ${c.criticalText ? `<div class="card-critical">${boldCardKeywords(esc(c.criticalText))}</div>` : ''}
     </div>
-    <div class="card-boost">
-      ${boostHeadline(c)}
-      ${forceCostBadge(c)}${boldCardKeywords(esc(c.boostText || ''))}
+    <div class="card-boost card-boost-tag">
+      ${compactBoostTagHTML(c)}
     </div>
   </div>`;
 }
@@ -448,15 +474,15 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine 
         if (engine && player && a.type === 'ultra' && typeof engine.canPayUltra === 'function' && !engine.canPayUltra(player, a)) {
           continue;
         }
-        const exCard = { ...a, name: a.name + ' (EX)', pow: a.pow + 1, spd: a.spd + 1, arm: a.arm + 1, grd: a.grd + 1 };
+        const exCard = { ...a, name: a.name, pow: a.pow + 1, spd: a.spd + 1, arm: a.arm + 1, grd: a.grd + 1, isEX: true };
         const inRange = (dist != null && a.range) ? (dist >= a.range[0] && dist <= a.range[1]) : null;
-        tiles.push(`<div class="card-tile ${a.type} ex-tile ${highlight === 'strike' ? 'highlight-strike' : ''}" onclick="${onClickFn(a.uid, b.uid)}"${rangeHoverAttrs(a.range, a.uid, true)}>
-          <div class="card-name">${esc(exCard.name)}${rangeChipHTML(inRange)}</div>
-          <div class="strike-part">
-            <div class="card-stats">${statLine(exCard)}</div>
-            <div class="card-text">Pair of ${esc(a.name)} \u2014 +1 to all stats. The second copy is discarded on reveal.</div>
-          </div>
-        </div>`);
+        tiles.push(cardTile(exCard, {
+          onclick: onClickFn(a.uid, b.uid),
+          highlight,
+          band: a.range,
+          rangeChip: inRange,
+          isEX: true,
+        }));
       }
     }
   }
@@ -524,14 +550,7 @@ function boardHTML(engine) {
   const eddieReadout = eddieOwner
     ? ` &nbsp;|&nbsp; Eddie (${eddieOwner.id === (G ? G.humanId : 'p1') ? 'yours' : 'CPU'}): space ${eddieOwner.eddiePos + 1}, Range <b>${Math.abs(eddieOwner.eddiePos - (eddieOwner.id === p1.id ? p2 : p1).pos)}</b> to ${eddieOwner.id === p1.id ? p2.name : p1.name}`
     : '';
-  const tlStepIdx = (engine.lastStrikeInfo && typeof StrikePlaybackController !== 'undefined' && typeof StrikePlaybackController.getCurrentStepIdx === 'function')
-    ? StrikePlaybackController.getCurrentStepIdx(engine.lastStrikeInfo)
-    : ((engine.lastStrikeInfo && engine.lastStrikeInfo.timeline) || []).length - 1;
-  const tlSlot = (G && G.mode === 'strike_result' && engine.lastStrikeInfo && typeof StrikePlaybackController !== 'undefined')
-    ? StrikePlaybackController.timelineBarHTML(engine.lastStrikeInfo, tlStepIdx)
-    : '';
-  return `<div id="trigger-timeline-slot">${tlSlot}</div>
-  <div id="clash-banner-slot"></div>
+  return `<div id="clash-banner-slot" class="clash-banner-reserved"></div>
   <div class="board" ondragover="event.preventDefault()" ondrop="G && G.onBoardDrop(event)">${cells}</div>
     <div class="range-readout">Range: <b>${engine.range(p1, p2)}</b>${eddieReadout}${skipBtn}</div>`;
 }
@@ -635,8 +654,8 @@ function normalMatrixData(opp) {
 
 function normalMatrixHTML(opp) {
   const data = normalMatrixData(opp);
-  return `<div class="normal-matrix-popover" onclick="event.stopPropagation()">
-    <div class="nm-header"><span>Opponent Normals (${data.totalRemaining}/${data.totalMax} hidden)</span><button type="button" class="nm-close" onclick="G.toggleNormalMatrix()">✕</button></div>
+  return `<div class="normal-matrix-panel">
+    <div class="nm-header"><span>Opponent Normals (${data.totalRemaining}/${data.totalMax} hidden)</span></div>
     <div class="nm-grid">
       ${data.rows.map(r => `<div class="nm-cell ${r.rem === 0 ? 'nm-exhausted' : ''}">
         <span class="nm-name">${esc(r.name)}</span>
@@ -655,13 +674,20 @@ function lifeBar(g, who) {
   const lowHpCls = player.life > 0 && player.life <= 6 ? ' low-hp' : '';
   const exceedAuraCls = who === 'human' && g.engine.canExceed(player) ? ' exceed-ready-aura' : '';
   const deckState = deckWarningState(player);
-  const nmInfo = who === 'ai' ? normalMatrixData(player) : null;
-  return `<div class="life-panel ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0">
+  const isStriker = g.engine.active === player.id;
+  const strikerBadge = isStriker ? '<span class="striker-hud-badge" title="Active turn / Wins Speed Ties">STRIKER</span>' : '';
+  const innateLabel = player.exceeded ? '★ Exceed' : '✦ Innate';
+  const boostPills = player.boostsInPlay.map(b => {
+    const bId = esc(b.card.uid || b.card.key);
+    const exp = b.turnsUntilExpire != null ? ` <em class="pill-expiry">${b.turnsUntilExpire}T</em>` : '';
+    return `<span class="hud-pill boost-pill" role="button" tabindex="0" data-boost-uid="${bId}" onmouseenter="G.onHudPillHover('boost','${who}','${bId}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('boost','${who}','${bId}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); G.onHudPillHover('boost','${who}','${bId}')">⚡ ${esc(b.card.name)}${exp}</span>`;
+  }).join('');
+  return `<div class="life-panel slim-hud-bar ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0">
     <div class="life-top-row">
       ${fighterSilhouette(player.characterKey, silhouetteAccent)}
       <div class="life-main">
         <div class="life-header">
-          <span class="pname">${esc(label)} ${player.exceeded ? '<span class="exceeded-badge">EXCEEDED</span>' : ''}</span>
+          <span class="pname">${esc(label)} ${strikerBadge} ${player.exceeded ? '<span class="exceeded-badge">EXCEEDED</span>' : ''}</span>
           <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : ''}</span>
         </div>
         <div class="life-bar-track"><div class="life-bar-fill" style="width:${pct}%"></div>${who === 'ai' ? '<div class="opp-projected-dmg"></div>' : ''}</div>
@@ -671,22 +697,16 @@ function lifeBar(g, who) {
       <span title="${esc(TERM_HELP['Hand'])}">Hand ${player.hand.length}</span>
       <span class="deck-pill ${deckState.cls}" title="${esc(deckState.title)}">${deckState.icon}Deck ${player.deck.length}</span>
       <span title="${esc(TERM_HELP['Gauge'])}">Gauge ${player.gauge.length}</span>
-      <span title="${esc(TERM_HELP['Discard'])}">Discarded ${player.discard.length}</span>
-      ${who === 'ai' ? `<button type="button" class="nm-toggle-btn" onclick="event.stopPropagation(); G.toggleNormalMatrix()">Normals [${nmInfo.totalRemaining}/${nmInfo.totalMax}]</button>` : ''}
+      <span title="${esc(TERM_HELP['Discard'])}">Discard ${player.discard.length}</span>
       ${player.overdrive && player.overdrive.length
-        ? `<span title="${esc(TERM_HELP['Overdrive'])}">Overdrive ${player.overdrive.length}</span>`
+        ? `<span title="${esc(TERM_HELP['Overdrive'])}">OD ${player.overdrive.length}</span>`
         : ''}
-      ${player.extraActionsRemaining > 0 ? `<span title="${esc(TERM_HELP['Actions'])}">Actions ${player.extraActionsRemaining}</span>` : ''}
+      ${player.extraActionsRemaining > 0 ? `<span title="${esc(TERM_HELP['Actions'])}">Act ${player.extraActionsRemaining}</span>` : ''}
     </div>
-    ${who === 'ai' && g.showNormalMatrix ? normalMatrixHTML(player) : ''}
-    <div class="innate-line">${esc(charInnateLine(player))}</div>
-    ${player.boostsInPlay.length ? `<div class="boosts-active">${player.boostsInPlay.map(b => {
-      const effect = boostEffectSummary(b.card);
-      const expiry = b.turnsUntilExpire != null
-        ? ` <span class="boost-expiry">(expires in ${b.turnsUntilExpire} turn${b.turnsUntilExpire === 1 ? '' : 's'})</span>` : '';
-      return `<div class="boost-active-item">Active \u2014 <b>${esc(b.card.name)}:</b> ${esc(effect)}${expiry}</div>`;
-    }).join('')}</div>` : ''}
-    <div class="tap-hint">Tap for full fighter info \u203a</div>
+    <div class="hud-pills-row">
+      <span class="hud-pill innate-pill" role="button" tabindex="0" onmouseenter="G.onHudPillHover('innate','${who}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('innate','${who}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); G.onHudPillHover('innate','${who}')">${innateLabel}</span>
+      ${boostPills}
+    </div>
   </div>`;
 }
 
@@ -695,13 +715,11 @@ function actionButtons(g) {
   const canExceed = g.engine.canExceed(p);
   const char = CHARACTERS[p.characterKey];
   const actions = [
-    { fn: 'G.actionPrepare()', icon: '\u{1F0CF}', label: 'Prepare', sub: 'Draw a card', disabled: false },
-    { fn: 'G.startMove()', icon: '\u21C4', label: 'Move', sub: 'Spend Force', disabled: false },
-    { fn: 'G.startChangeCards()', icon: '\u{1F504}', label: 'Change Cards', sub: 'Spend Force \u2192 Draw', disabled: false },
-    { fn: 'G.startBoost()', icon: '\u2B06', label: 'Boost', sub: 'Play card face up', disabled: p.hand.length === 0 },
     { fn: 'G.startStrike()', icon: '\u2694', label: 'Strike', sub: 'Set a card face down', disabled: false, primary: true },
-    // Cost via g.engine.exceedCostFor, not char.exceedCost: dynamic costs and
-    // Nagoriyuki's `canExceedAction: false` / already-Exceeded state display accurately.
+    { fn: 'G.startBoost()', icon: '\u2B06', label: 'Boost', sub: 'Play card face up', disabled: p.hand.length === 0 },
+    { fn: 'G.startMove()', icon: '\u21C4', label: 'Move', sub: 'Spend Force', disabled: false },
+    { fn: 'G.actionPrepare()', icon: '\u{1F0CF}', label: 'Prepare', sub: 'Draw a card', disabled: false },
+    { fn: 'G.startChangeCards()', icon: '\u{1F504}', label: 'Change', sub: 'Spend Force \u2192 Draw', disabled: false },
     {
       fn: 'G.actionExceed()', icon: '\u{1F525}',
       label: char.canExceedAction === false ? 'Exceed [\u2014]' : `Exceed [${g.engine.exceedCostFor(p)}]`,
@@ -709,28 +727,17 @@ function actionButtons(g) {
       disabled: !canExceed,
       extraCls: canExceed ? 'exceed-btn-ready' : '',
     },
-    // Only shown when the character actually HAS a chooseable Innate/Exceeded
-    // action — Cammy and Zangief are pure passive Strike modifiers with no
-    // "Action:" verb at all (see cards.js's CHARACTERS comment on `action` being
-    // legitimately omittable), so this button would otherwise appear with a
-    // nonsensical label (charActionLabel falling back to raw passive text, e.g.
-    // "If you move past the opponent...") and do nothing but silently pass the
-    // turn when pressed (see actionSpecial's `if (!char.action)` guard in ui.js).
     ...(char.action ? [{ fn: 'G.actionSpecial()', icon: '\u2605', label: charActionLabel(p), sub: p.exceeded ? 'Exceeded action' : 'Innate action', disabled: false }] : []),
-    // Data-driven "burst" action (see cards.js's `grantsBurstAction` boost flag,
-    // currently just Axl's One Vision) — a button appears for EACH of the
-    // player's own boostsInPlay entries that grants one, not hardcoded to any
-    // specific character/card by key. Ordinarily a player would have at most
-    // one such boost active at a time, but this doesn't assume that.
     ...p.boostsInPlay.filter(b => b.card.boost && b.card.boost.grantsBurstAction).map(b => ({
       fn: `G.actionBurst('${b.card.uid}')`, icon: '\u{1F4A5}',
       label: `Burst: ${b.card.name}`,
       sub: `Discard \u2192 ${b.card.boost.grantsBurstAction.extraActions} actions`, disabled: false,
     })),
     { fn: 'G.actionReshuffle()', icon: '\u267B', label: 'Reshuffle', sub: p.reshuffleUsed ? 'Already used' : 'Once per game', disabled: p.reshuffleUsed },
+    { fn: 'G.suggestMove()', icon: '\u{1F4A1}', label: 'Suggest a move', sub: 'Ask Coach', disabled: false, extraCls: 'coach-suggest-btn' },
   ];
-  return `<div class="action-grid">${actions.map(a => `
-    <button class="action-btn ${a.primary ? 'action-primary' : ''} ${a.extraCls || ''}" onclick="${a.fn}" ${a.disabled ? 'disabled' : ''}>
+  return `<div class="action-grid action-bar-row">${actions.map(a => `
+    <button class="action-btn ${a.primary ? 'action-primary' : ''} ${a.extraCls || ''}" onclick="${a.fn}" ${a.disabled ? 'disabled' : ''} title="${esc(a.sub)}">
       <span class="action-icon">${a.icon}</span>
       <span class="action-label">${esc(a.label)}</span>
       <span class="action-sub">${esc(a.sub)}</span>
@@ -744,7 +751,8 @@ function handHTML(g, opts = {}) {
     const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
     memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p);
   }
-  return `<div class="hand-row">${p.hand.map(c => {
+  const hasScroll = p.hand.length > 7 || !!opts.exTiles;
+  return `<div class="hand-row${hasScroll ? ' hand-row-scroll' : ''}">${p.hand.map(c => {
     const baseOpts = opts.tileOpts ? opts.tileOpts(c) : {};
     const memo = memoMap && memoMap.get(c.uid || c.key);
     const lethalAura = !!(memo && memo.base && memo.base.isPublicStateLethal && !baseOpts.disabled);
@@ -1107,12 +1115,878 @@ function strikeBreakdownHTML() {
   return `<div class="breakdown">${beatsHTML}</div>${controls}`;
 }
 
+function resolveCardDef(cardKeyOrName) {
+  if (!cardKeyOrName) return null;
+  if (typeof SimulateStrikePreview !== 'undefined' && SimulateStrikePreview.resolveCardByKey) {
+    const byKey = SimulateStrikePreview.resolveCardByKey(cardKeyOrName);
+    if (byKey) return byKey;
+  }
+  if (typeof allCardDefs === 'function') {
+    const defs = allCardDefs();
+    return defs.find(c => c.key === cardKeyOrName || c.name === cardKeyOrName) || null;
+  }
+  return null;
+}
+
+function inspectorCardViewHTML(g, card, rawCard, isEX) {
+  const displayCard = isEX && !card.isEX
+    ? { ...card, isEX: true, pow: (card.pow || 0) + 1, spd: (card.spd || 0) + 1, arm: (card.arm || 0) + 1, grd: (card.grd || 0) + 1 }
+    : card;
+  let previewHTML = '';
+  if (typeof SimulateStrikePreview !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
+    const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
+    const preview = SimulateStrikePreview.run(infoSet, rawCard || card, {
+      isEX: !!(isEX || displayCard.isEX),
+      isInitiator: g.mode !== 'defend_select',
+    });
+    if (preview && preview.effectiveStats) {
+      const s = preview.effectiveStats;
+      const hitLabel = preview.willWhiff ? '<span class="insp-tag whiff">OUT OF RANGE</span>' : '<span class="insp-tag in-range">IN RANGE</span>';
+      const lethalLabel = preview.isPublicStateLethal ? '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>' : '';
+      const dmgText = preview.hasStochasticVariance ? '?' : preview.projectedDamage;
+      previewHTML = `<div class="inspector-preview-box">
+        <div class="inspector-preview-head"><span>Strike Preview</span>${hitLabel}${lethalLabel}</div>
+        <div class="inspector-preview-stats">
+          <span>SPD <b>${s.spd}</b></span> · <span>POW <b>${s.pow}</b></span> · <span>ARM <b>${s.arm}</b></span> · <span>GRD <b>${s.grd}</b></span>
+          · <span>Space <b>${preview.postBeforeSpace + 1}</b></span> · <span>Proj. DMG <b>${dmgText}</b></span>
+        </div>
+      </div>`;
+    }
+  }
+  const typeLabel = (displayCard.type || 'normal').toUpperCase();
+  return `<div class="inspector-card-view">
+    <div class="inspector-head">
+      <span class="inspector-title">${esc(displayCard.name)}${displayCard.isEX ? ' (EX)' : ''}</span>
+      <span class="inspector-badges"><span class="insp-type-badge ${esc(displayCard.type || 'normal')}">${typeLabel}</span>${gaugeCostBadge(displayCard)}</span>
+    </div>
+    <div class="card-stats inspector-stats">${statLine(displayCard)}</div>
+    <div class="inspector-attack-text">${boldCardKeywords(esc(displayCard.text || 'Standard strike (no additional effect text).'))}</div>
+    ${displayCard.criticalText ? `<div class="inspector-critical-text">${boldCardKeywords(esc(displayCard.criticalText))}</div>` : ''}
+    <div class="inspector-boost-box">
+      ${boostHeadline(displayCard)}
+      ${forceCostBadge(displayCard)}<span class="inspector-boost-text">${boldCardKeywords(esc(displayCard.boostText || 'No Boost effect.'))}</span>
+    </div>
+    ${previewHTML}
+  </div>`;
+}
+
+function inspectorStrikeResultHTML(g) {
+  const info = g.engine.lastStrikeInfo;
+  if (!info || !info.sides || !info.sides[g.humanId] || !info.sides[g.aiId]) {
+    return '<div class="inspector-idle-view"><div class="inspector-idle-prompt">No Strike has resolved yet this game.</div></div>';
+  }
+  const you = info.sides[g.humanId];
+  const cpu = info.sides[g.aiId];
+  const youDef = resolveCardDef(you.cardKey || you.cardName);
+  const cpuDef = resolveCardDef(cpu.cardKey || cpu.cardName);
+  const beats = buildStrikeBeats(info);
+  const beginner = !!g.beginner;
+  const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
+  const beatsHTML = beats.map((text, i) => {
+    const revealed = i < beatIndex;
+    return `<div class="breakdown-beat${revealed ? '' : ' pending'}">
+      <span class="beat-num">${i + 1}</span>
+      <span class="beat-text">${revealed ? text : '…'}</span>
+    </div>`;
+  }).join('');
+  return `<div class="inspector-strike-result-view">
+    <div class="inspector-dual-cards">
+      <div class="inspector-dual-col you-col">
+        <div class="dual-col-head">You: <b>${esc(you.cardName)}</b>${esc(sideMarkers(you))}</div>
+        ${statCompareHTML('You', you)}
+        ${youDef && youDef.text ? `<div class="dual-card-text">${boldCardKeywords(esc(youDef.text))}</div>` : ''}
+      </div>
+      <div class="inspector-dual-col cpu-col">
+        <div class="dual-col-head">CPU: <b>${esc(cpu.cardName)}</b>${esc(sideMarkers(cpu))}</div>
+        ${statCompareHTML('CPU', cpu)}
+        ${cpuDef && cpuDef.text ? `<div class="dual-card-text">${boldCardKeywords(esc(cpuDef.text))}</div>` : ''}
+      </div>
+    </div>
+    <div class="breakdown inspector-breakdown">${beatsHTML}</div>
+  </div>`;
+}
+
+function universalInspectorContentHTML(g) {
+  if (!g) return '';
+  const target = g.inspectorTarget;
+  if (target) {
+    if (target.kind === 'card' && target.card) {
+      return inspectorCardViewHTML(g, target.card, target.rawCard || target.card, !!target.isEX);
+    }
+    if (target.kind === 'innate' && target.player) {
+      const p = target.player;
+      const char = CHARACTERS[p.characterKey] || {};
+      const whoLabel = target.who === 'human' ? 'You' : 'CPU';
+      return `<div class="inspector-ability-view">
+        <div class="inspector-head">
+          <span class="inspector-title">${esc(char.name || p.name)} (${whoLabel})</span>
+          <span class="insp-type-badge">${p.exceeded ? 'EXCEEDED' : 'INNATE'}</span>
+        </div>
+        <div class="info-row char-ability ${!p.exceeded ? 'active-ability' : ''}"><b>Normal Innate:</b> ${esc(char.innateText || '')}</div>
+        <div class="info-row char-ability ${p.exceeded ? 'active-ability' : ''}"><b>Exceeded [${char.exceedCost || 0} Gauge]:</b> ${esc(char.exceedText || '')}</div>
+      </div>`;
+    }
+    if (target.kind === 'boost' && target.boostEntry && target.card) {
+      const b = target.boostEntry;
+      const c = target.card;
+      const whoLabel = target.who === 'human' ? 'You' : 'CPU';
+      const expiry = b.turnsUntilExpire != null
+        ? `Expires in ${b.turnsUntilExpire} turn${b.turnsUntilExpire === 1 ? '' : 's'}`
+        : 'Sustained in play';
+      return `<div class="inspector-boost-view">
+        <div class="inspector-head">
+          <span class="inspector-title">⚡ ${esc(c.name)} (${whoLabel})</span>
+          <span class="insp-type-badge special">${esc(expiry)}</span>
+        </div>
+        <div class="inspector-boost-box">
+          ${boostHeadline(c)}
+          ${forceCostBadge(c)}<span class="inspector-boost-text">${boldCardKeywords(esc(c.boostText || ''))}</span>
+        </div>
+      </div>`;
+    }
+  }
+
+  if (g.mode === 'awaiting_action' && g.selectedActionCardUid) {
+    const selCard = g.human().hand.find(c => c.uid === g.selectedActionCardUid);
+    if (selCard) return inspectorCardViewHTML(g, selCard, selCard, false);
+  }
+
+  if (g.mode === 'strike_result') {
+    return inspectorStrikeResultHTML(g);
+  }
+
+  const help = MODE_HELP[g.mode];
+  return `<div class="inspector-idle-view">
+    ${help ? `<div class="inspector-coach-summary"><div class="coach-title">${esc(help.title)}</div><div class="coach-body">${esc(help.body)}</div></div>` : ''}
+    <div class="inspector-idle-prompt">Hover or focus any card tile, Innate pill, or Boost pill to inspect full rules text &amp; live Strike Preview.</div>
+  </div>`;
+}
+
+function updateUniversalInspectorSlot() {
+  if (typeof document === 'undefined' || !G) return;
+  const slot = document.getElementById('universal-inspector-slot');
+  if (slot) slot.innerHTML = universalInspectorContentHTML(G);
+}
+
+function setDragZoneActive(active) {
+  if (typeof document === 'undefined') return;
+  const el = document.getElementById('boost-drop-zone');
+  if (el && el.classList) {
+    if (active) el.classList.add('drag-active');
+    else el.classList.remove('drag-active');
+  }
+}
+
+function rightRailHTML(g) {
+  const tab = g.rightRailTab || 'log';
+  const collapsed = !!g.rightRailCollapsed;
+  const nmInfo = normalMatrixData(g.ai());
+  const isMuted = typeof UXSettings !== 'undefined' && !!UXSettings.get('muted');
+
+  if (collapsed) {
+    return `<aside class="right-rail collapsed" aria-label="Tactical Right Rail">
+      <div class="rail-utility-strip collapsed">
+        <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Expand Right Rail" aria-label="Expand Right Rail">◀</button>
+      </div>
+    </aside>`;
+  }
+
+  let tabBody = '';
+  if (tab === 'normals') {
+    tabBody = normalMatrixHTML(g.ai());
+  } else if (tab === 'coach') {
+    const hint = trainerPanelHTML(g);
+    tabBody = `<div class="rail-coach-panel">
+      <div class="btn-row rail-coach-actions">
+        <button type="button" onclick="G.suggestMove()">Suggest a move</button>
+        <button type="button" class="study-toggle-btn${g.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${g.studyMode ? 'ON' : 'OFF'}</button>
+      </div>
+      ${hint || '<div class="hint-panel">Click <b>Suggest a move</b> or <b>Ask Coach</b> for Trainer advice, or turn on <b>Study Mode</b> for search diagnostics.</div>'}
+      ${coachPanelHTML(g.mode)}
+    </div>`;
+  } else {
+    tabBody = logHTML(g.engine);
+  }
+
+  return `<aside class="right-rail" aria-label="Tactical Right Rail">
+    <div class="rail-utility-strip">
+      <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
+      <button type="button" class="settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
+      <button type="button" class="study-toggle-btn${g.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study: ${g.studyMode ? 'ON' : 'OFF'}</button>
+      <button type="button" class="rules-btn" aria-label="Open How to Play Command Manual" onclick="openHowToPlay()">Rules</button>
+      <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Collapse Right Rail" aria-label="Collapse Right Rail">▶</button>
+    </div>
+    <div id="universal-inspector-slot" class="universal-inspector">
+      ${universalInspectorContentHTML(g)}
+    </div>
+    <div class="rail-lower-tabs">
+      <div class="rail-tab-bar" role="tablist">
+        <button type="button" role="tab" data-rail-tab="log" class="rail-tab-btn${tab === 'log' ? ' active' : ''}" onclick="G.setRightRailTab('log')">Log</button>
+        <button type="button" role="tab" data-rail-tab="normals" class="rail-tab-btn${tab === 'normals' ? ' active' : ''}" onclick="G.setRightRailTab('normals')">Normals [${nmInfo.totalRemaining}/${nmInfo.totalMax}]</button>
+        <button type="button" role="tab" data-rail-tab="coach" class="rail-tab-btn${tab === 'coach' ? ' active' : ''}" onclick="G.setRightRailTab('coach')">Coach${g.coachUnreadDot ? '<span class="coach-unread-dot" aria-label="Unread coach advice">●</span>' : ''}</button>
+      </div>
+      <div class="rail-tab-content">
+        ${tabBody}
+      </div>
+    </div>
+  </aside>`;
+}
+
+function stagePromptBarHTML(g) {
+  const engine = g.engine;
+  if (g.mode === 'strike_result') {
+    const info = engine.lastStrikeInfo;
+    const tlStepIdx = (info && typeof StrikePlaybackController !== 'undefined' && typeof StrikePlaybackController.getCurrentStepIdx === 'function')
+      ? StrikePlaybackController.getCurrentStepIdx(info)
+      : ((info && info.timeline) || []).length - 1;
+    const tlSlot = (info && typeof StrikePlaybackController !== 'undefined')
+      ? StrikePlaybackController.timelineBarHTML(info, tlStepIdx)
+      : '';
+    const beats = buildStrikeBeats(info);
+    const beginner = !!g.beginner;
+    const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
+    const allRevealed = beatIndex >= beats.length;
+    const controls = beginner
+      ? `<div class="beat-controls stage-prompt-actions">
+          ${allRevealed ? '' : `<button type="button" onclick="G.revealNextBeat()">Next</button><button type="button" onclick="G.revealAllBeats()">Show all</button>`}
+          <button type="button" class="big-btn" onclick="G.continueAfterStrikeResult()" ${allRevealed ? '' : 'disabled'}>Continue</button>
+        </div>`
+      : `<div class="stage-prompt-actions"><button type="button" class="big-btn" onclick="G.continueAfterStrikeResult()">Continue</button></div>`;
+    return `<div id="stage-prompt-bar" class="stage-prompt-bar strike-result-bar">
+      <div id="trigger-timeline-slot">${tlSlot}</div>
+      ${controls}
+    </div>`;
+  }
+
+  let content = '';
+  if (g.mode === 'move_setup') {
+    const p = g.human(), opp = g.ai();
+    const dirs = ['advance', 'retreat'];
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Move</span>
+      <div class="btn-row">${dirs.map(d => `<button type="button" onclick="G.setMoveDir('${d}')" class="${g.sel.dir === d ? 'active' : ''}">${d[0].toUpperCase() + d.slice(1)}</button>`).join('')}</div>
+      ${g.sel.dir ? `
+        <div class="stepper-row">
+          <button type="button" onclick="G.adjustMoveSpaces(-1)">\u2212</button>
+          <span class="stepper-val">${g.sel.spaces} space(s) (${g.forceForMove(p, opp, g.sel.dir, g.sel.spaces)}F)</span>
+          <button type="button" onclick="G.adjustMoveSpaces(1)">+</button>
+        </div>
+        <button type="button" class="big-btn" onclick="G.confirmMove()">Confirm Move</button>
+      ` : ''}
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  } else if (g.mode === 'changecards_setup') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Change Cards</span>
+      <div class="stepper-row">
+        <button type="button" onclick="G.adjustChangeCards(-1)">\u2212</button>
+        <span class="stepper-val">Spend ${g.sel.n} card(s) as Force</span>
+        <button type="button" onclick="G.adjustChangeCards(1)">+</button>
+      </div>
+      <button type="button" class="big-btn" onclick="G.confirmChangeCards()">Choose cards\u2026</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  } else if (g.mode === 'set_time_option_choice') {
+    const card = g.sel && g.sel.card;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc((g.sel && g.sel.text) || 'Use your Innate?')} (${esc(card ? card.name : 'attack')})</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveSetTimeOption(true)">${esc((g.sel && g.sel.text) || 'Pay')}</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveSetTimeOption(false)">Skip</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'overdrive_choice') {
+    const opts = (g.sel && g.sel.options) || [];
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Overdrive</span>
+      <div class="btn-row">${opts.map(o => `<button type="button" class="big-btn" onclick="G.resolveOverdriveChoice('${o.key}')">${esc(o.label)}</button>`).join('')}</div>
+    </div>`;
+  } else if (g.mode === 'retreat_after_boost_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Retreat 1? (Innate)</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveRetreatAfterBoostChoice(true)">Retreat 1</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveRetreatAfterBoostChoice(false)">Don't retreat</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'name_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a card')}</span>
+      <div class="btn-row name-choice-inline">${(g.sel.namePool || []).map(key => `<button type="button" onclick="G.pickNamedKey('${key}')">${esc(cardNameForKey(key))}</button>`).join('')}</div>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  } else if (g.mode === 'name_range_choice') {
+    const namedRange = g._namedRange == null ? 1 : Math.max(1, Math.min(8, g._namedRange));
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a Range')}</span>
+      <div class="stepper-row">
+        <button type="button" onclick="G._namedRange=Math.max(1,${namedRange}-1); render();">\u2212</button>
+        <span class="stepper-val">Range ${namedRange}</span>
+        <button type="button" onclick="G._namedRange=Math.min(8,${namedRange}+1); render();">+</button>
+      </div>
+      <button type="button" class="big-btn" onclick="G.pickNamedRange(${namedRange}); G._namedRange=null;">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; G._namedRange=null; render();">Cancel</button>
+    </div>`;
+  } else if (g.mode === 'boost_target_choice') {
+    const targets = g.sel.boostTargets || [];
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Discard opponent boost:</span>
+      <div class="btn-row">${targets.map(t => `<button type="button" onclick="G.pickBoostTarget('${t.uid}')">${esc(t.name)}</button>`).join('')}</div>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  } else if (g.mode === 'face_up_choice') {
+    const card = g.sel.card;
+    const char = CHARACTERS[g.human().characterKey];
+    const bonus = (char.faceUpStatBonus && card) ? (char.faceUpStatBonus(g.human()) || {}) : {};
+    const bonusText = [bonus.pow ? `+${bonus.pow}POW` : '', bonus.spd ? `+${bonus.spd}SPD` : ''].filter(Boolean).join(' and ');
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Set ${esc(card ? card.name : 'attack')} face up?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveFaceUpChoice(true)">Face Up (${esc(bonusText)})</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveFaceUpChoice(false)">Face Down</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'critical_choice') {
+    const gauge = g.human().gauge.length;
+    const card = g.sel.card;
+    const shown = g.sel.hideCardName ? 'Wild Swing' : (card ? card.name + (card.isEX ? ' (EX)' : '') : 'this card');
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Pay 1 Gauge for Critical on ${esc(shown)}? (Gauge: ${gauge})</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveCriticalChoice(true)">Pay 1 Gauge</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveCriticalChoice(false)">Don't pay</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'grasp_choice') {
+    const req = g.sel.request;
+    const min = req.min != null ? req.min : 1;
+    const max = req.max != null ? req.max : 2;
+    const graspAmount = (g._graspAmount == null) ? max : Math.max(min, Math.min(max, g._graspAmount));
+    const graspDir = req.forceDirection || g._graspDir || 'retreat';
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${min === max ? `Grasp (${min})` : 'Move opponent'}</span>
+      ${min === max ? '' : `<div class="stepper-row">
+        <button type="button" onclick="G._graspAmount=Math.max(${min},${graspAmount}-1); render();">\u2212</button>
+        <span class="stepper-val">${graspAmount} space(s)</span>
+        <button type="button" onclick="G._graspAmount=Math.min(${max},${graspAmount}+1); render();">+</button>
+      </div>`}
+      ${req.forceDirection ? '' : `<div class="btn-row">
+        <button type="button" class="${graspDir === 'advance' ? 'active' : ''}" onclick="G._graspDir='advance'; render();">Pull</button>
+        <button type="button" class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G._graspDir='retreat'; render();">Push</button>
+      </div>`}
+      <button type="button" class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}'); G._graspAmount=null; G._graspDir=null;">Confirm</button>
+    </div>`;
+  } else if (g.mode === 'named_choice_effect') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.promptText || 'Choose an effect')}</span>
+      <div class="btn-row">
+        ${(req.options || []).map(o => `<button type="button" class="big-btn" onclick="G.resolveNamedChoiceEffect('${o.key}')">${esc(o.label)}</button>`).join('')}
+        ${req.allowDecline ? `<button type="button" class="cancel-btn" onclick="G.resolveNamedChoiceEffect(null)">Decline</button>` : ''}
+      </div>
+    </div>`;
+  } else if (g.mode === 'may_exceed_choice') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.promptText || 'Exceed?')}</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveMayExceedChoice(true)">Exceed</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveMayExceedChoice(false)">Don't Exceed</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'hadoken_recycle_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Hadoken hit — recycle to top of Deck?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveHadokenRecycle(true)">Recycle to Deck</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveHadokenRecycle(false)">Keep in Gauge</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'sustain_choice') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Sustain ${esc(req.cardName)} boost?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveSustainChoice(true)">Sustain it</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveSustainChoice(false)">Let it go</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'sustain_choice_paid') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Sustain ${esc(req.cardName)} (${req.cost} Force)?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveSustainChoicePaid(true)">Spend ${req.cost} Force</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveSustainChoicePaid(false)">Let it go</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'optional_force_spend_pow_choice') {
+    const req = g.sel.request;
+    const forcePowSpend = Math.min(g._forcePowSpend == null ? 0 : g._forcePowSpend, req.max);
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.cardName)}: spend Force for +POW?</span>
+      <div class="stepper-row">
+        <button type="button" onclick="G._forcePowSpend=Math.max(0,${forcePowSpend}-1); render();">\u2212</button>
+        <span class="stepper-val">${forcePowSpend}F (+${forcePowSpend} POW)</span>
+        <button type="button" onclick="G._forcePowSpend=Math.min(${req.max},${forcePowSpend}+1); render();">+</button>
+      </div>
+      <button type="button" class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend}); G._forcePowSpend=null;">Confirm</button>
+    </div>`;
+  } else if (g.mode === 'cancel_choice') {
+    const gauge = g.human().gauge.length;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Cancel (${esc(g.sel.cardName)}) — spend 1 Gauge for another action? (Gauge: ${gauge})</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveCancelChoice(true)">Cancel (1 Gauge)</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveCancelChoice(false)">End turn</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'optional_gauge_spend_choice') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.cardName)} — spend ${req.amount} Gauge?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveOptionalGaugeSpend(true)">Spend ${req.amount} Gauge</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveOptionalGaugeSpend(false)">Don't spend</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'optional_retreat_choice') {
+    const req = g.sel.request;
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.cardName)} — Retreat ${req.amount}?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveOptionalRetreat(true)">Retreat ${req.amount}</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveOptionalRetreat(false)">Stay put</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'may_strike_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Strike?${g.sel.freeCritical ? ' (Free Critical)' : ''}</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.resolveMayStrikeChoice(true)">Strike</button>
+        <button type="button" class="cancel-btn" onclick="G.resolveMayStrikeChoice(false)">Don't Strike</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'push_pull_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(g.sel.promptText || 'Push or Pull?')}</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.pickPushPullDirection('pull')">Pull</button>
+        <button type="button" class="big-btn" onclick="G.pickPushPullDirection('push')">Push</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'move_direction_choice') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(g.sel.promptText || 'Advance or Retreat?')}</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.pickMoveDirection('advance')">Advance</button>
+        <button type="button" class="big-btn" onclick="G.pickMoveDirection('retreat')">Retreat</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'eddie_space_choice') {
+    const p = g.human(), o = g.ai();
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(g.sel.promptText || 'Place Eddie')}</span>
+      <div class="btn-row">${(g.sel.spaces || []).map(s => `<button type="button" onclick="G.pickEddieSpace(${s})">Sp ${s + 1}${s === o.pos ? ' (CPU)' : (s === p.pos ? ' (You)' : '')}</button>`).join('')}</div>
+    </div>`;
+  } else if (g.mode === 'place_eddie_choice') {
+    const req = g.sel.request;
+    const p = g.human(), o = g.ai();
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">${esc(req.cardName)} — place Eddie?</span>
+      <div class="btn-row">
+        ${(req.spaces || []).map(s => `<button type="button" onclick="G.resolvePlaceEddie(${s})">Sp ${s + 1}${s === o.pos ? ' (CPU)' : (s === p.pos ? ' (You)' : '')}</button>`).join('')}
+        <button type="button" class="cancel-btn" onclick="G.resolvePlaceEddie(null)">Leave Eddie</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'special_move1') {
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Move 1 space:</span>
+      <div class="btn-row">
+        <button type="button" onclick="G.resolveSpecialMove1('advance')">Toward opponent</button>
+        <button type="button" onclick="G.resolveSpecialMove1('retreat')">Away from opponent</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'char_exceed_strike_choice') {
+    const player = g.human();
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Exceeded ${esc(CHARACTERS[player.characterKey].name)}: Strike now?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.startStrike()">Strike now</button>
+        <button type="button" class="cancel-btn" onclick="G.finishNonStrikeAction()">Skip — end turn</button>
+      </div>
+    </div>`;
+  } else if (g.mode === 'char_exceed_action_choice') {
+    const player = g.human();
+    content = `<div class="stage-prompt-inline">
+      <span class="stage-prompt-title">Exceeded ${esc(CHARACTERS[player.characterKey].name)}: take action now?</span>
+      <div class="btn-row">
+        <button type="button" class="big-btn" onclick="G.actionSpecial()">Take action now</button>
+        <button type="button" class="cancel-btn" onclick="G.finishNonStrikeAction()">Skip — end turn</button>
+      </div>
+    </div>`;
+  }
+
+  return `<div id="stage-prompt-bar" class="stage-prompt-bar${content ? ' active' : ''}">
+    <div id="trigger-timeline-slot"></div>
+    ${content}
+  </div>`;
+}
+
+function actionPromptBarHTML(g) {
+  const engine = g.engine;
+  const p = g.human();
+  const isMainAction = g.mode === 'awaiting_action' && engine.active === g.humanId;
+
+  if (g.mode === 'awaiting_action') {
+    if (!isMainAction) {
+      return `<div class="action-prompt-row"><h3 class="thinking">CPU is thinking\u2026</h3></div>`;
+    }
+    const selCard = g.selectedActionCardUid ? p.hand.find(c => c.uid === g.selectedActionCardUid) : null;
+    if (selCard) {
+      const hasEXPair = p.hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(p, selCard));
+      return `<div class="precommit-bar">
+        <span>Selected: <b>${esc(selCard.name)}</b></span>
+        <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')">Play as Strike</button>
+        ${hasEXPair ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('ex')">EX Strike (+1 All)</button>` : ''}
+        <button type="button" class="big-btn" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>
+        <button type="button" class="cancel-btn" onclick="G.cancelActionCard()">Cancel</button>
+      </div>`;
+    }
+    return actionButtons(g);
+  }
+
+  if (g.mode === 'mulligan_select') {
+    const chosen = g.sel.chosen || [];
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Mulligan — tap cards to swap (free, one-time)</span>
+      <span class="prompt-counter">Setting aside: ${chosen.length}</span>
+      <button type="button" class="big-btn" onclick="G.confirmMulligan()">${chosen.length === 0 ? 'Keep hand' : `Swap ${chosen.length}`}</button>
+    </div>`;
+  }
+  if (g.mode === 'strike_select') {
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Strike — pick a card to set face down</span>
+      <button type="button" class="big-btn wildswing-btn" onclick="G.pickWildSwing()">Wild Swing (top of deck)</button>
+      <button type="button" onclick="G.suggestStrike(false)">Ask Coach</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'defend_select') {
+    const forcedUid = g.sel && g.sel.forcedUid;
+    const cpuWildSwung = !!(g.pendingAiAttack && g.pendingAiAttack.fromWildSwing);
+    const wildSwingNote = cpuWildSwung ? ' (Wild Swing)' : '';
+    const faceUpNote = (g.pendingAiAttack && g.pendingAiAttack.faceUp)
+      ? ` — face up: <b>${esc(g.pendingAiAttack.card.name)}</b>` : '';
+    if (forcedUid) {
+      return `<div class="action-prompt-row">
+        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Must defend with <b>${esc(g.sel.forcedName)}</b>.</span>
+      </div>`;
+    }
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Choose defense:</span>
+      <button type="button" class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing</button>
+      <button type="button" onclick="G.suggestStrike(true)">Ask Coach</button>
+    </div>`;
+  }
+  if (g.mode === 'boost_select') {
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Boost — pick a card to play face up</span>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'move_force_select') {
+    const chosen = g.sel.chosen || [];
+    const selectedValue = engine.sumForceValue(p, chosen);
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Pay ${g.sel.force} Force for Move (Hand or Gauge)</span>
+      <span class="prompt-counter">${selectedValue}/${g.sel.force} Force</span>
+      <button type="button" class="big-btn" ${selectedValue === g.sel.force ? '' : 'disabled'} onclick="G.confirmMoveForce()">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'boost_force_select') {
+    const card = p.hand.find(c => c.uid === g.sel.cardUid);
+    const selectedValue = engine.sumForceValue(p, g.sel.chosen);
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Pay ${g.sel.need} Force for ${esc(card ? card.name : 'Boost')} (Hand or Gauge)</span>
+      <span class="prompt-counter">${selectedValue}/${g.sel.need} Force</span>
+      <button type="button" class="big-btn" ${selectedValue === g.sel.need ? '' : 'disabled'} onclick="G.confirmBoostForce()">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'action_force_select') {
+    const selectedValue = engine.sumForceValue(p, g.sel.chosen);
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Pay ${g.sel.need} Force for character action (Hand or Gauge)</span>
+      <span class="prompt-counter">${selectedValue}/${g.sel.need} Force</span>
+      <button type="button" class="big-btn" ${selectedValue === g.sel.need ? '' : 'disabled'} onclick="G.confirmActionForce()">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'boost_bonus_force_select') {
+    const card = p.hand.find(c => c.uid === g.sel.cardUid) || { name: 'boost' };
+    const selectedValue = engine.sumForceValue(p, g.sel.bonusChosen);
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">${esc(card.name)} — optional extra Force (up to ${g.sel.bonusMax})</span>
+      <span class="prompt-counter">${selectedValue}/${g.sel.bonusMax} Force</span>
+      <button type="button" class="big-btn" onclick="G.confirmBonusForce()">Confirm (${selectedValue} spent)</button>
+    </div>`;
+  }
+  if (g.mode === 'changecards_select') {
+    const chosen = g.sel.chosen || [];
+    const projected = engine.sumForceValue(p, chosen);
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Choose ${g.sel.n} card(s) to spend as Force (Hand or Gauge)</span>
+      <span class="prompt-counter">${chosen.length}/${g.sel.n} (draws ${projected})</span>
+      <button type="button" class="big-btn" ${chosen.length === g.sel.n ? '' : 'disabled'} onclick="G.confirmChangeCardsSelect()">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'discard_to_seven') {
+    const maxHand = engine.getMaxHandSize(p.characterKey);
+    const need = Math.max(0, p.hand.length - maxHand);
+    const chosen = g.sel.chosen || [];
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Hand size limit is ${maxHand} — discard ${need} card(s)</span>
+      <span class="prompt-counter">${chosen.length}/${need}</span>
+      <button type="button" class="big-btn" ${chosen.length === need ? '' : 'disabled'} onclick="G.confirmDiscardToSeven()">Confirm</button>
+    </div>`;
+  }
+  if (g.mode === 'block_force_choice') {
+    const req = g.sel.request;
+    const chosen = g.sel.chosen || [];
+    const spendValue = engine.sumForceValue(p, chosen);
+    const potentialDmg = Math.max(0, req.attackerPow - req.defenderArmBase - (spendValue * 2));
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Block — spend Force for Armor (Proj. DMG: <b>${potentialDmg}</b> ${potentialDmg > req.defenderGuard ? 'STUN' : 'safe'})</span>
+      <span class="prompt-counter">${spendValue}/${req.maxForce}F (+${spendValue * 2} ARM)</span>
+      <button type="button" class="big-btn" onclick="G.confirmBlockForce()">Confirm</button>
+    </div>`;
+  }
+  if (g.mode === 'action_gauge_select') {
+    const chosen = g.sel.chosen || [];
+    const max = g.sel.max;
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Choose up to ${max} card${max === 1 ? '' : 's'} to add to Gauge</span>
+      <span class="prompt-counter">${chosen.length}/${max}</span>
+      <button type="button" class="big-btn" ${chosen.length > 0 ? '' : 'disabled'} onclick="G.confirmActionGaugeSelect()">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+    </div>`;
+  }
+  if (g.mode === 'range_discard_choice') {
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">Choose a card matching Range ${g.sel.namedRange} to discard</span>
+    </div>`;
+  }
+  if (g.mode === 'decklook_choice') {
+    const peeked = g.sel.peeked || [];
+    const drawMode = !!g.sel.drawMode;
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">${drawMode ? esc(g.sel.title || 'Draw 1 from top of deck') : `Sickle Storm — pick 1 of top ${peeked.length} to Boost or Strike`}</span>
+      ${!drawMode ? `<button type="button" class="cancel-btn" onclick="G.confirmDeckLookChoice(null, null)">Discard all</button>` : ''}
+    </div>`;
+  }
+
+  return `<div class="action-prompt-row"><span class="prompt-label">Resolve prompt above to continue</span></div>`;
+}
+
+function transientBoostDropZoneHTML(g) {
+  const isMainAction = g.mode === 'awaiting_action' && g.engine.active === g.humanId;
+  if (!isMainAction) return '';
+  return `<div id="boost-drop-zone" class="boost-drop-zone transient-drop-zone${g.draggingCardUid ? ' drag-active' : ''}" ondragover="event.preventDefault()" ondrop="G.onBoostDrop(event)">Drop card here to <b>Boost</b> (or drag onto Arena to <b>Strike</b>)</div>`;
+}
+
+function renderUnifiedTilesWithGauge(g, handCards, gaugeCards, tileOptsFn) {
+  let memoMap = null;
+  if (typeof PreviewMemo !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
+    const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
+    memoMap = PreviewMemo.evaluateHand(infoSet, handCards, g.engine, g.human());
+  }
+  const handHTMLPart = handCards.map(c => {
+    const baseOpts = tileOptsFn ? tileOptsFn(c, 'hand') : {};
+    const memo = memoMap && memoMap.get(c.uid || c.key);
+    const lethalAura = !!(memo && memo.base && memo.base.isPublicStateLethal && !baseOpts.disabled);
+    return cardTile(c, { ...baseOpts, lethalAura, fromSource: 'hand' });
+  }).join('');
+  const gaugeDivider = gaugeCards.length > 0
+    ? '<div class="hand-gauge-divider" role="separator" aria-label="Gauge Cards"><span class="gauge-divider-label">GAUGE</span></div>'
+    : '';
+  const gaugeHTMLPart = gaugeCards.map(c => {
+    const baseOpts = tileOptsFn ? tileOptsFn(c, 'gauge') : {};
+    return cardTile(c, { ...baseOpts, fromSource: 'gauge' });
+  }).join('');
+  const totalCount = handCards.length + gaugeCards.length;
+  return `<div class="hand-row${totalCount > 7 ? ' hand-row-scroll' : ''}">${handHTMLPart}${gaugeDivider}${gaugeHTMLPart}</div>`;
+}
+
+function unifiedHandDockHTML(g) {
+  const engine = g.engine;
+  const p = g.human();
+  const opp = g.ai();
+  const dist = engine.range(p, opp);
+  const isMainAction = g.mode === 'awaiting_action' && engine.active === g.humanId;
+
+  if (g.mode === 'decklook_choice') {
+    const peeked = g.sel.peeked || [];
+    const drawMode = !!g.sel.drawMode;
+    const inner = peeked.map(c => `<div class="decklook-tile-wrap">
+      ${cardTile(c, {})}
+      <div class="btn-row decklook-tile-btns">
+        ${drawMode
+          ? `<button type="button" onclick="G.confirmDeckLookChoice('${c.uid}','draw')">Draw</button>`
+          : `<button type="button" onclick="G.confirmDeckLookChoice('${c.uid}','boost')">Boost</button><button type="button" onclick="G.confirmDeckLookChoice('${c.uid}','strike')">Strike</button>`}
+      </div>
+    </div>`).join('');
+    return `<div id="unified-hand-dock" class="hand-dock-band"><div class="hand-row${peeked.length > 7 ? ' hand-row-scroll' : ''}">${inner}</div></div>`;
+  }
+
+  if (g.mode === 'move_force_select') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${renderUnifiedTilesWithGauge(g, p.hand, p.gauge, (c) => ({
+      selected: chosen.includes(c.uid),
+      onclick: `G.toggleMoveForceCard('${c.uid}')`,
+    }))}</div>`;
+  }
+  if (g.mode === 'boost_force_select') {
+    const handPool = p.hand.filter(c => c.uid !== g.sel.cardUid);
+    return `<div id="unified-hand-dock" class="hand-dock-band">${renderUnifiedTilesWithGauge(g, handPool, p.gauge, (c) => ({
+      selected: (g.sel.chosen || []).includes(c.uid),
+      onclick: `G.toggleForceCard('${c.uid}')`,
+    }))}</div>`;
+  }
+  if (g.mode === 'action_force_select') {
+    return `<div id="unified-hand-dock" class="hand-dock-band">${renderUnifiedTilesWithGauge(g, p.hand, p.gauge, (c) => ({
+      selected: (g.sel.chosen || []).includes(c.uid),
+      onclick: `G.toggleActionForceCard('${c.uid}')`,
+    }))}</div>`;
+  }
+  if (g.mode === 'changecards_select') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${renderUnifiedTilesWithGauge(g, p.hand, p.gauge, (c) => ({
+      selected: chosen.includes(c.uid),
+      onclick: `G.toggleChangeCard('${c.uid}')`,
+    }))}</div>`;
+  }
+  if (g.mode === 'boost_bonus_force_select') {
+    const handPool = p.hand.filter(c => c.uid !== g.sel.cardUid);
+    return `<div id="unified-hand-dock" class="hand-dock-band">${renderUnifiedTilesWithGauge(g, handPool, p.gauge, (c) => ({
+      selected: (g.sel.bonusChosen || []).includes(c.uid),
+      onclick: `G.toggleBonusForceCard('${c.uid}')`,
+    }))}</div>`;
+  }
+
+  if (g.mode === 'strike_select') {
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p);
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({
+        onclick: `G.pickStrikeCard('${c.uid}')`,
+        highlight: 'strike',
+        band: c.range,
+        hoverPreview: true,
+        rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+      }),
+      exTiles,
+    })}</div>`;
+  }
+
+  if (g.mode === 'defend_select') {
+    const forcedUid = g.sel && g.sel.forcedUid;
+    const defendTileOpts = (c) => ({
+      onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
+      highlight: 'strike',
+      band: c.range,
+      hoverPreview: true,
+      rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+    });
+    if (forcedUid) {
+      return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+        tileOpts: (c) => (c.uid === forcedUid ? defendTileOpts(c) : { disabled: true }),
+      })}</div>`;
+    }
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: defendTileOpts,
+      exTiles,
+    })}</div>`;
+  }
+
+  if (g.mode === 'boost_select') {
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({ onclick: `G.pickBoostCard('${c.uid}')`, highlight: 'boost' }),
+    })}</div>`;
+  }
+
+  if (g.mode === 'mulligan_select') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleMulliganCard('${c.uid}')` }),
+    })}</div>`;
+  }
+
+  if (g.mode === 'discard_to_seven') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleDiscardChoice('${c.uid}')` }),
+    })}</div>`;
+  }
+
+  if (g.mode === 'block_force_choice') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleBlockForceCard('${c.uid}')` }),
+    })}</div>`;
+  }
+
+  if (g.mode === 'action_gauge_select') {
+    const chosen = g.sel.chosen || [];
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleActionGaugeCard('${c.uid}')` }),
+    })}</div>`;
+  }
+
+  if (g.mode === 'range_discard_choice') {
+    const matchUids = new Set((g.sel.matchingCards || []).map(c => c.uid));
+    return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+      tileOpts: (c) => (matchUids.has(c.uid) ? { onclick: `G.resolveRangeDiscardChoice('${c.uid}')` } : { disabled: true }),
+    })}</div>`;
+  }
+
+  return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+    tileOpts: isMainAction
+      ? (c) => ({
+          selected: g.selectedActionCardUid === c.uid,
+          hoverPreview: true,
+          draggable: true,
+          onclick: `G.selectActionCard('${c.uid}')`,
+        })
+      : () => ({ disabled: true }),
+  })}</div>`;
+}
+
+function setGameplayBodyClass(active) {
+  if (typeof document === 'undefined') return;
+  if (document.body && document.body.classList) {
+    if (active) document.body.classList.add('gameplay-active');
+    else document.body.classList.remove('gameplay-active');
+  }
+  const app = document.getElementById('app');
+  if (app && app.classList) {
+    if (active) app.classList.add('gameplay-stage-active');
+    else app.classList.remove('gameplay-stage-active');
+  }
+}
+
 function paint() {
   const app = document.getElementById('app');
-  if (!G) return;
+  if (!G) {
+    setGameplayBodyClass(false);
+    return;
+  }
   const engine = G.engine;
 
   if (G.mode === 'game_over') {
+    setGameplayBodyClass(false);
     const winnerName = engine.winner === G.humanId ? 'You win!' : 'CPU wins!';
     app.innerHTML = `<div class="center-screen">
       <h1>${winnerName}</h1>
@@ -1123,500 +1997,27 @@ function paint() {
     return;
   }
 
-  let bottomPanel = '';
-
-  if (G.mode === 'mulligan_select') {
-    const chosen = G.sel.chosen || [];
-    bottomPanel = `<h3>Mulligan \u2014 set aside any cards you don't want?</h3>
-      <p class="ex-hint">Tap any number of cards to set them aside. You'll draw that many new cards, then the set-aside cards are shuffled back into your deck. Free, one-time, no penalty \u2014 you can set aside all, some, or none.</p>
-      ${handHTML(G, { tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleMulliganCard('${c.uid}')` }) })}
-      <div>Setting aside: ${chosen.length} card(s)</div>
-      <button class="big-btn" onclick="G.confirmMulligan()">${chosen.length === 0 ? 'Keep hand' : `Set aside ${chosen.length} &amp; draw ${chosen.length}`}</button>`;
-  } else if (G.mode === 'awaiting_action') {
-    if (engine.active === G.humanId) {
-      // "Suggest a move" is opt-in and purely informational \u2014 G.suggestMove() (ui.js)
-      // fills G.hintText from ai.js's own chooseAction and re-renders; render.js never
-      // calls into ai.js directly, it only ever displays whatever ui.js already decided.
-      const hint = trainerPanelHTML(G);
-      bottomPanel = `<h3>Your turn \u2014 choose an action</h3>
-        <div class="btn-row">
-          <button onclick="G.suggestMove()">Suggest a move</button>
-          <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
-        </div>
-        ${hint}
-        ${actionButtons(G)}`;
-    } else {
-      bottomPanel = `<h3 class="thinking">CPU is thinking\u2026</h3>`;
-    }
-  } else if (G.mode === 'move_setup') {
-    const p = G.human(), opp = G.ai();
-    const dirs = ['advance', 'retreat'];
-    bottomPanel = `<h3>Move \u2014 choose a direction</h3>
-      <div class="btn-row">${dirs.map(d => `<button onclick="G.setMoveDir('${d}')" class="${G.sel.dir === d ? 'active' : ''}">${d[0].toUpperCase() + d.slice(1)}</button>`).join('')}</div>
-      ${G.sel.dir ? `
-        <div class="stepper-row">
-          <button onclick="G.adjustMoveSpaces(-1)">\u2212</button>
-          <span class="stepper-val">${G.sel.spaces} space(s)</span>
-          <button onclick="G.adjustMoveSpaces(1)">+</button>
-        </div>
-        <div>Force required: <b>${G.forceForMove(p, opp, G.sel.dir, G.sel.spaces)}</b> (pay from hand or Gauge)</div>
-        <button class="big-btn" onclick="G.confirmMove()">Confirm Move</button>
-      ` : ''}
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'move_force_select') {
-    const p = G.human();
-    const pool = [...p.hand.map(c => ({ c, from: 'hand' })), ...p.gauge.map(c => ({ c, from: 'gauge' }))];
-    const chosen = G.sel.chosen || [];
-    const selectedValue = G.engine.sumForceValue(p, chosen);
-    const tiles = pool.map(({ c, from }) => cardTile(c, {
-      selected: chosen.includes(c.uid),
-      onclick: `G.toggleMoveForceCard('${c.uid}')`,
-    })).join('');
-    bottomPanel = `<h3>Pay ${G.sel.force} Force for your Move \u2014 choose cards from hand or Gauge</h3>
-      <div class="ex-hint">Ultras are worth 2 Force when used to pay a cost \u2014 everything else is worth 1.</div>
-      <div class="hand-row">${tiles}</div>
-      <div>Selected: ${selectedValue}/${G.sel.force} Force (${chosen.length} card${chosen.length === 1 ? '' : 's'})</div>
-      <button class="big-btn" ${selectedValue === G.sel.force ? '' : 'disabled'} onclick="G.confirmMoveForce()">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'changecards_setup') {
-    bottomPanel = `<h3>Change Cards</h3>
-      <div class="stepper-row">
-        <button onclick="G.adjustChangeCards(-1)">\u2212</button>
-        <span class="stepper-val">Spend ${G.sel.n} card(s) as Force</span>
-        <button onclick="G.adjustChangeCards(1)">+</button>
-      </div>
-      <button class="big-btn" onclick="G.confirmChangeCards()">Choose cards\u2026</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'changecards_select') {
-    const p = G.human();
-    const chosen = G.sel.chosen || [];
-    // Hand AND Gauge, same picker shape as move_force_select — Change Cards pays
-    // Force, and Gauge is a legal Force source. Cards drawn = Force VALUE spent, so
-    // the projection is shown live: spending one Ultra draws 2, not 1.
-    const pool = [...p.hand, ...p.gauge];
-    const projected = G.engine.sumForceValue(p, chosen);
-    const tiles = pool.map(c => cardTile(c, {
-      selected: chosen.includes(c.uid),
-      onclick: `G.toggleChangeCard('${c.uid}')`,
-    })).join('');
-    bottomPanel = `<h3>Choose ${G.sel.n} card(s) to spend as Force</h3>
-      <div class="ex-hint">Cards you spend are discarded, and you draw one card per Force spent — an Ultra is worth 2 Force, everything else 1. Gauge cards may be spent here too.</div>
-      <div class="hand-row">${tiles}</div>
-      <div>Selected: ${chosen.length}/${G.sel.n} card(s) — would draw <b>${projected}</b></div>
-      <button class="big-btn" ${chosen.length === G.sel.n ? '' : 'disabled'} onclick="G.confirmChangeCardsSelect()">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'boost_select') {
-    bottomPanel = `<h3>Boost \u2014 pick a card to play face up</h3>
-      ${handHTML(G, { tileOpts: (c) => ({ onclick: `G.pickBoostCard('${c.uid}')`, highlight: 'boost' }) })}
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'boost_force_select') {
-    const p = G.human();
-    const card = p.hand.find(c => c.uid === G.sel.cardUid);
-    const selectedValue = G.engine.sumForceValue(p, G.sel.chosen);
-    const pool = [...p.hand.map(c => ({ c, from: 'hand' })), ...p.gauge.map(c => ({ c, from: 'gauge' }))]
-      .filter(({ c }) => c.uid !== G.sel.cardUid);
-    const tiles = pool.map(({ c }) => cardTile(c, {
-      selected: G.sel.chosen.includes(c.uid),
-      onclick: `G.toggleForceCard('${c.uid}')`,
-    })).join('');
-    bottomPanel = `<h3>Pay ${G.sel.need} Force for ${esc(card.name)}'s boost \u2014 choose cards from hand or Gauge</h3>
-      <div class="ex-hint">Ultras are worth 2 Force when used to pay a cost \u2014 everything else is worth 1.</div>
-      <div class="hand-row">${tiles}</div>
-      <div>Selected: ${selectedValue}/${G.sel.need} Force (${G.sel.chosen.length} card${G.sel.chosen.length === 1 ? '' : 's'})</div>
-      <button class="big-btn" ${selectedValue === G.sel.need ? '' : 'disabled'} onclick="G.confirmBoostForce()">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'action_force_select') {
-    const p = G.human();
-    const selectedValue = G.engine.sumForceValue(p, G.sel.chosen);
-    const pool = [...p.hand.map(c => ({ c })), ...p.gauge.map(c => ({ c }))];
-    const tiles = pool.map(({ c }) => cardTile(c, {
-      selected: G.sel.chosen.includes(c.uid),
-      onclick: `G.toggleActionForceCard('${c.uid}')`,
-    })).join('');
-    bottomPanel = `<h3>Pay ${G.sel.need} Force for your character action — choose cards from hand or Gauge</h3>
-      <div class="ex-hint">Ultras are worth 2 Force when used to pay a cost — everything else is worth 1.</div>
-      <div class="hand-row">${tiles}</div>
-      <div>Selected: ${selectedValue}/${G.sel.need} Force (${G.sel.chosen.length} card${G.sel.chosen.length === 1 ? '' : 's'})</div>
-      <button class="big-btn" ${selectedValue === G.sel.need ? '' : 'disabled'} onclick="G.confirmActionForce()">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'set_time_option_choice') {
-    const card = G.sel && G.sel.card;
-    bottomPanel = `<h3>${esc((G.sel && G.sel.text) || 'Use your Innate?')}</h3>
-      <div class="info-row">Setting ${esc(card ? card.name : 'your attack')}. This is your character's Innate option — it applies to this Strike only.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveSetTimeOption(true)">${esc((G.sel && G.sel.text) || 'Pay')}</button>
-        <button class="cancel-btn" onclick="G.resolveSetTimeOption(false)">Skip</button>
-      </div>`;
-  } else if (G.mode === 'overdrive_choice') {
-    const opts = (G.sel && G.sel.options) || [];
-    const char = CHARACTERS[G.human().characterKey];
-    bottomPanel = `<h3>Overdrive — ${esc(char.overdrive ? char.overdrive.text : '')}</h3>
-      <div class="ex-hint">A card leaves your Overdrive at the start of each of your turns. When it empties, you Revert.</div>
-      <div class="btn-row">
-        ${opts.map(o => `<button class="big-btn" onclick="G.resolveOverdriveChoice('${o.key}')">${esc(o.label)}</button>`).join('')}
-      </div>`;
-  } else if (G.mode === 'retreat_after_boost_choice') {
-    bottomPanel = `<h3>Retreat 1? (Innate)</h3>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveRetreatAfterBoostChoice(true)">Retreat 1</button>
-        <button class="cancel-btn" onclick="G.resolveRetreatAfterBoostChoice(false)">Don't retreat</button>
-      </div>`;
-  } else if (G.mode === 'name_choice') {
-    bottomPanel = `<h3>${esc(G.sel.promptText || 'Name a card')}</h3>
-      <div class="name-choice-grid">${(G.sel.namePool || []).map(key => `<button onclick="G.pickNamedKey('${key}')">${esc(cardNameForKey(key))}</button>`).join('')}</div>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'name_range_choice') {
-    const namedRange = G._namedRange == null ? 1 : Math.max(1, Math.min(8, G._namedRange));
-    bottomPanel = `<h3>${esc(G.sel.promptText || 'Name a Range')}</h3>
-      <div class="stepper-row">
-        <button onclick="G._namedRange=Math.max(1,${namedRange}-1); render();">\u2212</button>
-        <span class="stepper-val">Range ${namedRange}</span>
-        <button onclick="G._namedRange=Math.min(8,${namedRange}+1); render();">+</button>
-      </div>
-      <button class="big-btn" onclick="G.pickNamedRange(${namedRange}); G._namedRange=null;">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; G._namedRange=null; render();">Cancel</button>`;
-  } else if (G.mode === 'boost_target_choice') {
-    const targets = G.sel.boostTargets || [];
-    bottomPanel = `<h3>Tech (Dive) \u2014 discard which of the opponent's boosts?</h3>
-      <div class="name-choice-grid">${targets.map(t => `<button onclick="G.pickBoostTarget('${t.uid}')">${esc(t.name)}</button>`).join('')}</div>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'range_discard_choice') {
-    const cards = G.sel.matchingCards || [];
-    bottomPanel = `<h3>Choose a card to discard (matches Range ${G.sel.namedRange})</h3>
-      <div class="ex-hint">Zangief named Range ${G.sel.namedRange} \u2014 more than one of your cards includes it. Pick which one to discard.</div>
-      <div class="hand-row">${cards.map(c => cardTile(c, { onclick: `G.resolveRangeDiscardChoice('${c.uid}')` })).join('')}</div>`;
-  } else if (G.mode === 'strike_select') {
-    const p = G.human(), opp = G.ai();
-    // Distance right now, for the range-chip/hover-band treatment \u2014 deliberately NOT
-    // simulating a card's own Before: move (see the strike_select coach tip above):
-    // the chip answers "is this card in range at the moment it's set," not "will it
-    // still be in range once it activates," which can differ for an advance/close card.
-    const dist = engine.range(p, opp);
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p);
-    bottomPanel = `<h3>Strike \u2014 set a card face down</h3>
-      ${handHTML(G, { tileOpts: (c) => ({
-        onclick: `G.pickStrikeCard('${c.uid}')`,
-        highlight: 'strike',
-        band: c.range,
-        hoverPreview: true,
-        rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
-      }), exTiles })}
-      ${exTiles ? '<div class="ex-hint">Cards marked (EX) pair two copies for +1 to all stats \u2014 the extra copy is discarded on reveal.</div>' : ''}
-      <div class="btn-row">
-        <button onclick="G.suggestStrike(false)">Suggest a card</button>
-        <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
-      </div>
-      ${trainerPanelHTML(G)}
-      <button class="big-btn wildswing-btn" onclick="G.pickWildSwing()">Wild Swing (top of deck)</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  } else if (G.mode === 'face_up_choice') {
-    const card = G.sel.card;
-    const char = CHARACTERS[G.human().characterKey];
-    const bonus = (char.faceUpStatBonus && card) ? (char.faceUpStatBonus(G.human()) || {}) : {};
-    const bonusText = [bonus.pow ? `+${bonus.pow}POW` : '', bonus.spd ? `+${bonus.spd}SPD` : ''].filter(Boolean).join(' and ');
-    bottomPanel = `<h3>Set ${esc(card ? card.name : 'your attack')} face up?</h3>
-      <div class="info-row">Reveals this card to the opponent before they choose their defense, in exchange for ${esc(bonusText)}.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveFaceUpChoice(true)">Set Face Up (${esc(bonusText)})</button>
-        <button class="cancel-btn" onclick="G.resolveFaceUpChoice(false)">Set Face Down</button>
-      </div>`;
-  } else if (G.mode === 'defend_select') {
-    const p = G.human(), opp = G.ai();
-    const dist = engine.range(p, opp);
-    const forcedUid = G.sel && G.sel.forcedUid;
-    const cpuWildSwung = !!(G.pendingAiAttack && G.pendingAiAttack.fromWildSwing);
-    const wildSwingNote = cpuWildSwung ? ' (Wild Swing)' : '';
-    const faceUpNote = (G.pendingAiAttack && G.pendingAiAttack.faceUp)
-      ? ` \u2014 set face up: <b>${esc(G.pendingAiAttack.card.name)}</b>` : '';
-    const defendTileOpts = (c) => ({
-      onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
-      highlight: 'strike',
-      band: c.range,
-      hoverPreview: true,
-      rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
-    });
-    if (forcedUid) {
-      bottomPanel = `<h3>CPU struck${wildSwingNote}${faceUpNote}! Reading forces your defense.</h3>
-        ${handHTML(G, { tileOpts: (c) => c.uid === forcedUid ? defendTileOpts(c) : { disabled: true } })}
-        <div class="ex-hint">You must defend with ${esc(G.sel.forcedName)} \u2014 CPU's Focus named it.</div>`;
-    } else {
-      const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
-      bottomPanel = `<h3>CPU struck${wildSwingNote}${faceUpNote}! Choose your defense card.</h3>
-        <div class="btn-row">
-          <button onclick="G.suggestStrike(true)">Suggest a card</button>
-          <button class="study-toggle-btn${G.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study Mode: ${G.studyMode ? 'ON' : 'OFF'}</button>
-        </div>
-        ${trainerPanelHTML(G)}
-        ${handHTML(G, { tileOpts: defendTileOpts, exTiles })}
-        <button class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing (top of deck)</button>`;
-    }
-  } else if (G.mode === 'critical_choice') {
-    const gauge = G.human().gauge.length;
-    const card = G.sel.card;
-    const shown = G.sel.hideCardName ? 'your Wild Swing card (unrevealed)' : (card ? card.name + (card.isEX ? ' (EX)' : '') : 'this card');
-    const critLine = (!G.sel.hideCardName && card && card.criticalText) ? `<div class="info-row"><b>${esc(card.criticalText)}</b></div>` : '';
-    bottomPanel = `<h3>Pay 1 Gauge for Critical?</h3>
-      <div class="info-row">If you pay, ALL "Critical:" text on ${esc(shown)} applies for this Strike. You may pay even if it has no Critical text (bluffing). Your Gauge: ${gauge}.</div>
-      ${critLine}
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveCriticalChoice(true)">Pay 1 Gauge</button>
-        <button class="big-btn" onclick="G.resolveCriticalChoice(false)">Don't pay</button>
-      </div>`;
-  } else if (G.mode === 'grasp_choice') {
-    const req = G.sel.request;
-    const min = req.min != null ? req.min : 1;
-    const max = req.max != null ? req.max : 2;
-    const graspAmount = (G._graspAmount == null) ? max : Math.max(min, Math.min(max, G._graspAmount));
-    const graspDir = req.forceDirection || G._graspDir || 'retreat';
-    const title = min === max ? `Push or Pull \u2014 choose a direction` : `Move your opponent`;
-    bottomPanel = `<h3>${title}</h3>
-      ${min === max ? `<div class="info-row">${min} space(s)</div>` : `
-      <div class="stepper-row">
-        <button onclick="G._graspAmount=Math.max(${min},${graspAmount}-1); render();">\u2212</button>
-        <span class="stepper-val">${graspAmount} space(s)</span>
-        <button onclick="G._graspAmount=Math.min(${max},${graspAmount}+1); render();">+</button>
-      </div>`}
-      ${req.forceDirection ? '' : `
-      <div class="btn-row">
-        <button class="${graspDir === 'advance' ? 'active' : ''}" onclick="G._graspDir='advance'; render();">Pull toward you</button>
-        <button class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G._graspDir='retreat'; render();">Push away</button>
-      </div>`}
-      <button class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}'); G._graspAmount=null; G._graspDir=null;">Confirm</button>`;
-  } else if (G.mode === 'block_force_choice') {
-    const req = G.sel.request;
-    // Card picker, same shape as move_force_select/action_force_select \u2014 the player
-    // chooses exactly which cards pay for Block's Armor (Ultras are worth 2 Force).
-    const p = G.human();
-    const chosen = G.sel.chosen || [];
-    const spendValue = G.engine.sumForceValue(p, chosen);
-    const potentialDmg = Math.max(0, req.attackerPow - req.defenderArmBase - (spendValue * 2));
-    const tiles = p.hand.map(c => cardTile(c, {
-      selected: chosen.includes(c.uid),
-      onclick: `G.toggleBlockForceCard('${c.uid}')`,
-    })).join('');
-    bottomPanel = `<h3>Block \u2014 spend Force for Armor?</h3>
-      <div class="info-row">Incoming Power: ${req.attackerPow} &nbsp; Your Armor: ${req.defenderArmBase} &nbsp; Your Guard: ${req.defenderGuard}</div>
-      <div class="ex-hint">Each Force spent gives +2 Armor. Ultras are worth 2 Force \u2014 everything else is worth 1. Chosen cards are discarded from your hand.</div>
-      <div class="hand-row">${tiles}</div>
-      <div>Spending: ${spendValue}/${req.maxForce} Force (+${spendValue * 2} Armor)</div>
-      <div class="info-row">Projected damage taken: <b>${potentialDmg}</b> ${potentialDmg > req.defenderGuard ? '(would STUN you)' : '(safe)'}</div>
-      <button class="big-btn" onclick="G.confirmBlockForce()">Confirm</button>`;
-  } else if (G.mode === 'named_choice_effect') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>${esc(req.promptText || 'Choose an effect')}</h3>
-      <div class="btn-row">
-        ${(req.options || []).map(o => `<button class="big-btn" onclick="G.resolveNamedChoiceEffect('${o.key}')">${esc(o.label)}</button>`).join('')}
-        ${req.allowDecline ? `<button class="cancel-btn" onclick="G.resolveNamedChoiceEffect(null)">Decline</button>` : ''}
-      </div>`;
-  } else if (G.mode === 'may_exceed_choice') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>${esc(req.promptText || 'Exceed?')}</h3>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveMayExceedChoice(true)">Exceed</button>
-        <button class="cancel-btn" onclick="G.resolveMayExceedChoice(false)">Don't Exceed</button>
-      </div>`;
-  } else if (G.mode === 'hadoken_recycle_choice') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>Hadoken hit \u2014 return it to the top of your Deck?</h3>
-      <div class="info-row">If you recycle, the top card of your Discard goes to your Gauge instead of Hadoken going to Gauge.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveHadokenRecycle(true)">Recycle to Deck</button>
-        <button class="big-btn" onclick="G.resolveHadokenRecycle(false)">Keep in Gauge</button>
-      </div>`;
-  } else if (G.mode === 'sustain_choice') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>Sustain your ${esc(req.cardName)} boost?</h3>
-      <div class="info-row">You didn't use a Normal this Strike, so you may keep this boost active instead of discarding it. If you don't sustain, it's discarded now as usual.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveSustainChoice(true)">Sustain it</button>
-        <button class="big-btn" onclick="G.resolveSustainChoice(false)">Let it go</button>
-      </div>`;
-  } else if (G.mode === 'sustain_choice_paid') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>Sustain your ${esc(req.cardName)} boost?</h3>
-      <div class="info-row">You weren't Stunned this Strike. Spend ${req.cost} Force (from hand or Gauge) to keep this boost active instead of discarding it.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveSustainChoicePaid(true)">Spend ${req.cost} Force to sustain</button>
-        <button class="big-btn" onclick="G.resolveSustainChoicePaid(false)">Let it go</button>
-      </div>`;
-  } else if (G.mode === 'optional_force_spend_pow_choice') {
-    const req = G.sel.request;
-    const forcePowSpend = Math.min(G._forcePowSpend == null ? 0 : G._forcePowSpend, req.max);
-    bottomPanel = `<h3>${esc(req.cardName)} \u2014 spend Force for +POW?</h3>
-      <div class="info-row">Spend up to ${req.max} Force from the front of your hand. Each Force spent this way grants +1 POW to this attack.</div>
-      <div class="stepper-row">
-        <button onclick="G._forcePowSpend=Math.max(0,${forcePowSpend}-1); render();">\u2212</button>
-        <span class="stepper-val">${forcePowSpend} Force (+${forcePowSpend} POW)</span>
-        <button onclick="G._forcePowSpend=Math.min(${req.max},${forcePowSpend}+1); render();">+</button>
-      </div>
-      <button class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend}); G._forcePowSpend=null;">Confirm</button>`;
-  } else if (G.mode === 'cancel_choice') {
-    const gauge = G.human().gauge.length;
-    bottomPanel = `<h3>Cancel \u2014 spend 1 Gauge for another action?</h3>
-      <div class="info-row">${esc(G.sel.cardName)}'s Boost is Cancelable. If you spend 1 Gauge, you take another action right now instead of ending your turn \u2014 no limit on chaining this as long as each Boost is Cancelable and you have Gauge. Your Gauge: ${gauge}.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveCancelChoice(true)">Cancel (spend 1 Gauge)</button>
-        <button class="big-btn" onclick="G.resolveCancelChoice(false)">End turn</button>
-      </div>`;
-  } else if (G.mode === 'optional_gauge_spend_choice') {
-    const req = G.sel.request;
-    const gauge = G.human().gauge.length;
-    bottomPanel = `<h3>${esc(req.cardName)} \u2014 spend ${req.amount} Gauge?</h3>
-      <div class="info-row">${req.grantsAdvantage ? 'If you spend it, you gain Advantage (you act again next).' : ''} Your Gauge: ${gauge}.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveOptionalGaugeSpend(true)">Spend ${req.amount} Gauge</button>
-        <button class="big-btn" onclick="G.resolveOptionalGaugeSpend(false)">Don't spend</button>
-      </div>`;
-  } else if (G.mode === 'optional_retreat_choice') {
-    const req = G.sel.request;
-    bottomPanel = `<h3>${esc(req.cardName)} \u2014 Retreat ${req.amount}?</h3>
-      <div class="info-row">This changes your distance before the range check for this same card's Hit.</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveOptionalRetreat(true)">Retreat ${req.amount}</button>
-        <button class="big-btn" onclick="G.resolveOptionalRetreat(false)">Stay put</button>
-      </div>`;
-  } else if (G.mode === 'may_strike_choice') {
-    bottomPanel = `<h3>Strike?</h3>
-      <div class="info-row">${G.sel.freeCritical ? 'If you Strike now, your attack is Critical for free.' : 'You may play a Strike right now.'}</div>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.resolveMayStrikeChoice(true)">Strike</button>
-        <button class="big-btn" onclick="G.resolveMayStrikeChoice(false)">Don't Strike</button>
-      </div>`;
-  } else if (G.mode === 'push_pull_choice') {
-    bottomPanel = `<h3>${esc(G.sel.promptText || 'Push or Pull?')}</h3>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.pickPushPullDirection('pull')">Pull toward you</button>
-        <button class="big-btn" onclick="G.pickPushPullDirection('push')">Push away</button>
-      </div>`;
-  } else if (G.mode === 'move_direction_choice') {
-    bottomPanel = `<h3>${esc(G.sel.promptText || 'Advance or Retreat?')}</h3>
-      <div class="btn-row">
-        <button class="big-btn" onclick="G.pickMoveDirection('advance')">Advance</button>
-        <button class="big-btn" onclick="G.pickMoveDirection('retreat')">Retreat</button>
-      </div>`;
-  } else if (G.mode === 'eddie_space_choice') {
-    // Boost-time Eddie placement (Zato-1's Invite Hell). Spaces are 0-indexed
-    // internally and shown 1-indexed, matching every other board reference in the UI.
-    const p = G.human(), o = G.ai();
-    bottomPanel = `<h3>${esc(G.sel.promptText || 'Place Eddie')}</h3>
-      <div class="info-row">Your Specials and Ultras measure their Range from Eddie while he is in play. You are on space ${p.pos + 1}; your opponent is on space ${o.pos + 1}.</div>
-      <div class="btn-row">
-        ${(G.sel.spaces || []).map(s => `<button class="big-btn" onclick="G.pickEddieSpace(${s})">Space ${s + 1}${s === o.pos ? ' (opponent)' : (s === p.pos ? ' (you)' : '')}</button>`).join('')}
-      </div>`;
-  } else if (G.mode === 'place_eddie_choice') {
-    const req = G.sel.request;
-    const p = G.human(), o = G.ai();
-    bottomPanel = `<h3>${esc(req.cardName)} — place Eddie?</h3>
-      <div class="info-row">${req.anySpace ? 'Exceeded: any space on the board.' : "Any space within this attack's Range."} Your Specials and Ultras measure their Range from Eddie while he is in play. You are on space ${p.pos + 1}; your opponent is on space ${o.pos + 1}${req.currentPos != null ? `; Eddie is on space ${req.currentPos + 1}` : '; Eddie is out of play'}.</div>
-      <div class="btn-row">
-        ${(req.spaces || []).map(s => `<button class="big-btn" onclick="G.resolvePlaceEddie(${s})">Space ${s + 1}${s === o.pos ? ' (opponent)' : (s === p.pos ? ' (you)' : '')}</button>`).join('')}
-        <button class="cancel-btn" onclick="G.resolvePlaceEddie(null)">Leave Eddie where he is</button>
-      </div>`;
-  } else if (G.mode === 'boost_bonus_force_select') {
-    const p = G.human();
-    const card = p.hand.find(c => c.uid === G.sel.cardUid) || { name: 'this boost' };
-    const selectedValue = G.engine.sumForceValue(p, G.sel.bonusChosen);
-    bottomPanel = `<h3>${esc(card.name)} \u2014 spend up to ${G.sel.bonusMax} extra Force?</h3>
-      <div class="ex-hint">Optional \u2014 each Force spent triggers the card's scaling effect. Ultras are worth 2 Force, everything else 1.</div>
-      ${handHTML(G, { tileOpts: (c) => c.uid === G.sel.cardUid ? { disabled: true } : ({ selected: (G.sel.bonusChosen || []).includes(c.uid), onclick: `G.toggleBonusForceCard('${c.uid}')` }) })}
-      <div>Selected: ${selectedValue}/${G.sel.bonusMax} Force</div>
-      <button class="big-btn" onclick="G.confirmBonusForce()">Confirm (${selectedValue} spent)</button>`;
-  } else if (G.mode === 'decklook_choice') {
-    const peeked = G.sel.peeked || [];
-    // Bang's Innate action reuses this same peek panel, but its only choice is which
-    // card to KEEP ("draw 1, discard the other") \u2014 so it shows Draw buttons and no
-    // discard-all escape, since the draw is mandatory.
-    const drawMode = !!G.sel.drawMode;
-    bottomPanel = drawMode
-      ? `<h3>${esc(G.sel.title || 'Top cards of your deck')}</h3>
-      <div class="ex-hint">Draw one of these \u2014 the other is discarded.</div>
-      <div class="hand-row">${peeked.map(c => `
-        <div>
-          ${cardTile(c, {})}
-          <div class="btn-row"><button onclick="G.confirmDeckLookChoice('${c.uid}','draw')">Draw</button></div>
-        </div>`).join('')}</div>`
-      : `<h3>Sickle Storm \u2014 top ${peeked.length} card(s) of your deck</h3>
-      <div class="ex-hint">Pick one to Boost or Strike with \u2014 the rest are discarded. You can also discard all three.</div>
-      <div class="hand-row">${peeked.map(c => `
-        <div>
-          ${cardTile(c, {})}
-          <div class="btn-row">
-            <button onclick="G.confirmDeckLookChoice('${c.uid}','boost')">Boost</button>
-            <button onclick="G.confirmDeckLookChoice('${c.uid}','strike')">Strike</button>
-          </div>
-        </div>`).join('')}</div>
-      <button class="cancel-btn" onclick="G.confirmDeckLookChoice(null, null)">Discard all</button>`;
-  } else if (G.mode === 'strike_result') {
-    bottomPanel = `<h3>Strike resolved</h3>${strikeBreakdownHTML()}`;
-  } else if (G.mode === 'discard_to_seven') {
-    const p = G.human();
-    const maxHand = engine.getMaxHandSize(p.characterKey);
-    const need = Math.max(0, p.hand.length - maxHand);
-    bottomPanel = `<h3>Hand size limit is ${maxHand} \u2014 discard ${need} card(s)</h3>
-      ${handHTML(G, { tileOpts: (c) => ({ selected: (G.sel.chosen || []).includes(c.uid), onclick: `G.toggleDiscardChoice('${c.uid}')` }) })}
-      <div>Selected: ${(G.sel.chosen || []).length}/${need}</div>
-      <button class="big-btn" ${(G.sel.chosen || []).length === need ? '' : 'disabled'} onclick="G.confirmDiscardToSeven()">Confirm</button>`;
-  } else if (G.mode === 'special_move1') {
-    bottomPanel = `<h3>Move 1 space \u2014 choose direction</h3>
-      <div class="btn-row">
-        <button onclick="G.resolveSpecialMove1('advance')">Toward opponent</button>
-        <button onclick="G.resolveSpecialMove1('retreat')">Away from opponent</button>
-      </div>`;
-  } else if (G.mode === 'char_exceed_strike_choice') {
-    const player = G.human();
-    bottomPanel = `<h3>Exceeded ${esc(CHARACTERS[player.characterKey].name)}: you may Strike now</h3>
-      <div class="btn-row">
-        <button onclick="G.startStrike()">Strike now</button>
-        <button onclick="G.finishNonStrikeAction()">Skip \u2014 end turn</button>
-      </div>`;
-  } else if (G.mode === 'char_exceed_action_choice') {
-    const player = G.human();
-    bottomPanel = `<h3>Exceeded ${esc(CHARACTERS[player.characterKey].name)}: you may take your action now</h3>
-      <div class="btn-row">
-        <button onclick="G.actionSpecial()">Take action now</button>
-        <button onclick="G.finishNonStrikeAction()">Skip \u2014 end turn</button>
-      </div>`;
-  } else if (G.mode === 'action_gauge_select') {
-    const chosen = G.sel.chosen || [];
-    const max = G.sel.max;
-    bottomPanel = `<h3>Choose up to ${max} card${max === 1 ? '' : 's'} to add to Gauge (draw that many)</h3>
-      ${handHTML(G, { tileOpts: (c) => ({ selected: chosen.includes(c.uid), onclick: `G.toggleActionGaugeCard('${c.uid}')` }) })}
-      <div>Selected: ${chosen.length}/${max}</div>
-      <button class="big-btn" ${chosen.length > 0 ? '' : 'disabled'} onclick="G.confirmActionGaugeSelect()">Confirm</button>
-      <button class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>`;
-  }
-
-  const humanHandVisible = ['awaiting_action', 'move_setup', 'changecards_setup', 'special_move1', 'char_exceed_strike_choice', 'char_exceed_action_choice'].includes(G.mode);
-  const isMainAction = G.mode === 'awaiting_action' && engine.active === G.humanId;
-  const selCard = isMainAction && G.selectedActionCardUid ? G.human().hand.find(c => c.uid === G.selectedActionCardUid) : null;
-  const hasEXPair = selCard && G.human().hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(G.human(), selCard));
-  const preCommitBar = selCard ? `<div class="precommit-bar">
-    <span>Selected: <b>${esc(selCard.name)}</b></span>
-    <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')">Play as Strike</button>
-    ${hasEXPair ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('ex')">EX Strike (+1 All)</button>` : ''}
-    <button type="button" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>
-    <button type="button" class="cancel-btn" onclick="G.cancelActionCard()">Cancel</button>
-  </div>` : '';
-  const boostDropZone = isMainAction ? `<div class="boost-drop-zone" ondragover="event.preventDefault()" ondrop="G.onBoostDrop(event)">Drop card here to <b>Boost</b> (or drag onto Arena to <b>Strike</b>)</div>` : '';
+  setGameplayBodyClass(true);
 
   app.innerHTML = `
-    <div class="top-bar">
-      ${lifeBar(G, 'human')}
-      ${lifeBar(G, 'ai')}
+    <div class="gameplay-stage${G.rightRailCollapsed ? ' rail-collapsed' : ''}">
+      <main class="main-stage">
+        <div class="top-bar slim-hud-row">
+          ${lifeBar(G, 'human')}
+          ${lifeBar(G, 'ai')}
+        </div>
+        <div class="arena-stage-band">
+          ${boardHTML(engine)}
+          ${stagePromptBarHTML(G)}
+        </div>
+        <div class="action-bar-band">
+          ${actionPromptBarHTML(G)}
+          ${transientBoostDropZoneHTML(G)}
+        </div>
+        ${unifiedHandDockHTML(G)}
+      </main>
+      ${rightRailHTML(G)}
     </div>
-    ${boardHTML(engine)}
-    <div class="mid-row">
-      ${logHTML(engine)}
-    </div>
-    ${humanHandVisible ? `<div class="section-label">Your hand ${isMainAction ? '<span class="hand-hint">(Click or drag a card; click an Arena Space to Move)</span>' : ''}</div>${handHTML(G, { tileOpts: isMainAction ? (c) => ({
-      selected: G.selectedActionCardUid === c.uid,
-      hoverPreview: true,
-      draggable: true,
-      onclick: `G.selectActionCard('${c.uid}')`,
-    }) : () => ({ disabled: true }) })}` : ''}
-    ${preCommitBar}
-    ${boostDropZone}
-    <div class="bottom-panel">${coachPanelHTML(G.mode)}${bottomPanel}</div>
     ${G.infoModal ? infoModalHTML(G) : ''}
   `;
   applyPendingShake(app);
@@ -1628,4 +2029,3 @@ function paint() {
     else vig.classList.remove('active');
   }
 }
-
