@@ -5,8 +5,30 @@ const InputManager = (() => {
   let lastButtons = {};
 
   function isTypingInInput(ev) {
-    const tag = ev && ev.target && ev.target.tagName;
-    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    const target = ev && ev.target;
+    const tag = target && target.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!(target && target.isContentEditable);
+  }
+
+  function isNativeInteractive(target) {
+    const tag = target && target.tagName;
+    return tag === 'BUTTON' || tag === 'A' || tag === 'SUMMARY' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+  }
+
+  function activateCustomInteractiveTarget(ev) {
+    const target = ev && ev.target;
+    if (!target || isNativeInteractive(target)) return false;
+    const role = typeof target.getAttribute === 'function' ? target.getAttribute('role') : null;
+    const cl = target.classList;
+    const hasCls = (name) => !!(cl && typeof cl.contains === 'function' && cl.contains(name));
+    if (hasCls('disabled') || (typeof target.getAttribute === 'function' && target.getAttribute('aria-disabled') === 'true')) {
+      return false;
+    }
+    const isCustom = role === 'button' || hasCls('fighter-card') || hasCls('char-card') || hasCls('card-tile') || hasCls('hud-pill') || hasCls('life-panel') || hasCls('cell-movable');
+    if (!isCustom) return false;
+    if (typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (typeof target.click === 'function') target.click();
+    return true;
   }
 
   function handleKeyDown(ev) {
@@ -14,7 +36,7 @@ const InputManager = (() => {
     const htpOpen = (typeof isHowToPlayOpen === 'function' && isHowToPlayOpen())
       || (() => {
         const htp = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
-        return !!(htp && htp.style.display !== 'none');
+        return !!(htp && htp.style && htp.style.display && htp.style.display !== 'none');
       })();
 
     if (key === 'Escape') {
@@ -22,21 +44,32 @@ const InputManager = (() => {
         if (typeof closeHowToPlay === 'function') closeHowToPlay();
         else {
           const htp = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
-          if (htp) htp.style.display = 'none';
+          if (htp && htp.style) htp.style.display = 'none';
         }
         return;
       }
       const sp = typeof document !== 'undefined' ? document.getElementById('settings-popover') : null;
-      if (sp && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
+      if (sp && sp.style && sp.style.display && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
       if (typeof G !== 'undefined' && G) {
         if (G.infoModal) { G.closeInfo(); return; }
         if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
         if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
       }
+      if (typeof FullscreenController !== 'undefined' && FullscreenController.isViewportFallback && FullscreenController.isViewportFallback()) {
+        FullscreenController.exit();
+      }
       return;
     }
 
     if (isTypingInInput(ev)) return;
+
+    if ((key === 'f' || key === 'F') && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat) {
+      if (typeof toggleFullscreen === 'function') {
+        if (typeof ev.preventDefault === 'function') ev.preventDefault();
+        toggleFullscreen();
+      }
+      return;
+    }
 
     if (key === '?') {
       if (htpOpen) {
@@ -57,6 +90,10 @@ const InputManager = (() => {
       return;
     }
 
+    if ((key === 'Enter' || key === ' ') && !ev.repeat && activateCustomInteractiveTarget(ev)) {
+      return;
+    }
+
     if (typeof G === 'undefined' || !G) return;
 
     if (key === 'Shift') {
@@ -64,6 +101,7 @@ const InputManager = (() => {
       return;
     }
     if (key === ' ') {
+      if (isNativeInteractive(ev.target)) return;
       if (G.fxPlaying) { ev.preventDefault(); G.skipFx(); return; }
       if (G.mode === 'strike_result') {
         ev.preventDefault();
@@ -98,7 +136,7 @@ const InputManager = (() => {
         if (hand[idx]) G.selectActionCard(hand[idx].uid);
         return;
       }
-      if (key === 'Enter' && G.selectedActionCardUid) {
+      if (key === 'Enter' && G.selectedActionCardUid && !isNativeInteractive(ev.target)) {
         G.confirmActionCard('strike');
       }
     }

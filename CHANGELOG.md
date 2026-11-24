@@ -11,6 +11,13 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-24 — Mobile space optimization & Enriched Arena Stage (`game/render.js`, `game/shell.html`, `game/ui.js`, `game/telegraph.js`)
+
+- Reclaimed dead space around the 9-space arena across mobile, tablet, and desktop by wrapping the board in an Enriched Arena Stage Frame (`.arena-board-frame`) with a live top status strip (`.arena-top-strip` / `.arena-status-bar`, seamlessly replaced by `#clash-banner-slot` via `.has-clash-banner` on card preview), larger fighter portraits/silhouettes, space indices (`1`–`9`), corner/between-fighter markers, dynamic stage spotlight (`--arena-focus-x`), and a structured bottom Range Ruler (`.arena-range-bar`).
+- Rebuilt portrait mobile (`<= 1023px` portrait / `<= 559px`) into a zero-page-scroll `100dvh` tactical grid placing a unified 4-tab Tactical Dock (`Inspect | Log | Normals | Coach`) directly between the Arena Stage and a thumb-zone 4×2 Action Grid + snap-scrolling Hand Dock, powered by independent `mobilePanelTab` state in `GameController` (`game/ui.js`).
+- Upgraded horizontal/landscape mobile (`>= 560px`, `max-height: 600px`) and landscape tablet layouts so the arena board flex-fills available vertical space (`max-height: 122px`) with proportionally larger fighter tokens instead of a cramped `46px` cap.
+- Added automated regression coverage in `tests/strike-preview.test.ts`.
+
 ## 2026-11-23 — Fighting-game Hit Particle & Impact FX Engine (`game/playback.js`, `game/shell.html`)
 
 - Added `HitParticleEngine` (`game/playback.js`), a Canvas + DOM hybrid fighting-game particle and impact choreography engine mounted in `#fx-overlay-root` (outside `#app` so `paint()` re-renders never interrupt active particle bursts).

@@ -800,15 +800,31 @@ const HitParticleEngine = (() => {
     }
   }
 
+  function computeCalloutPosition(pos, viewport = {}) {
+    const vw = viewport.width != null
+      ? viewport.width
+      : ((typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024);
+    const vh = viewport.height != null
+      ? viewport.height
+      : ((typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 768);
+    const edgePadX = vw < 700 ? 84 : 110;
+    const clampedX = Math.max(edgePadX, Math.min(vw - edgePadX, pos.x));
+    const isShortViewport = vh < 540;
+    // Callout translates upward (-105% to -152% of ~52-68px height), so keep anchor >= 78px on short landscape screens
+    const minY = Math.min(Math.max(40, vh - 36), isShortViewport ? 80 : 68);
+    const maxY = Math.max(minY, vh - (isShortViewport ? 22 : 30));
+    const offsetY = isShortViewport ? 10 : 34;
+    const clampedY = Math.max(minY, Math.min(maxY, pos.y - offsetY));
+    return { x: clampedX, y: clampedY };
+  }
+
   function applyDomImpactChoreography(pos, spec, defenderId, attackerId) {
     if (typeof document === 'undefined') return;
     const reduced = isReducedMotion();
 
     // 1. Floating Arcade Callout Banner in #fx-overlay-root
     if (calloutLayer && typeof document.createElement === 'function') {
-      const vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024;
-      const clampedX = Math.max(110, Math.min(vw - 110, pos.x));
-      const clampedY = Math.max(68, pos.y - 34);
+      const { x: clampedX, y: clampedY } = computeCalloutPosition(pos);
 
       const el = document.createElement('div');
       el.className = `hit-fx-callout ${spec.badgeClass}${reduced ? ' reduced' : ''}`;
@@ -1472,6 +1488,7 @@ const HitParticleEngine = (() => {
 
   return {
     classifyHitTier,
+    computeCalloutPosition,
     triggerHit,
     triggerGuardBreak,
     triggerExceed,

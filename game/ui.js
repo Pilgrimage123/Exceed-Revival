@@ -136,6 +136,7 @@ class GameController {
     this.selectedActionCardUid = null;
     this.showNormalMatrix = false;
     this.rightRailTab = 'log'; // 'log' | 'normals' | 'coach'
+    this.mobilePanelTab = 'inspector'; // 'inspector' | 'log' | 'normals' | 'coach' (portrait mobile dock)
     this.rightRailCollapsed = false;
     this.inspectorTarget = null; // { kind: 'card' | 'innate' | 'boost', ... } | null
     this.coachUnreadDot = false;
@@ -178,6 +179,7 @@ class GameController {
     if (this.studyMode) {
       this.rightRailCollapsed = false;
       this.rightRailTab = 'coach';
+      this.mobilePanelTab = 'coach';
       this.coachUnreadDot = false;
     }
     render();
@@ -217,6 +219,7 @@ class GameController {
     } else {
       this.rightRailCollapsed = false;
       this.rightRailTab = 'coach';
+      this.mobilePanelTab = 'coach';
       this.coachUnreadDot = false;
     }
     render();
@@ -273,6 +276,7 @@ class GameController {
     } else {
       this.rightRailCollapsed = false;
       this.rightRailTab = 'coach';
+      this.mobilePanelTab = 'coach';
       this.coachUnreadDot = false;
     }
     render();
@@ -1453,6 +1457,7 @@ class GameController {
     }
     this.pendingGen = null;
     this.mode = 'strike_result';
+    this.mobilePanelTab = 'inspector';
     this.pendingStrikeResult = res.value;
     // Breakdown pacing: beginner mode reveals the resolution one beat at a time
     // (see render.js's `.breakdown`), so start from the first beat on every new
@@ -2040,9 +2045,38 @@ class GameController {
   setRightRailTab(tab) {
     if (!['log', 'normals', 'coach'].includes(tab)) return;
     this.rightRailTab = tab;
+    this.mobilePanelTab = tab;
     this.showNormalMatrix = (tab === 'normals');
     if (tab === 'coach') this.coachUnreadDot = false;
     render();
+  }
+
+  setMobilePanelTab(tab) {
+    if (!['inspector', 'log', 'normals', 'coach'].includes(tab)) return;
+    this.mobilePanelTab = tab;
+    if (tab !== 'inspector') {
+      this.rightRailTab = tab;
+      this.showNormalMatrix = (tab === 'normals');
+      if (tab === 'coach') this.coachUnreadDot = false;
+    }
+    render();
+  }
+
+  syncMobilePanelTabDOM() {
+    if (typeof document === 'undefined' || !document.querySelector) return;
+    const tab = this.mobilePanelTab || 'inspector';
+    const stage = document.querySelector('.gameplay-stage');
+    if (stage && stage.dataset) stage.dataset.mobileTab = tab;
+    const rail = document.querySelector('.right-rail');
+    if (rail && rail.dataset) rail.dataset.mobileTab = tab;
+    if (document.querySelectorAll) {
+      for (const btn of document.querySelectorAll('[data-mobile-tab-btn]')) {
+        if (!btn.classList || !btn.setAttribute) continue;
+        const isActive = btn.dataset && btn.dataset.mobileTabBtn === tab;
+        btn.classList.toggle('active', !!isActive);
+        btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      }
+    }
   }
 
   toggleRightRail() {
@@ -2094,6 +2128,17 @@ class GameController {
   onCardHoverEnd() {
     this.inspectorTarget = null;
     if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
+    const selCard = (this.mode === 'awaiting_action' && this.selectedActionCardUid && this.human())
+      ? this.human().hand.find(c => c.uid === this.selectedActionCardUid)
+      : null;
+    if (selCard) {
+      if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.syncSelectedCard) {
+        StrikePreviewController.syncSelectedCard(selCard, false);
+      } else if (typeof EventBus !== 'undefined') {
+        EventBus.emit('OnCardHoverStart', { card: selCard, isEX: false });
+      }
+      return;
+    }
     if (typeof EventBus !== 'undefined') {
       EventBus.emit('OnCardHoverEnd', {});
     }
@@ -2112,6 +2157,18 @@ class GameController {
     if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
   }
 
+  onHudPillClick(kind, who, boostUid) {
+    this.mobilePanelTab = 'inspector';
+    if (this.rightRailCollapsed) {
+      this.rightRailCollapsed = false;
+      this.onHudPillHover(kind, who, boostUid);
+      render();
+      return;
+    }
+    this.onHudPillHover(kind, who, boostUid);
+    this.syncMobilePanelTabDOM();
+  }
+
   onHudPillHoverEnd() {
     this.inspectorTarget = null;
     if (typeof updateUniversalInspectorSlot === 'function') updateUniversalInspectorSlot();
@@ -2120,10 +2177,12 @@ class GameController {
   toggleNormalMatrix() {
     if (this.rightRailTab === 'normals' && !this.rightRailCollapsed) {
       this.rightRailTab = 'log';
+      this.mobilePanelTab = 'log';
       this.showNormalMatrix = false;
     } else {
       this.rightRailCollapsed = false;
       this.rightRailTab = 'normals';
+      this.mobilePanelTab = 'normals';
       this.showNormalMatrix = true;
     }
     render();
@@ -2132,6 +2191,7 @@ class GameController {
   selectActionCard(uid) {
     if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     this.selectedActionCardUid = (this.selectedActionCardUid === uid) ? null : uid;
+    if (this.selectedActionCardUid) this.mobilePanelTab = 'inspector';
     render();
   }
 

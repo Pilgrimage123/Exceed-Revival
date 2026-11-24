@@ -1211,6 +1211,12 @@ class Engine {
     return !!(char && char.gaugeCostsFree && char.gaugeCostsFree(player));
   }
 
+  canPayUltra(player, card) {
+    if (!card || card.type !== 'ultra') return true;
+    const cost = this.gaugeCostsAreFree(player) ? 0 : (card.gaugeCost || 0);
+    return this.gaugeCount(player) >= cost;
+  }
+
   // Take non-lethal damage (damage that floors at 1 life, can't cause a loss).
   // Used by Nagoriyuki's Exceed Normals.
   takeDamageNonLethal(player, amount) {

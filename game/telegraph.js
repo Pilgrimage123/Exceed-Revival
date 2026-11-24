@@ -161,9 +161,20 @@ const ClashSummaryBanner = (() => {
     return document.getElementById('clash-banner-slot');
   }
 
+  function syncStripState(slot, active) {
+    const strip = slot && slot.parentElement;
+    if (strip && strip.classList) {
+      if (active) strip.classList.add('has-clash-banner');
+      else strip.classList.remove('has-clash-banner');
+    }
+  }
+
   function clear() {
     const slot = getSlot();
-    if (slot) slot.innerHTML = '';
+    if (slot) {
+      slot.innerHTML = '';
+      syncStripState(slot, false);
+    }
   }
 
   function render(preview, infoSet, hoverMeta) {
@@ -171,6 +182,7 @@ const ClashSummaryBanner = (() => {
     if (!slot) return;
     if (!preview || !infoSet) {
       slot.innerHTML = '';
+      syncStripState(slot, false);
       return;
     }
     const s = preview.effectiveStats || {};
@@ -212,6 +224,7 @@ const ClashSummaryBanner = (() => {
         </div>
       </div>
     `;
+    syncStripState(slot, true);
   }
 
   return { render, clear };

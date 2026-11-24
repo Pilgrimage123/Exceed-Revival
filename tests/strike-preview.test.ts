@@ -448,6 +448,8 @@ test('strike_result renders Trigger Timeline in Stage Prompt Bar and dual reveal
   assert.ok(res.html.includes('inspector-dual-cards'));
   assert.ok(res.html.includes('Cross'));
   assert.ok(res.html.includes('Sweep'));
+  assert.ok(res.html.includes('G.continueAfterStrikeResult()'), 'strike_result must place Continue action in Band 3');
+  assert.equal(res.html.includes('Resolve prompt above to continue'), false, 'strike_result must not show fallback placeholder');
   assert.ok(res.moveSetupHtml.includes('stage-prompt-inline'));
   assert.ok(res.moveSetupHtml.includes('Confirm Move'));
 });
@@ -592,5 +594,383 @@ test('HitParticleEngine classifies fighting-game hit tiers, spawns multi-layered
   assert.equal(res.reducedHeavy.shakeLevel, 'none', 'reducedHitStop should disable screen shake');
 });
 
+test('Selected card keeps StrikePreviewController synced across repaints and hover-out, and HUD pill tap expands collapsed rail', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const ryu = g.human();
+    const sweep = { ...SimulateStrikePreview.resolveCardByKey('sweep'), uid: 'sel_sweep' };
+    const cross = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'hov_cross' };
+    ryu.hand = [sweep, cross];
+    paint();
 
+    g.selectActionCard('sel_sweep');
+    const afterSelectKey = StrikePreviewController.getActiveHover()?.card?.key || null;
+
+    // Hover another card then leave -> restores selected card preview instead of clearing
+    g.onCardHover('hov_cross', false);
+    const duringHoverKey = StrikePreviewController.getActiveHover()?.card?.key || null;
+    g.onCardHoverEnd();
+    const afterHoverEndKey = StrikePreviewController.getActiveHover()?.card?.key || null;
+
+    // Cancel clears preview
+    g.cancelActionCard();
+    const afterCancel = StrikePreviewController.getActiveHover();
+
+    // Collapsed rail expands when tapping a HUD pill
+    g.rightRailCollapsed = true;
+    g.onHudPillClick('innate', 'human');
+    const collapsedAfterPillClick = g.rightRailCollapsed;
+    const inspectorAfterPillClick = document.getElementById('universal-inspector-slot').innerHTML;
+
+    return {
+      afterSelectKey,
+      duringHoverKey,
+      afterHoverEndKey,
+      afterCancel,
+      collapsedAfterPillClick,
+      inspectorAfterPillClick,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(res.afterSelectKey, 'sweep');
+  assert.equal(res.duringHoverKey, 'cross');
+  assert.equal(res.afterHoverEndKey, 'sweep');
+  assert.equal(res.afterCancel, null);
+  assert.equal(res.collapsedAfterPillClick, false);
+  assert.ok(res.inspectorAfterPillClick.includes('Normal Innate:'));
+});
+
+test('HitParticleEngine.computeCalloutPosition keeps floating callouts inside short horizontal viewports', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const shortTop = HitParticleEngine.computeCalloutPosition({ x: 30, y: 20 }, { width: 844, height: 390 });
+    const shortBottom = HitParticleEngine.computeCalloutPosition({ x: 900, y: 410 }, { width: 667, height: 375 });
+    const desktop = HitParticleEngine.computeCalloutPosition({ x: 720, y: 280 }, { width: 1440, height: 900 });
+    return { shortTop, shortBottom, desktop };
+  })()`, ctx) as any;
+
+  assert.equal(res.shortTop.x, 110);
+  assert.equal(res.shortTop.y, 80);
+  assert.equal(res.shortBottom.x, 667 - 84);
+  assert.equal(res.shortBottom.y, 375 - 22);
+  assert.equal(res.desktop.x, 720);
+  assert.equal(res.desktop.y, 280 - 34);
+});
+
+test('Bundled shell includes single settings popover base rule, landscape mobile layout query, autostart hook, and fullscreen toggle button', () => {
+  const html = fs.readFileSync(HTML_PATH, 'utf8');
+  const settingsBaseMatches = html.match(/#settings-popover\{position:fixed;/g) || [];
+  assert.equal(settingsBaseMatches.length, 1, 'Duplicate #settings-popover base CSS rules should be consolidated');
+  assert.ok(html.includes('@media (orientation: landscape) and (min-width: 560px) and (max-height: 600px)'));
+  assert.ok(html.includes('data-start="true"'));
+  assert.ok(html.includes("get('autostart') === '1'"));
+  assert.ok(html.includes('data-fullscreen-btn="true"'));
+  assert.ok(html.includes('onclick="toggleFullscreen()"'));
+});
+
+test('Fullscreen key (F), Right Rail expanded/collapsed Fullscreen buttons, Escape fallback exit, and Engine.canPayUltra work cleanly', () => {
+  const { ctx, bodyClasses } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    // 1. Before G exists, pressing F toggles viewport-fullscreen fallback cleanly in headless sandbox
+    let prevented = false;
+    InputManager.handleKeyDown({ key: 'f', preventDefault: () => { prevented = true; } });
+    const activeAfterF = isFullscreenActive();
+    const fallbackClassAfterF = document.body.classList.contains('viewport-fullscreen');
+
+    // Ctrl+F must NOT toggle fullscreen
+    InputManager.handleKeyDown({ key: 'f', ctrlKey: true, preventDefault: () => {} });
+    const stillActiveAfterCtrlF = isFullscreenActive();
+
+    // Typing 'f' in INPUT must NOT toggle fullscreen
+    InputManager.handleKeyDown({ key: 'f', target: { tagName: 'INPUT' }, preventDefault: () => {} });
+    const stillActiveAfterInput = isFullscreenActive();
+
+    // Escape exits viewport-fullscreen fallback
+    InputManager.handleKeyDown({ key: 'Escape' });
+    const activeAfterEsc = isFullscreenActive();
+
+    // 2. Gameplay Right Rail (expanded & collapsed) renders Fullscreen button and reflects active state
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    paint();
+    const expandedInactiveHtml = document.getElementById('app').innerHTML;
+
+    InputManager.handleKeyDown({ key: 'F', preventDefault: () => {} });
+    paint();
+    const expandedActiveHtml = document.getElementById('app').innerHTML;
+
+    g.toggleRightRail();
+    const collapsedActiveHtml = document.getElementById('app').innerHTML;
+
+    // Escape while Info Modal is open closes Info Modal first, then second Escape exits fallback fullscreen
+    g.openInfo('human');
+    InputManager.handleKeyDown({ key: 'Escape' });
+    const modalAfterFirstEsc = g.infoModal;
+    const activeAfterFirstEsc = isFullscreenActive();
+    InputManager.handleKeyDown({ key: 'Escape' });
+    const activeAfterSecondEsc = isFullscreenActive();
+
+    // 3. Engine.canPayUltra checks Gauge vs cost
+    const metsu = SimulateStrikePreview.resolveCardByKey('metsu_hadoken'); // gaugeCost 3
+    const p = g.human();
+    p.gauge = [];
+    const canPay0 = g.engine.canPayUltra(p, metsu);
+    p.gauge = [metsu, metsu, metsu];
+    const canPay3 = g.engine.canPayUltra(p, metsu);
+
+    return {
+      prevented,
+      activeAfterF,
+      fallbackClassAfterF,
+      stillActiveAfterCtrlF,
+      stillActiveAfterInput,
+      activeAfterEsc,
+      expandedInactiveHtml,
+      expandedActiveHtml,
+      collapsedActiveHtml,
+      modalAfterFirstEsc,
+      activeAfterFirstEsc,
+      activeAfterSecondEsc,
+      canPay0,
+      canPay3,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(res.prevented, true);
+  assert.equal(res.activeAfterF, true);
+  assert.equal(res.fallbackClassAfterF, true);
+  assert.equal(res.stillActiveAfterCtrlF, true);
+  assert.equal(res.stillActiveAfterInput, true);
+  assert.equal(res.activeAfterEsc, false);
+  assert.equal(bodyClasses.has('viewport-fullscreen'), false);
+
+  assert.ok(res.expandedInactiveHtml.includes('data-fullscreen-btn="true"'));
+  assert.ok(res.expandedInactiveHtml.includes('aria-pressed="false"'));
+  assert.ok(res.expandedActiveHtml.includes('aria-pressed="true"'));
+  assert.ok(res.collapsedActiveHtml.includes('data-fullscreen-btn="true"'));
+  assert.ok(res.collapsedActiveHtml.includes('aria-pressed="true"'));
+
+  assert.equal(res.modalAfterFirstEsc, null);
+  assert.equal(res.activeAfterFirstEsc, true, 'First Escape closes Info Modal before exiting fullscreen');
+  assert.equal(res.activeAfterSecondEsc, false, 'Second Escape exits viewport fallback fullscreen');
+  assert.equal(res.canPay0, false);
+  assert.equal(res.canPay3, true);
+});
+
+test('Keyboard activation, focus collision guards, ARIA attributes, reduced-flash CSS, and HTP shortcut hint', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    paint();
+    const appHtml = document.getElementById('app').innerHTML;
+
+    // Select a card, then simulate pressing Enter while focus is on a native <button> (should NOT fire strike)
+    g.selectActionCard(g.human().hand[0].uid);
+    let strikeConfirmCalled = false;
+    const origConfirm = g.confirmActionCard.bind(g);
+    g.confirmActionCard = (t) => { if (t === 'strike') strikeConfirmCalled = true; return origConfirm(t); };
+    InputManager.handleKeyDown({
+      key: 'Enter',
+      target: { tagName: 'BUTTON' },
+      preventDefault: () => {},
+    });
+    const strikeAfterButtonEnter = strikeConfirmCalled;
+
+    // Simulate pressing Enter on a focused custom card tile (role=button) -> invokes target.click() without firing strike
+    let tileClicked = false;
+    let tilePrevented = false;
+    InputManager.handleKeyDown({
+      key: 'Enter',
+      target: {
+        tagName: 'DIV',
+        getAttribute: (a) => a === 'role' ? 'button' : null,
+        classList: { contains: (c) => c === 'card-tile' },
+        click: () => { tileClicked = true; },
+      },
+      preventDefault: () => { tilePrevented = true; },
+    });
+
+    // Disabled custom tile must NOT trigger click
+    let disabledClicked = false;
+    InputManager.handleKeyDown({
+      key: ' ',
+      target: {
+        tagName: 'DIV',
+        getAttribute: () => null,
+        classList: { contains: (c) => c === 'card-tile' || c === 'disabled' },
+        click: () => { disabledClicked = true; },
+      },
+      preventDefault: () => {},
+    });
+
+    // Space on a focused native button during strike_result must NOT skip/continue automatically
+    g.mode = 'strike_result';
+    let continued = false;
+    g.continueAfterStrikeResult = () => { continued = true; };
+    InputManager.handleKeyDown({
+      key: ' ',
+      target: { tagName: 'BUTTON' },
+      preventDefault: () => {},
+    });
+    const continuedAfterBtnSpace = continued;
+
+    // Command Manual footer contains F Fullscreen hint
+    openHowToPlay();
+    const htpHtml = document.getElementById('howToPlayBox').innerHTML;
+    closeHowToPlay();
+
+    return {
+      appHtml,
+      strikeAfterButtonEnter,
+      tileClicked,
+      tilePrevented,
+      disabledClicked,
+      continuedAfterBtnSpace,
+      htpHtml,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(res.strikeAfterButtonEnter, false, 'Enter on focused <button> must not trigger confirmActionCard(strike)');
+  assert.equal(res.tileClicked, true, 'Enter on focused custom interactive tile invokes click()');
+  assert.equal(res.tilePrevented, true);
+  assert.equal(res.disabledClicked, false, 'Disabled card tile must ignore Space/Enter activation');
+  assert.equal(res.continuedAfterBtnSpace, false, 'Space on focused <button> in strike_result must not bypass button action');
+  assert.ok(res.appHtml.includes('class="cell cell-movable"') || res.appHtml.includes('cell-movable" data-dist='), 'Board renders movable cells');
+  assert.ok(res.appHtml.includes('role="button" tabindex="0" aria-label="Move to space'), 'Movable cells are keyboard-accessible buttons');
+  assert.ok(res.appHtml.includes('aria-selected="true" data-rail-tab="log"'), 'Active rail tab exposes aria-selected="true"');
+  assert.ok(res.appHtml.includes('aria-expanded="true"'), 'Expanded rail collapse button exposes aria-expanded="true"');
+  assert.ok(res.htpHtml.includes('F Fullscreen'), 'Command Manual footer keyhints document F Fullscreen');
+
+  const shellHtml = fs.readFileSync(path.join(ROOT, 'game/shell.html'), 'utf8');
+  assert.ok(shellHtml.includes('class="fighter-card" role="button" tabindex="0"'), 'Fighter cards are keyboard focusable');
+  assert.ok(shellHtml.includes('class="char-card" role="button" tabindex="0"'), 'Difficulty cards are keyboard focusable');
+  assert.ok(shellHtml.includes('body.reduced-flash #app.screen-shake'), 'shell.html implements body.reduced-flash motion reduction CSS');
+  assert.ok(shellHtml.includes('.center-screen .log-panel{max-height:calc(100dvh - 150px)'), 'shell.html fits game_over screen on horizontal mobile');
+});
+
+test('Mobile space optimization: Enriched Arena Frame, Range Ruler, mobilePanelTab sync, and portrait mobile layout CSS', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.mode = 'awaiting_action';
+    g.engine.active = 'p1';
+    paint();
+
+    const appHtml = document.getElementById('app').innerHTML;
+    const defaultMobileTab = g.mobilePanelTab;
+    const defaultRailTab = g.rightRailTab;
+
+    // Switching right rail tab syncs mobilePanelTab
+    g.setRightRailTab('normals');
+    const afterNormals = { rail: g.rightRailTab, mobile: g.mobilePanelTab };
+
+    // Switching mobile tab to inspector leaves desktop rightRailTab intact
+    g.setMobilePanelTab('inspector');
+    const afterMobileInspect = { rail: g.rightRailTab, mobile: g.mobilePanelTab };
+
+    // Trainer / Study Mode switches mobilePanelTab to coach
+    g.toggleStudyMode();
+    const afterStudyOn = { rail: g.rightRailTab, mobile: g.mobilePanelTab };
+
+    // Selecting a card or clicking a HUD pill focuses inspector on mobile
+    const firstCard = g.human().hand[0];
+    g.selectActionCard(firstCard.uid);
+    const afterSelectCard = g.mobilePanelTab;
+
+    g.setMobilePanelTab('log');
+    g.onHudPillClick('ryu_innate');
+    const afterHudPill = g.mobilePanelTab;
+
+    // ClashSummaryBanner toggles .has-clash-banner on parent .arena-top-strip
+    const parentClasses = new Set();
+    const fakeParent = {
+      classList: {
+        contains: (c) => c === 'arena-top-strip' || parentClasses.has(c),
+        add: (c) => { parentClasses.add(c); },
+        remove: (c) => { parentClasses.delete(c); },
+      },
+    };
+    const fakeSlot = {
+      innerHTML: '',
+      parentElement: fakeParent,
+      classList: { add: () => {}, remove: () => {} },
+    };
+    const origGetById = document.getElementById;
+    document.getElementById = (id) => (id === 'clash-banner-slot' ? fakeSlot : origGetById(id));
+    ClashSummaryBanner.render({
+      willWhiff: false,
+      isPublicStateLethal: false,
+      projectedDamage: 5,
+      effectiveStats: { minRange: 1, maxRange: 2, pow: 5, spd: 5, arm: 0, grd: 0, oppVisibleArm: 0, oppVisibleGrd: 0 },
+      cardName: 'Sweep',
+    }, g.engine.getInformationSet('p1'), {});
+    const hasBannerAfterRender = parentClasses.has('has-clash-banner');
+    ClashSummaryBanner.clear();
+    const hasBannerAfterClear = parentClasses.has('has-clash-banner');
+    if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.clear) {
+      StrikePreviewController.clear();
+    }
+    document.getElementById = origGetById;
+
+    return {
+      appHtml,
+      defaultMobileTab,
+      defaultRailTab,
+      afterNormals,
+      afterMobileInspect,
+      afterStudyOn,
+      afterSelectCard,
+      afterHudPill,
+      hasBannerAfterRender,
+      hasBannerAfterClear,
+    };
+  })()`, ctx) as any;
+
+  // Enriched Arena Stage Frame & Range Ruler structure
+  assert.ok(res.appHtml.includes('class="arena-board-frame"'), 'Board is wrapped in .arena-board-frame');
+  assert.ok(res.appHtml.includes('class="arena-top-strip"'), 'Arena frame includes .arena-top-strip');
+  assert.ok(res.appHtml.includes('class="arena-status-bar"'), 'Arena top strip includes live .arena-status-bar');
+  assert.ok(res.appHtml.includes('class="cell-space-num"'), 'Arena cells show 1..9 space indices');
+  assert.ok(res.appHtml.includes('cell-corner'), 'Edge arena cells mark corners');
+  assert.ok(res.appHtml.includes('cell-between'), 'Arena highlights spaces between fighters');
+  assert.ok(res.appHtml.includes('class="range-readout arena-range-bar"'), 'Arena frame includes live .arena-range-bar');
+  assert.ok(res.appHtml.includes('You · Sp'), 'Range bar displays player space');
+  assert.ok(res.appHtml.includes('CPU · Sp'), 'Range bar displays CPU space');
+  assert.ok(res.appHtml.includes('data-mobile-tab="inspector"'), 'Gameplay stage exposes mobile panel tab state');
+  assert.ok(res.appHtml.includes('data-mobile-tab-btn="inspector"'), 'Mobile-only Inspect tab button is rendered');
+  assert.ok(!res.appHtml.includes('undefined') && !res.appHtml.includes('NaN'), 'Rendered arena contains no undefined/NaN');
+
+  // Mobile panel tab synchronization
+  assert.equal(res.defaultMobileTab, 'inspector', 'mobilePanelTab defaults to inspector');
+  assert.equal(res.defaultRailTab, 'log', 'desktop rightRailTab still defaults to log');
+  assert.equal(res.afterNormals.rail, 'normals');
+  assert.equal(res.afterNormals.mobile, 'normals');
+  assert.equal(res.afterMobileInspect.rail, 'normals');
+  assert.equal(res.afterMobileInspect.mobile, 'inspector');
+  assert.equal(res.afterStudyOn.rail, 'coach');
+  assert.equal(res.afterStudyOn.mobile, 'coach');
+  assert.equal(res.afterSelectCard, 'inspector');
+  assert.equal(res.afterHudPill, 'inspector');
+
+  // Clash banner strip toggle
+  assert.equal(res.hasBannerAfterRender, true, 'ClashSummaryBanner.render marks .arena-top-strip with .has-clash-banner');
+  assert.equal(res.hasBannerAfterClear, false, 'ClashSummaryBanner.clear removes .has-clash-banner');
+
+  // CSS rules in shell.html & built bundle
+  const bundledHtml = fs.readFileSync(HTML_PATH, 'utf8');
+  assert.ok(
+    bundledHtml.includes('@media (max-width: 1023px) and (orientation: portrait), (max-width: 559px)'),
+    'Bundled HTML includes portrait mobile zero-scroll layout query',
+  );
+  assert.ok(bundledHtml.includes('.arena-board-frame{'), 'Bundled HTML includes .arena-board-frame styles');
+  assert.ok(bundledHtml.includes('.mobile-only-tab{display:none;'), 'Bundled HTML hides .mobile-only-tab on desktop');
+  assert.ok(bundledHtml.includes('height:100%;min-height:52px;max-height:122px'), 'Landscape mobile expands arena board cells to use available height');
+});
 

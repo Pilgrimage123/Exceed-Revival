@@ -519,10 +519,20 @@ function fxBadgeHTML(currentFx, pid) {
 // hardcoding, in case that ever stops being true.
 function boardHTML(engine) {
   const p1 = engine.P('p1'), p2 = engine.P('p2');
+  const humanId = G ? G.humanId : 'p1';
   const humanPos = (G ? G.human() : p1).pos;
   const currentFx = G && G.currentFx;
   const p1Facing = p1.pos <= p2.pos ? 'facing-right' : 'facing-left';
   const p2Facing = p2.pos < p1.pos ? 'facing-right' : 'facing-left';
+  const distBetween = engine.range(p1, p2);
+  const isHumanTurn = engine.active === humanId;
+  const roundNum = Math.max(1, engine.turn || 1);
+  const spacingLabel = distBetween <= 1 ? 'Point-Blank' : distBetween <= 2 ? 'Close' : distBetween <= 4 ? 'Mid' : 'Long';
+  const humanCorner = (p1.pos === 0 || p1.pos === BOARD_SIZE - 1);
+  const cpuCorner = (p2.pos === 0 || p2.pos === BOARD_SIZE - 1);
+  const cornerText = humanCorner ? ' · You Cornered' : (cpuCorner ? ' · CPU Cornered' : '');
+  const midPct = Math.round((((p1.pos + p2.pos) / 2 + 0.5) / BOARD_SIZE) * 100);
+  const canTapMoveNow = !!(G && G.mode === 'awaiting_action' && isHumanTurn && !engine.gameOver);
   let cells = '';
   for (let i = 0; i < BOARD_SIZE; i++) {
     let occupant = '';
@@ -537,10 +547,12 @@ function boardHTML(engine) {
     }
     const dist = Math.abs(i - humanPos);
     const selfCls = i === humanPos ? ' band-self' : '';
-    const canClickMove = G && G.mode === 'awaiting_action' && engine.active === G.humanId && i !== p1.pos && i !== p2.pos;
-    const cellClick = canClickMove ? ` onclick="G.clickBoardSpace(${i})"` : '';
+    const cornerCls = (i === 0 || i === BOARD_SIZE - 1) ? ' cell-corner' : '';
+    const betweenCls = (i > Math.min(p1.pos, p2.pos) && i < Math.max(p1.pos, p2.pos)) ? ' cell-between' : '';
+    const canClickMove = canTapMoveNow && i !== p1.pos && i !== p2.pos;
+    const cellClick = canClickMove ? ` role="button" tabindex="0" aria-label="Move to space ${i + 1} (distance ${dist})" onclick="G.clickBoardSpace(${i})"` : '';
     const moveCls = canClickMove ? ' cell-movable' : '';
-    cells += `<div class="cell${selfCls}${moveCls}" data-dist="${dist}" data-space="${i}"${cellClick}><span class="cell-dist">${dist}</span>${occupant}</div>`;
+    cells += `<div class="cell${selfCls}${cornerCls}${betweenCls}${moveCls}" data-dist="${dist}" data-space="${i}"${cellClick}><span class="cell-dist">${dist}</span><span class="cell-space-num" aria-hidden="true">${i + 1}</span>${occupant}</div>`;
   }
   const skipBtn = (G && G.fxPlaying) ? `<button class="fx-skip-btn" onclick="G.skipFx()">Skip ⏭</button>` : '';
   // A Zato-1 in the match gets a second readout: with Eddie on the board his
@@ -548,11 +560,35 @@ function boardHTML(engine) {
   // is no longer the number that decides whether his attacks connect.
   const eddieOwner = [p1, p2].find(p => p.eddiePos != null);
   const eddieReadout = eddieOwner
-    ? ` &nbsp;|&nbsp; Eddie (${eddieOwner.id === (G ? G.humanId : 'p1') ? 'yours' : 'CPU'}): space ${eddieOwner.eddiePos + 1}, Range <b>${Math.abs(eddieOwner.eddiePos - (eddieOwner.id === p1.id ? p2 : p1).pos)}</b> to ${eddieOwner.id === p1.id ? p2.name : p1.name}`
+    ? `<span class="arena-eddie-readout">· Eddie (${eddieOwner.id === humanId ? 'yours' : 'CPU'}): Sp ${eddieOwner.eddiePos + 1}, RNG <b>${Math.abs(eddieOwner.eddiePos - (eddieOwner.id === p1.id ? p2 : p1).pos)}</b></span>`
     : '';
-  return `<div id="clash-banner-slot" class="clash-banner-reserved"></div>
-  <div class="board" ondragover="event.preventDefault()" ondrop="G && G.onBoardDrop(event)">${cells}</div>
-    <div class="range-readout">Range: <b>${engine.range(p1, p2)}</b>${eddieReadout}${skipBtn}</div>`;
+  const moveHint = canTapMoveNow && !eddieOwner && !skipBtn
+    ? '<span class="arena-move-hint">Tap open space to Move</span>'
+    : '';
+  return `<div class="arena-board-frame" style="--arena-focus-x:${midPct}%">
+    <div class="arena-top-strip">
+      <div id="clash-banner-slot" class="clash-banner-reserved"></div>
+      <div class="arena-status-bar">
+        <div class="arena-status-left">
+          <span class="arena-turn-state ${isHumanTurn ? 'is-you' : 'is-cpu'}">${isHumanTurn ? 'Your Turn · Striker' : 'CPU Turn'}</span>
+          <span class="arena-meta-sep" aria-hidden="true">·</span>
+          <span class="arena-round-label">Round ${roundNum}</span>
+        </div>
+        <div class="arena-status-right">
+          <span class="arena-spacing-meta">${spacingLabel}${cornerText}</span>
+        </div>
+      </div>
+    </div>
+    <div class="board" ondragover="event.preventDefault()" ondrop="G && G.onBoardDrop(event)">${cells}</div>
+    <div class="range-readout arena-range-bar">
+      <span class="arena-coord you-coord">You · Sp ${p1.pos + 1}</span>
+      <span class="arena-range-track" aria-hidden="true"></span>
+      <span class="arena-range-core">Range: <b>${distBetween}</b></span>
+      <span class="arena-range-track" aria-hidden="true"></span>
+      <span class="arena-coord cpu-coord">CPU · Sp ${p2.pos + 1}</span>
+      ${eddieReadout}${moveHint}${skipBtn}
+    </div>
+  </div>`;
 }
 
 // Hover band highlighting for range bands (see rangeHoverAttrs above, wired onto
@@ -680,9 +716,9 @@ function lifeBar(g, who) {
   const boostPills = player.boostsInPlay.map(b => {
     const bId = esc(b.card.uid || b.card.key);
     const exp = b.turnsUntilExpire != null ? ` <em class="pill-expiry">${b.turnsUntilExpire}T</em>` : '';
-    return `<span class="hud-pill boost-pill" role="button" tabindex="0" data-boost-uid="${bId}" onmouseenter="G.onHudPillHover('boost','${who}','${bId}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('boost','${who}','${bId}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); G.onHudPillHover('boost','${who}','${bId}')">⚡ ${esc(b.card.name)}${exp}</span>`;
+    return `<span class="hud-pill boost-pill" role="button" tabindex="0" data-boost-uid="${bId}" onmouseenter="G.onHudPillHover('boost','${who}','${bId}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('boost','${who}','${bId}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); (G.onHudPillClick ? G.onHudPillClick('boost','${who}','${bId}') : G.onHudPillHover('boost','${who}','${bId}'))">⚡ ${esc(b.card.name)}${exp}</span>`;
   }).join('');
-  return `<div class="life-panel slim-hud-bar ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0">
+  return `<div class="life-panel slim-hud-bar ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0" aria-label="${esc(label)} details">
     <div class="life-top-row">
       ${fighterSilhouette(player.characterKey, silhouetteAccent)}
       <div class="life-main">
@@ -704,7 +740,7 @@ function lifeBar(g, who) {
       ${player.extraActionsRemaining > 0 ? `<span title="${esc(TERM_HELP['Actions'])}">Act ${player.extraActionsRemaining}</span>` : ''}
     </div>
     <div class="hud-pills-row">
-      <span class="hud-pill innate-pill" role="button" tabindex="0" onmouseenter="G.onHudPillHover('innate','${who}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('innate','${who}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); G.onHudPillHover('innate','${who}')">${innateLabel}</span>
+      <span class="hud-pill innate-pill" role="button" tabindex="0" onmouseenter="G.onHudPillHover('innate','${who}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('innate','${who}')" onblur="G.onHudPillHoverEnd()" onclick="event.stopPropagation(); (G.onHudPillClick ? G.onHudPillClick('innate','${who}') : G.onHudPillHover('innate','${who}'))">${innateLabel}</span>
       ${boostPills}
     </div>
   </div>`;
@@ -734,7 +770,7 @@ function actionButtons(g) {
       sub: `Discard \u2192 ${b.card.boost.grantsBurstAction.extraActions} actions`, disabled: false,
     })),
     { fn: 'G.actionReshuffle()', icon: '\u267B', label: 'Reshuffle', sub: p.reshuffleUsed ? 'Already used' : 'Once per game', disabled: p.reshuffleUsed },
-    { fn: 'G.suggestMove()', icon: '\u{1F4A1}', label: 'Suggest a move', sub: 'Ask Coach', disabled: false, extraCls: 'coach-suggest-btn' },
+    { fn: 'G.suggestMove()', icon: '\u{1F4A1}', label: 'Coach', sub: 'Suggest a move', disabled: false, extraCls: 'coach-suggest-btn' },
   ];
   return `<div class="action-grid action-bar-row">${actions.map(a => `
     <button class="action-btn ${a.primary ? 'action-primary' : ''} ${a.extraCls || ''}" onclick="${a.fn}" ${a.disabled ? 'disabled' : ''} title="${esc(a.sub)}">
@@ -1279,14 +1315,19 @@ function setDragZoneActive(active) {
 
 function rightRailHTML(g) {
   const tab = g.rightRailTab || 'log';
+  const mobileTab = g.mobilePanelTab || 'inspector';
   const collapsed = !!g.rightRailCollapsed;
   const nmInfo = normalMatrixData(g.ai());
   const isMuted = typeof UXSettings !== 'undefined' && !!UXSettings.get('muted');
+  const isFs = typeof isFullscreenActive === 'function' && isFullscreenActive();
+  const fsLabel = isFs ? 'Exit Fullscreen (F)' : 'Toggle Fullscreen (F)';
+  const fsBtnHTML = `<button type="button" class="util-mini-btn fullscreen-btn${isFs ? ' active' : ''}" data-fullscreen-btn="true" onclick="toggleFullscreen()" aria-pressed="${isFs ? 'true' : 'false'}" aria-label="${fsLabel}" title="${fsLabel}">${isFs ? '\u2922' : '\u26F6'}</button>`;
 
   if (collapsed) {
-    return `<aside class="right-rail collapsed" aria-label="Tactical Right Rail">
+    return `<aside class="right-rail collapsed" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
       <div class="rail-utility-strip collapsed">
-        <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Expand Right Rail" aria-label="Expand Right Rail">◀</button>
+        <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Expand Right Rail" aria-label="Expand Right Rail" aria-expanded="false">◀</button>
+        ${fsBtnHTML}
       </div>
     </aside>`;
   }
@@ -1308,22 +1349,24 @@ function rightRailHTML(g) {
     tabBody = logHTML(g.engine);
   }
 
-  return `<aside class="right-rail" aria-label="Tactical Right Rail">
+  return `<aside class="right-rail" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
     <div class="rail-utility-strip">
       <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
       <button type="button" class="settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
+      ${fsBtnHTML}
       <button type="button" class="study-toggle-btn${g.studyMode ? ' active' : ''}" onclick="G.toggleStudyMode()">Study: ${g.studyMode ? 'ON' : 'OFF'}</button>
       <button type="button" class="rules-btn" aria-label="Open How to Play Command Manual" onclick="openHowToPlay()">Rules</button>
-      <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Collapse Right Rail" aria-label="Collapse Right Rail">▶</button>
+      <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Collapse Right Rail" aria-label="Collapse Right Rail" aria-expanded="true">▶</button>
     </div>
     <div id="universal-inspector-slot" class="universal-inspector">
       ${universalInspectorContentHTML(g)}
     </div>
     <div class="rail-lower-tabs">
       <div class="rail-tab-bar" role="tablist">
-        <button type="button" role="tab" data-rail-tab="log" class="rail-tab-btn${tab === 'log' ? ' active' : ''}" onclick="G.setRightRailTab('log')">Log</button>
-        <button type="button" role="tab" data-rail-tab="normals" class="rail-tab-btn${tab === 'normals' ? ' active' : ''}" onclick="G.setRightRailTab('normals')">Normals [${nmInfo.totalRemaining}/${nmInfo.totalMax}]</button>
-        <button type="button" role="tab" data-rail-tab="coach" class="rail-tab-btn${tab === 'coach' ? ' active' : ''}" onclick="G.setRightRailTab('coach')">Coach${g.coachUnreadDot ? '<span class="coach-unread-dot" aria-label="Unread coach advice">●</span>' : ''}</button>
+        <button type="button" role="tab" aria-selected="${mobileTab === 'inspector' ? 'true' : 'false'}" data-mobile-tab-btn="inspector" class="rail-tab-btn mobile-only-tab${mobileTab === 'inspector' ? ' active' : ''}" onclick="G.setMobilePanelTab('inspector')">Inspect</button>
+        <button type="button" role="tab" aria-selected="${tab === 'log' ? 'true' : 'false'}" data-rail-tab="log" data-mobile-tab-btn="log" class="rail-tab-btn${tab === 'log' ? ' active' : ''}" onclick="G.setRightRailTab('log')">Log</button>
+        <button type="button" role="tab" aria-selected="${tab === 'normals' ? 'true' : 'false'}" data-rail-tab="normals" data-mobile-tab-btn="normals" class="rail-tab-btn${tab === 'normals' ? ' active' : ''}" onclick="G.setRightRailTab('normals')">Normals [${nmInfo.totalRemaining}/${nmInfo.totalMax}]</button>
+        <button type="button" role="tab" aria-selected="${tab === 'coach' ? 'true' : 'false'}" data-rail-tab="coach" data-mobile-tab-btn="coach" class="rail-tab-btn${tab === 'coach' ? ' active' : ''}" onclick="G.setRightRailTab('coach')">Coach${g.coachUnreadDot ? '<span class="coach-unread-dot" aria-label="Unread coach advice">●</span>' : ''}</button>
       </div>
       <div class="rail-tab-content">
         ${tabBody}
@@ -1342,19 +1385,8 @@ function stagePromptBarHTML(g) {
     const tlSlot = (info && typeof StrikePlaybackController !== 'undefined')
       ? StrikePlaybackController.timelineBarHTML(info, tlStepIdx)
       : '';
-    const beats = buildStrikeBeats(info);
-    const beginner = !!g.beginner;
-    const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
-    const allRevealed = beatIndex >= beats.length;
-    const controls = beginner
-      ? `<div class="beat-controls stage-prompt-actions">
-          ${allRevealed ? '' : `<button type="button" onclick="G.revealNextBeat()">Next</button><button type="button" onclick="G.revealAllBeats()">Show all</button>`}
-          <button type="button" class="big-btn" onclick="G.continueAfterStrikeResult()" ${allRevealed ? '' : 'disabled'}>Continue</button>
-        </div>`
-      : `<div class="stage-prompt-actions"><button type="button" class="big-btn" onclick="G.continueAfterStrikeResult()">Continue</button></div>`;
     return `<div id="stage-prompt-bar" class="stage-prompt-bar strike-result-bar">
       <div id="trigger-timeline-slot">${tlSlot}</div>
-      ${controls}
     </div>`;
   }
 
@@ -1654,6 +1686,21 @@ function actionPromptBarHTML(g) {
       </div>`;
     }
     return actionButtons(g);
+  }
+
+  if (g.mode === 'strike_result') {
+    const beats = buildStrikeBeats(engine.lastStrikeInfo);
+    const beginner = !!g.beginner;
+    const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
+    const allRevealed = beatIndex >= beats.length;
+    const progress = beginner && !allRevealed
+      ? `Strike breakdown (${beatIndex}/${beats.length})`
+      : 'Strike resolved';
+    return `<div class="action-prompt-row">
+      <span class="prompt-label">${progress}</span>
+      ${beginner && !allRevealed ? `<button type="button" onclick="G.revealNextBeat()">Next</button><button type="button" onclick="G.revealAllBeats()">Show all</button>` : ''}
+      <button type="button" class="big-btn" onclick="G.continueAfterStrikeResult()" ${(!beginner || allRevealed) ? '' : 'disabled'}>Continue</button>
+    </div>`;
   }
 
   if (g.mode === 'mulligan_select') {
@@ -1964,11 +2011,16 @@ function unifiedHandDockHTML(g) {
   })}</div>`;
 }
 
-function setGameplayBodyClass(active) {
+function setGameplayBodyClass(active, gameStateName) {
   if (typeof document === 'undefined') return;
-  if (document.body && document.body.classList) {
-    if (active) document.body.classList.add('gameplay-active');
-    else document.body.classList.remove('gameplay-active');
+  if (document.body) {
+    if (document.body.classList) {
+      if (active) document.body.classList.add('gameplay-active');
+      else document.body.classList.remove('gameplay-active');
+    }
+    if (document.body.dataset) {
+      document.body.dataset.state = gameStateName || (active ? 'playing' : 'title');
+    }
   }
   const app = document.getElementById('app');
   if (app && app.classList) {
@@ -1980,13 +2032,16 @@ function setGameplayBodyClass(active) {
 function paint() {
   const app = document.getElementById('app');
   if (!G) {
-    setGameplayBodyClass(false);
+    setGameplayBodyClass(false, 'title');
     return;
   }
   const engine = G.engine;
 
   if (G.mode === 'game_over') {
-    setGameplayBodyClass(false);
+    setGameplayBodyClass(false, 'gameover');
+    if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.clear) {
+      StrikePreviewController.clear();
+    }
     const winnerName = engine.winner === G.humanId ? 'You win!' : 'CPU wins!';
     app.innerHTML = `<div class="center-screen">
       <h1>${winnerName}</h1>
@@ -1997,10 +2052,11 @@ function paint() {
     return;
   }
 
-  setGameplayBodyClass(true);
+  setGameplayBodyClass(true, 'playing');
 
+  const mobileTab = G.mobilePanelTab || 'inspector';
   app.innerHTML = `
-    <div class="gameplay-stage${G.rightRailCollapsed ? ' rail-collapsed' : ''}">
+    <div class="gameplay-stage${G.rightRailCollapsed ? ' rail-collapsed' : ''}" data-mobile-tab="${mobileTab}">
       <main class="main-stage">
         <div class="top-bar slim-hud-row">
           ${lifeBar(G, 'human')}
@@ -2021,6 +2077,14 @@ function paint() {
     ${G.infoModal ? infoModalHTML(G) : ''}
   `;
   applyPendingShake(app);
+  if (typeof StrikePreviewController !== 'undefined') {
+    if (G.mode === 'awaiting_action' && G.selectedActionCardUid && G.human && G.human()) {
+      const selCard = G.human().hand.find(c => c.uid === G.selectedActionCardUid) || null;
+      if (StrikePreviewController.syncSelectedCard) StrikePreviewController.syncSelectedCard(selCard, false);
+    } else if (StrikePreviewController.clear) {
+      StrikePreviewController.clear();
+    }
+  }
   const vig = typeof document !== 'undefined' ? document.getElementById('vignette-overlay') : null;
   if (vig && vig.classList) {
     const human = G.human();

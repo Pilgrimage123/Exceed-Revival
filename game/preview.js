@@ -504,8 +504,23 @@ const StrikePreviewController = (() => {
     });
   }
 
+  function syncSelectedCard(card, isEX = false) {
+    if (!card) {
+      activeHover = null;
+      refresh();
+      return;
+    }
+    activeHover = {
+      card,
+      isEX: !!isEX,
+      useOptionalBranch: !!(activeHover && activeHover.card && activeHover.card.key === card.key && activeHover.useOptionalBranch),
+    };
+    refresh();
+  }
+
   return {
     refresh,
+    syncSelectedCard,
     getActiveHover: () => activeHover,
     clear: () => { activeHover = null; refresh(); },
   };

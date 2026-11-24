@@ -15,12 +15,7 @@ const buildScriptPath = path.resolve(__dirname, 'scripts', 'build-game.mjs');
 
 function ensureFreshGameBundle() {
   if (!fs.existsSync(gameDir) || !fs.existsSync(buildScriptPath)) return;
-  const outMtime = fs.existsSync(htmlPath) ? fs.statSync(htmlPath).mtimeMs : 0;
-  const sourceFiles = fs.readdirSync(gameDir).map((f) => path.join(gameDir, f));
-  const newestSourceMtime = sourceFiles.reduce((max, f) => Math.max(max, fs.statSync(f).mtimeMs), 0);
-  if (newestSourceMtime > outMtime) {
-    execFileSync(process.execPath, [buildScriptPath], { stdio: 'inherit' });
-  }
+  execFileSync(process.execPath, [buildScriptPath], { stdio: 'inherit' });
 }
 
 ensureFreshGameBundle();

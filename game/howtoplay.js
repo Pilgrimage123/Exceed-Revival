@@ -1384,6 +1384,8 @@ const HowToPlayUI = (() => {
             <span>\u2190 / \u2192 Switch Section</span>
             <span aria-hidden="true">\u00b7</span>
             <span>1\u20135 Jump</span>
+            <span aria-hidden="true">\u00b7</span>
+            <span>F Fullscreen</span>
           </div>
           <div class="htp-footer-nav">
             <button type="button" class="htp-mini-btn" ${prevTab ? `onclick="HowToPlayUI.setTab('${prevTab.id}')"` : 'disabled'}>${prevTab ? `\u2190 ${prevTab.num}. ${prevTab.short}` : '\u2190 Start'}</button>
@@ -1410,8 +1412,8 @@ const HowToPlayUI = (() => {
     const overlay = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
     renderModal();
     if (overlay) {
-      overlay.style.display = 'flex';
-      overlay.setAttribute('aria-hidden', 'false');
+      if (overlay.style) overlay.style.display = 'flex';
+      if (typeof overlay.setAttribute === 'function') overlay.setAttribute('aria-hidden', 'false');
     }
     playSfx('hoverTick');
   }
@@ -1420,8 +1422,8 @@ const HowToPlayUI = (() => {
     state.isOpen = false;
     const overlay = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
     if (overlay) {
-      overlay.style.display = 'none';
-      overlay.setAttribute('aria-hidden', 'true');
+      if (overlay.style) overlay.style.display = 'none';
+      if (typeof overlay.setAttribute === 'function') overlay.setAttribute('aria-hidden', 'true');
     }
   }
 
