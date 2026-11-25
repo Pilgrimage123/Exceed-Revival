@@ -111,8 +111,13 @@ const ArenaTelegraphRenderer = (() => {
     svg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
 
     const centerOf = (idx) => {
-      const r = cells[idx].getBoundingClientRect();
-      return { x: r.left - boardRect.left + r.width / 2, y: r.top - boardRect.top + r.height / 2 };
+      const cell = cells[idx];
+      const pad = cell && cell.querySelector ? cell.querySelector('.cell-floor-pad') : null;
+      const r = pad ? pad.getBoundingClientRect() : cell.getBoundingClientRect();
+      return {
+        x: r.left - boardRect.left + r.width / 2,
+        y: pad ? (r.top - boardRect.top + r.height * 0.5) : (r.top - boardRect.top + r.height * 0.8),
+      };
     };
 
     if (path.length > 1) {
@@ -205,12 +210,16 @@ const ClashSummaryBanner = (() => {
       : '';
     const exPill = exActive ? '<span class="clash-pill ex">EX (+1 All)</span>' : '';
 
+    const pill = (k, v) => (typeof statPillHTML === 'function'
+      ? statPillHTML(k, v, { showFullLabel: true, extraClass: 'stat-inline' })
+      : `<b>${k.toUpperCase()} ${v}</b>`);
+
     slot.innerHTML = `
       <div class="clash-banner">
         <div class="clash-side you">
           <span class="clash-badge ${isInitiator ? 'striker' : 'defender'}">${isInitiator ? 'STRIKER (Wins Speed Ties)' : 'DEFENDER'}</span>
           <span class="clash-stats">
-            <b>SPD ${s.spd}</b> · <b>POW ${s.pow}</b> · ARM ${s.arm} · GRD ${s.grd}
+            ${pill('spd', s.spd)} ${pill('pow', s.pow)} ${pill('arm', s.arm)} ${pill('grd', s.grd)}
             ${s.ignoreArmor ? '<em class="tag-ignore">Ignores ARM</em>' : ''}
             ${s.ignoreGuard ? '<em class="tag-ignore">Ignores GRD</em>' : ''}
           </span>
@@ -218,7 +227,7 @@ const ClashSummaryBanner = (() => {
         </div>
         <div class="clash-vs">VS</div>
         <div class="clash-side opp">
-          <span class="clash-stats">Visible OPP: ARM ${s.oppVisibleArm} · GRD ${s.oppVisibleGrd}${s.oppStunImmune ? ' · Stun Immune' : ''}</span>
+          <span class="clash-stats"><span class="clash-opp-lbl">OPP:</span> ${pill('arm', s.oppVisibleArm)} ${pill('grd', s.oppVisibleGrd)}${s.oppStunImmune ? ' · Stun Immune' : ''}</span>
           ${oppBoosts.length ? `<span class="clash-boosts">Boosts: ${esc(oppBoosts.join(', '))}</span>` : ''}
           <span class="clash-dmg">Proj. DMG: <b>${preview.hasStochasticVariance ? '?' : preview.projectedDamage}</b></span>
         </div>

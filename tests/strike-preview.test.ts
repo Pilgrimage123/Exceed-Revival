@@ -971,6 +971,251 @@ test('Mobile space optimization: Enriched Arena Frame, Range Ruler, mobilePanelT
   );
   assert.ok(bundledHtml.includes('.arena-board-frame{'), 'Bundled HTML includes .arena-board-frame styles');
   assert.ok(bundledHtml.includes('.mobile-only-tab{display:none;'), 'Bundled HTML hides .mobile-only-tab on desktop');
-  assert.ok(bundledHtml.includes('height:100%;min-height:52px;max-height:122px'), 'Landscape mobile expands arena board cells to use available height');
+  assert.ok(bundledHtml.includes('height:100%;min-height:74px;max-height:none'), 'Landscape mobile expands arena board cells to use available height');
 });
+
+test('Inline Fighter Innates, Adaptive Card View Modes, Full Card Lightbox Modal, and Icon+Color Stat Pills work end-to-end', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const lightboxEl = {
+      innerHTML: '',
+      style: { display: 'none' },
+      attrs: {},
+      setAttribute(k, v) { this.attrs[k] = String(v); },
+    };
+    const origGetById = document.getElementById;
+    document.getElementById = (id) => (id === 'card-lightbox-overlay' ? lightboxEl : origGetById(id));
+
+    const g = new GameController('ryu', 'ken', 'student');
+    G = g;
+    g.confirmMulligan();
+    const initialHtml = document.getElementById('app').innerHTML;
+
+    // Exceed Ryu and re-render to verify inline Innate updates to Exceeded text
+    const ryu = g.human();
+    ryu.exceeded = true;
+    paint();
+    const exceededHtml = document.getElementById('app').innerHTML;
+    ryu.exceeded = false;
+    paint();
+
+    // Card view density cycling: auto -> full -> compact -> auto
+    const defaultMode = g.getCardViewMode();
+    g.cycleCardViewMode();
+    const modeAfter1 = g.getCardViewMode();
+    const fullStageHtml = document.getElementById('app').innerHTML;
+    g.cycleCardViewMode();
+    const modeAfter2 = g.getCardViewMode();
+    const compactStageHtml = document.getElementById('app').innerHTML;
+    g.cycleCardViewMode();
+    const modeAfter3 = g.getCardViewMode();
+
+    // Opening Full Card Lightbox via right-click / double-click does NOT repaint #app
+    const appBeforeModal = document.getElementById('app').innerHTML;
+    const card = g.human().hand[0];
+    g.onCardContextMenu({ preventDefault() {}, stopPropagation() {} }, card.uid, false);
+    const appAfterOpen = document.getElementById('app').innerHTML;
+    const modalOpenDisplay = lightboxEl.style.display;
+    const modalOpenHtml = lightboxEl.innerHTML;
+    const isModalOpen = g.isCardModalOpen();
+
+    // Closing Full Card Lightbox clears overlay without repainting #app
+    g.closeCardModal();
+    const appAfterClose = document.getElementById('app').innerHTML;
+    const modalClosedDisplay = lightboxEl.style.display;
+    const isModalClosed = g.isCardModalOpen();
+
+    // Double-click opens modal and suppresses immediate single-click selection toggle
+    g.selectedActionCardUid = null;
+    g.onCardDoubleClick({ preventDefault() {}, stopPropagation() {} }, card.uid, false);
+    const modalAfterDbl = g.isCardModalOpen();
+    g.selectActionCard(card.uid);
+    const selectedAfterSuppressedClick = g.selectedActionCardUid;
+    g.closeCardModal();
+
+    // Keyboard shortcut 'v' opens modal for selected/hovered card; 'Escape' closes it
+    g.selectActionCard(card.uid);
+    g.openActiveCardModal();
+    const modalAfterV = g.isCardModalOpen();
+    g.closeCardModal();
+
+    // ClashSummaryBanner uses icon+color stat pills
+    const fakeBannerSlot = { innerHTML: '', parentElement: null, classList: { add() {}, remove() {} } };
+    document.getElementById = (id) => (
+      id === 'clash-banner-slot' ? fakeBannerSlot :
+      id === 'card-lightbox-overlay' ? lightboxEl : origGetById(id)
+    );
+    ClashSummaryBanner.render({
+      willWhiff: false,
+      isPublicStateLethal: false,
+      projectedDamage: 4,
+      effectiveStats: { minRange: 1, maxRange: 2, pow: 4, spd: 5, arm: 1, grd: 2, oppVisibleArm: 1, oppVisibleGrd: 0 },
+      cardName: card.name,
+    }, g.engine.getInformationSet('p1'), {});
+    const clashBannerHtml = fakeBannerSlot.innerHTML;
+    ClashSummaryBanner.clear();
+    document.getElementById = origGetById;
+
+    return {
+      initialHtml,
+      exceededHtml,
+      ryuNormalInnate: CHARACTERS.ryu.innateText,
+      ryuExceedInnate: CHARACTERS.ryu.exceedText,
+      defaultMode,
+      modeAfter1,
+      modeAfter2,
+      modeAfter3,
+      fullStageHtml,
+      compactStageHtml,
+      sameAppOnOpen: appBeforeModal === appAfterOpen,
+      sameAppOnClose: appBeforeModal === appAfterClose,
+      modalOpenDisplay,
+      modalOpenHtml,
+      isModalOpen,
+      modalClosedDisplay,
+      isModalClosed,
+      modalAfterDbl,
+      selectedAfterSuppressedClick,
+      modalAfterV,
+      clashBannerHtml,
+      cardName: card.name,
+    };
+  })()`, ctx) as any;
+
+  // 1. Inline Fighter HUD Innate (Normal & Exceeded)
+  assert.ok(res.initialHtml.includes('class="hud-innate-inline"'), 'Fighter stripe renders .hud-innate-inline');
+  assert.ok(res.initialHtml.includes(res.ryuNormalInnate.slice(0, 24)), 'Inline HUD shows active Normal Innate text');
+  assert.ok(res.exceededHtml.includes('hud-innate-inline is-exceeded'), 'Exceeded fighter applies .is-exceeded inline class');
+  assert.ok(res.exceededHtml.includes(res.ryuExceedInnate.slice(0, 24)), 'Exceeded fighter inline HUD updates to Exceed text');
+
+  // 2. Adaptive card view mode cycling & markup
+  assert.equal(res.defaultMode, 'auto');
+  assert.equal(res.modeAfter1, 'full');
+  assert.equal(res.modeAfter2, 'compact');
+  assert.equal(res.modeAfter3, 'auto');
+  assert.ok(res.fullStageHtml.includes('data-card-view="full"'), 'Full mode reflects on .gameplay-stage');
+  assert.ok(res.fullStageHtml.includes('Cards: </span>Full'), 'Utility strip shows Cards: Full label');
+  assert.ok(res.compactStageHtml.includes('data-card-view="compact"'), 'Compact mode reflects on .gameplay-stage');
+  assert.ok(res.initialHtml.includes('class="card-face-attack"'), 'Card tiles include adaptive attack text container');
+  assert.ok(res.initialHtml.includes('class="card-face-boost-full"'), 'Card tiles include adaptive full boost container');
+  assert.equal(res.initialHtml.includes('class="card-text"'), false, 'Compact/adaptive tiles never reintroduce legacy class="card-text"');
+
+  // 3. Full Card Lightbox modal lifecycle without repainting #app
+  assert.equal(res.isModalOpen, true);
+  assert.equal(res.modalOpenDisplay, 'flex');
+  assert.equal(res.sameAppOnOpen, true, 'Opening Full Card Lightbox must not repaint #app');
+  assert.equal(res.sameAppOnClose, true, 'Closing Full Card Lightbox must not repaint #app');
+  assert.equal(res.isModalClosed, false);
+  assert.equal(res.modalClosedDisplay, 'none');
+  assert.ok(res.modalOpenHtml.includes('class="full-card-modal'), 'Lightbox renders .full-card-modal');
+  assert.ok(res.modalOpenHtml.includes(res.cardName), 'Lightbox displays full card name');
+  assert.ok(res.modalOpenHtml.includes('full-card-stats-grid'), 'Lightbox displays 5-stat pill grid');
+  assert.ok(res.modalOpenHtml.includes('BOOST HALF'), 'Lightbox displays split Boost half');
+  assert.equal(res.modalAfterDbl, true, 'Double-click opens Full Card Lightbox');
+  assert.equal(res.selectedAfterSuppressedClick, null, 'Double-click suppresses accidental single-click selection');
+  assert.equal(res.modalAfterV, true, 'openActiveCardModal (V shortcut) opens lightbox for selected card');
+
+  // 4. Unified Icon + Color Stat Pills across cards, arena range bar, clash banner, and lightbox
+  for (const statKey of ['rng', 'pow', 'spd', 'arm', 'grd']) {
+    assert.ok(res.initialHtml.includes(`stat-pill stat-${statKey}`), `Hand cards render color-coded stat-${statKey} pill`);
+    assert.ok(res.modalOpenHtml.includes(`stat-pill stat-${statKey}`), `Full Card modal renders color-coded stat-${statKey} pill`);
+  }
+  assert.ok(res.initialHtml.includes('class="stat-ico"'), 'Stat pills embed crisp inline SVG icons');
+  assert.ok(res.initialHtml.includes('arena-range-core"><span class="stat stat-pill stat-rng'), 'Arena Range Ruler uses color+icon RNG pill');
+  assert.ok(res.clashBannerHtml.includes('stat-pill stat-spd'), 'Clash Summary Banner uses color+icon SPD pill');
+  assert.ok(res.clashBannerHtml.includes('stat-pill stat-pow'), 'Clash Summary Banner uses color+icon POW pill');
+
+  // 5. CSS rules present in built bundle
+  const bundledHtml = fs.readFileSync(HTML_PATH, 'utf8');
+  assert.ok(bundledHtml.includes('id="card-lightbox-overlay"'), 'Built bundle mounts #card-lightbox-overlay outside #app');
+  assert.ok(bundledHtml.includes('id="set-cardview"'), 'Settings popover includes Hand Card Display selector');
+  assert.ok(bundledHtml.includes('--stat-rng:#f7c65a'), 'Built bundle defines semantic stat palette variables');
+});
+
+test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portraits across HUD, tokens, and Fighter Info modals, and all 41 fighters have portraits', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const legacyKeys = ['sagat', 'ky', 'sol', 'mbison', 'millia'];
+    const allCharKeys = Object.keys(CHARACTERS).sort();
+    const photoKeys = Object.keys(FIGHTER_PHOTOS).sort();
+    const newKeys = allCharKeys.filter(k => !legacyKeys.includes(k));
+    const otherKeys = Object.keys(FIGHTER_PHOTOS).filter(k => !newKeys.includes(k));
+    const hsKeys = Object.keys(FIGHTER_HEADSHOTS).sort();
+    const validPhotoData = allCharKeys.every(k => {
+      const u = FIGHTER_PHOTOS[k];
+      return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && u.length > 1000;
+    });
+    const new24Keys = ['ragna', 'jin', 'noel', 'taokaka', 'tager', 'nu13', 'bang', 'hakumen', 'platinum', 'testament', 'leo', 'guile', 'chipp', 'anji', 'may', 'ramlethal', 'nagoriyuki', 'baiken', 'faust', 'ino', 'jacko', 'happychaos', 'zato1', 'goldlewis'];
+    const cleanNew24Photos = new24Keys.every(k => {
+      const u = FIGHTER_PHOTOS[k];
+      return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && !u.includes('NaN') && !u.includes('undefined');
+    });
+    const validHsData = newKeys.every(k => {
+      const u = FIGHTER_HEADSHOTS[k];
+      return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && !u.includes('NaN') && !u.includes('undefined');
+    });
+
+    const defaultSetting = UXSettings.get('headshotPortraits');
+    const ryuFullSrc = fighterPhotoSrc('ryu');
+    const sagatFullSrc = fighterPhotoSrc('sagat');
+
+    // Toggle headshot mode ON
+    UXSettings.set('headshotPortraits', true);
+    const ryuHsSrc = fighterPhotoSrc('ryu');
+    const sagatAfterSrc = fighterPhotoSrc('sagat');
+
+    // Verify in-match HUD, board tokens, and Fighter Info modal reflect headshot for ryu + unchanged full for sagat
+    const g = new GameController('ryu', 'sagat', 'student');
+    G = g;
+    g.confirmMulligan();
+    const matchHsHtml = document.getElementById('app').innerHTML;
+    g.openInfo('human');
+    const modalHsHtml = document.getElementById('app').innerHTML;
+    g.closeInfo();
+
+    // Toggle headshot mode OFF and confirm live repaint reverts to full portrait
+    UXSettings.set('headshotPortraits', false);
+    const ryuRevertedSrc = fighterPhotoSrc('ryu');
+    paint();
+    const matchFullHtml = document.getElementById('app').innerHTML;
+
+    return {
+      allCharKeys,
+      photoKeys,
+      newKeysSorted: [...newKeys].sort(),
+      otherKeysCount: otherKeys.length,
+      hsKeys,
+      validPhotoData,
+      cleanNew24Photos,
+      validHsData,
+      defaultSetting,
+      ryuChanged: ryuFullSrc !== ryuHsSrc && ryuHsSrc === FIGHTER_HEADSHOTS.ryu && ryuRevertedSrc === ryuFullSrc,
+      sagatUnchanged: sagatFullSrc === sagatAfterSrc && sagatFullSrc === FIGHTER_PHOTOS.sagat,
+      matchHsHtml,
+      modalHsHtml,
+      matchFullHtml,
+    };
+  })()`, ctx) as any;
+
+  assert.deepEqual([...res.photoKeys], [...res.allCharKeys], 'Every fighter in CHARACTERS (41/41) has a FIGHTER_PHOTOS portrait');
+  assert.equal(res.validPhotoData, true, 'All 41 full portraits are valid base64 JPEGs');
+  assert.equal(res.cleanNew24Photos, true, 'All 24 newly generated full portraits are valid base64 JPEGs without NaN/undefined');
+  assert.deepEqual([...res.hsKeys], [...res.newKeysSorted], 'FIGHTER_HEADSHOTS contains exclusively the 36 headshot-enabled fighters');
+  assert.equal(res.otherKeysCount, 5, 'Other 5 legacy photo fighters remain scoped out of headshots');
+  assert.equal(res.validHsData, true, 'All 36 headshot JPEGs are valid base64 without NaN/undefined');
+  assert.equal(res.defaultSetting, false, 'headshotPortraits defaults to false (Full Portraits)');
+  assert.equal(res.ryuChanged, true, 'fighterPhotoSrc switches cleanly between full and headshot and back without stale cache');
+  assert.equal(res.sagatUnchanged, true, 'Other photo fighters (Sagat) remain on FIGHTER_PHOTOS when headshot mode is enabled');
+  assert.ok(res.matchHsHtml.includes('data-portrait-kind="headshot" data-fighter-key="ryu"'), 'In-match HUD/token renders Ryu as headshot when enabled');
+  assert.ok(res.matchHsHtml.includes('data-portrait-kind="full" data-fighter-key="sagat"'), 'In-match HUD/token keeps Sagat as full when enabled');
+  assert.ok(res.modalHsHtml.includes('class="modal-silhouette-wrap"><img class="fighter-silhouette fighter-photo accent-you" data-portrait-kind="headshot" data-fighter-key="ryu"'), 'Fighter Info modal renders zoomed headshot when enabled');
+  assert.ok(!res.matchFullHtml.includes('data-portrait-kind="headshot"'), 'Disabling headshot mode reverts all in-match portraits back to full');
+
+  const bundledHtml = fs.readFileSync(HTML_PATH, 'utf8');
+  assert.ok(bundledHtml.includes('id="set-headshots"'), 'Settings popover includes Zoomed Headshots checkbox');
+  assert.ok(bundledHtml.includes('data-portrait-choice="headshot"'), 'Fighter Select & Opponent Select include Zoomed Headshots toggle');
+  assert.ok(bundledHtml.includes('FIGHTER_HEADSHOTS'), 'Built bundle includes FIGHTER_HEADSHOTS');
+});
+
+
 

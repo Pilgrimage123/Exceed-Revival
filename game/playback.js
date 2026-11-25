@@ -9,6 +9,8 @@ const UXSettings = (() => {
     reducedHitStop: false,
     colorblindPatterns: false,
     quickCommit: false,
+    cardViewMode: 'auto',
+    headshotPortraits: false,
   };
   let state = { ...defaults };
 
@@ -19,6 +21,8 @@ const UXSettings = (() => {
         if (raw) state = { ...defaults, ...JSON.parse(raw) };
       }
     } catch (_) {}
+    if (!['auto', 'full', 'compact'].includes(state.cardViewMode)) state.cardViewMode = 'auto';
+    state.headshotPortraits = !!state.headshotPortraits;
     applyBodyFlags();
     return state;
   }
@@ -38,6 +42,10 @@ const UXSettings = (() => {
     else document.body.classList.remove('cb-patterns');
     if (state.reducedHitStop) document.body.classList.add('reduced-flash');
     else document.body.classList.remove('reduced-flash');
+    if (document.body.dataset) {
+      document.body.dataset.cardView = state.cardViewMode || 'auto';
+      document.body.dataset.portraitStyle = state.headshotPortraits ? 'headshot' : 'full';
+    }
   }
 
   function get(k) { return state[k]; }

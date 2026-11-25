@@ -977,11 +977,11 @@ const HowToPlayUI = (() => {
 
               <button type="button" class="${zoneHotspotClass('stats')} htp-zone-stats" onclick="HowToPlayUI.setCardZone('stats')">
                 <div class="htp-live-stat-row">
-                  <div class="htp-stat-cell"><span class="htp-stat-k">R</span><span class="htp-stat-v">${safeEsc(HowToPlayLogic.formatRange(card.range))}</span></div>
-                  <div class="htp-stat-cell"><span class="htp-stat-k">P</span><span class="htp-stat-v">${card.pow}</span></div>
-                  <div class="htp-stat-cell"><span class="htp-stat-k">S</span><span class="htp-stat-v">${card.spd}</span></div>
-                  <div class="htp-stat-cell"><span class="htp-stat-k">A</span><span class="htp-stat-v">${card.arm}</span></div>
-                  <div class="htp-stat-cell"><span class="htp-stat-k">G</span><span class="htp-stat-v">${card.grd}</span></div>
+                  <div class="htp-stat-cell stat-rng"><span class="htp-stat-k">${typeof statIconSVG === 'function' ? statIconSVG('rng') : ''}R</span><span class="htp-stat-v">${safeEsc(HowToPlayLogic.formatRange(card.range))}</span></div>
+                  <div class="htp-stat-cell stat-pow"><span class="htp-stat-k">${typeof statIconSVG === 'function' ? statIconSVG('pow') : ''}P</span><span class="htp-stat-v">${card.pow}</span></div>
+                  <div class="htp-stat-cell stat-spd"><span class="htp-stat-k">${typeof statIconSVG === 'function' ? statIconSVG('spd') : ''}S</span><span class="htp-stat-v">${card.spd}</span></div>
+                  <div class="htp-stat-cell stat-arm"><span class="htp-stat-k">${typeof statIconSVG === 'function' ? statIconSVG('arm') : ''}A</span><span class="htp-stat-v">${card.arm}</span></div>
+                  <div class="htp-stat-cell stat-grd"><span class="htp-stat-k">${typeof statIconSVG === 'function' ? statIconSVG('grd') : ''}G</span><span class="htp-stat-v">${card.grd}</span></div>
                 </div>
                 <span class="htp-zone-dot">3</span>
               </button>
@@ -1124,11 +1124,11 @@ const HowToPlayUI = (() => {
               ${cardOptions(state.clash.p1.cardKey)}
             </select>
             <div class="htp-corner-stats">
-              <span>R ${safeEsc(p1.stats.rangeLabel)}</span>
-              <span>P ${p1.stats.pow}</span>
-              <span>S ${p1.stats.spd}</span>
-              <span>A ${p1.stats.arm}</span>
-              <span>G ${p1.stats.grd}</span>
+              ${typeof statPillHTML === 'function' ? statPillHTML('rng', p1.stats.rangeLabel) : `<span class="stat-rng">R ${safeEsc(p1.stats.rangeLabel)}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('pow', p1.stats.pow) : `<span class="stat-pow">P ${p1.stats.pow}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('spd', p1.stats.spd) : `<span class="stat-spd">S ${p1.stats.spd}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('arm', p1.stats.arm) : `<span class="stat-arm">A ${p1.stats.arm}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('grd', p1.stats.grd) : `<span class="stat-grd">G ${p1.stats.grd}</span>`}
             </div>
             <div class="htp-mod-row">
               <button type="button" class="htp-mod-btn ${state.clash.p1.ex ? 'active' : ''}" aria-pressed="${state.clash.p1.ex}" onclick="HowToPlayUI.toggleClashMod('p1','ex')">EX (+1 All)</button>
@@ -1163,11 +1163,11 @@ const HowToPlayUI = (() => {
               ${cardOptions(state.clash.p2.cardKey)}
             </select>
             <div class="htp-corner-stats">
-              <span>R ${safeEsc(p2.stats.rangeLabel)}</span>
-              <span>P ${p2.stats.pow}</span>
-              <span>S ${p2.stats.spd}</span>
-              <span>A ${p2.stats.arm}</span>
-              <span>G ${p2.stats.grd}</span>
+              ${typeof statPillHTML === 'function' ? statPillHTML('rng', p2.stats.rangeLabel) : `<span class="stat-rng">R ${safeEsc(p2.stats.rangeLabel)}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('pow', p2.stats.pow) : `<span class="stat-pow">P ${p2.stats.pow}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('spd', p2.stats.spd) : `<span class="stat-spd">S ${p2.stats.spd}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('arm', p2.stats.arm) : `<span class="stat-arm">A ${p2.stats.arm}</span>`}
+              ${typeof statPillHTML === 'function' ? statPillHTML('grd', p2.stats.grd) : `<span class="stat-grd">G ${p2.stats.grd}</span>`}
             </div>
             <div class="htp-mod-row">
               <button type="button" class="htp-mod-btn ${state.clash.p2.ex ? 'active' : ''}" aria-pressed="${state.clash.p2.ex}" onclick="HowToPlayUI.toggleClashMod('p2','ex')">EX (+1 All)</button>
@@ -1268,9 +1268,9 @@ const HowToPlayUI = (() => {
   function renderGlossarySection() {
     const ladderHTML = HowToPlayLogic.NORMALS_SPEED_LADDER.map(n => `
       <div class="htp-ladder-cell">
-        <div class="htp-ladder-spd">S${n.spd}</div>
+        <div class="htp-ladder-spd">${typeof statIconSVG === 'function' ? statIconSVG('spd') : ''}S${n.spd}</div>
         <div class="htp-ladder-name">${safeEsc(n.name)}</div>
-        <div class="htp-ladder-rng">R ${safeEsc(n.range)}</div>
+        <div class="htp-ladder-rng">${typeof statIconSVG === 'function' ? statIconSVG('rng') : ''}R ${safeEsc(n.range)}</div>
       </div>
     `).join('');
 

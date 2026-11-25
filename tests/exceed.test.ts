@@ -833,3 +833,67 @@ test('Trainer & Study Mode degrade cleanly on partial matchups and render Native
   assert.equal(res.renderedHasDiagnostics, true);
   assert.equal(res.renderedHasUndefined, false);
 });
+
+test('Recommended beginner roster includes 6 fighters (adding Giovanna and Potemkin) in 3x2 grid and CPU select order', () => {
+  const { evalExpr, dom } = loadGameSandbox();
+  const res = evalExpr<{
+    recKeys: string[];
+    allValid: boolean;
+    allHavePhotos: boolean;
+    allHaveHeadshots: boolean;
+    hasRecGridClass: boolean;
+    recCardCount: number;
+    collapsedToggleShows41: boolean;
+    expandedCardCount: number;
+    aiFirstSixKeys: string[];
+    aiTotalCount: number;
+  }>(`
+    (() => {
+      const recKeys = [...RECOMMENDED_BEGINNER_KEYS];
+      const allValid = recKeys.every(k => Boolean(CHARACTERS[k]));
+      const allHavePhotos = recKeys.every(k => Boolean(FIGHTER_PHOTOS[k]));
+      const allHaveHeadshots = recKeys.every(k => Boolean(FIGHTER_HEADSHOTS[k]));
+
+      rosterExpanded = false;
+      renderCharSelect();
+      const charCardsHtml = document.getElementById('charCards').innerHTML;
+      const hasRecGridClass = charCardsHtml.includes('char-cards char-cards-recommended');
+      const recCardCount = (charCardsHtml.match(/class="fighter-card"/g) || []).length;
+      const collapsedToggleShows41 = charCardsHtml.includes('Show all 41 fighters');
+
+      toggleRosterExpanded();
+      const expandedHtml = document.getElementById('charCards').innerHTML;
+      const expandedCardCount = (expandedHtml.match(/class="fighter-card"/g) || []).length;
+
+      renderAiCharSelect();
+      const aiHtml = document.getElementById('aiCharCards').innerHTML;
+      const aiPicks = [...aiHtml.matchAll(/selectAiCharacter\\('([^']+)'\\)/g)].map(m => m[1]);
+
+      return {
+        recKeys,
+        allValid,
+        allHavePhotos,
+        allHaveHeadshots,
+        hasRecGridClass,
+        recCardCount,
+        collapsedToggleShows41,
+        expandedCardCount,
+        aiFirstSixKeys: aiPicks.slice(0, 6),
+        aiTotalCount: aiPicks.length,
+      };
+    })()
+  `);
+
+  assert.deepEqual([...res.recKeys], ['ryu', 'ken', 'cammy', 'zangief', 'giovanna', 'potemkin']);
+  assert.equal(res.allValid, true);
+  assert.equal(res.allHavePhotos, true);
+  assert.equal(res.allHaveHeadshots, true);
+  assert.equal(res.hasRecGridClass, true);
+  assert.equal(res.recCardCount, 6);
+  assert.equal(res.collapsedToggleShows41, true);
+  assert.equal(res.expandedCardCount, 41);
+  assert.deepEqual([...res.aiFirstSixKeys], ['ryu', 'ken', 'cammy', 'zangief', 'giovanna', 'potemkin']);
+  assert.equal(res.aiTotalCount, 41);
+  assert.ok(dom);
+});
+

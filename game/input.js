@@ -51,6 +51,7 @@ const InputManager = (() => {
       const sp = typeof document !== 'undefined' ? document.getElementById('settings-popover') : null;
       if (sp && sp.style && sp.style.display && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
       if (typeof G !== 'undefined' && G) {
+        if (G.cardModal && typeof G.closeCardModal === 'function') { G.closeCardModal(); return; }
         if (G.infoModal) { G.closeInfo(); return; }
         if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
         if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
@@ -90,11 +91,22 @@ const InputManager = (() => {
       return;
     }
 
+    if (typeof G !== 'undefined' && G && G.cardModal) {
+      return;
+    }
+
     if ((key === 'Enter' || key === ' ') && !ev.repeat && activateCustomInteractiveTarget(ev)) {
       return;
     }
 
     if (typeof G === 'undefined' || !G) return;
+
+    if ((key === 'v' || key === 'V') && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat) {
+      if (typeof G.openActiveCardModal === 'function' && G.openActiveCardModal()) {
+        if (typeof ev.preventDefault === 'function') ev.preventDefault();
+      }
+      return;
+    }
 
     if (key === 'Shift') {
       if (typeof EventBus !== 'undefined') EventBus.emit('OnToggleOptionalBranch', { enabled: true });

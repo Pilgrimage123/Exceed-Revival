@@ -139,6 +139,10 @@ class GameController {
     this.mobilePanelTab = 'inspector'; // 'inspector' | 'log' | 'normals' | 'coach' (portrait mobile dock)
     this.rightRailCollapsed = false;
     this.inspectorTarget = null; // { kind: 'card' | 'innate' | 'boost', ... } | null
+    this.cardModal = null; // { card, rawCard, isEX, uid, sourceLabel, canQuickPlay } | null
+    this._lastCardTap = { uid: null, time: 0 };
+    this._longPressTimer = null;
+    this._suppressNextCardClickUid = null;
     this.coachUnreadDot = false;
     this.draggingCardUid = null;
   }
@@ -2112,6 +2116,180 @@ class GameController {
       : null;
   }
 
+  getCardViewMode() {
+    const mode = (typeof UXSettings !== 'undefined' && UXSettings.get) ? UXSettings.get('cardViewMode') : 'auto';
+    return ['auto', 'full', 'compact'].includes(mode) ? mode : 'auto';
+  }
+
+  setCardViewMode(mode) {
+    if (!['auto', 'full', 'compact'].includes(mode)) return;
+    if (typeof UXSettings !== 'undefined' && UXSettings.set) {
+      UXSettings.set('cardViewMode', mode);
+    }
+    if (typeof document !== 'undefined') {
+      if (document.body && document.body.dataset) document.body.dataset.cardView = mode;
+      if (document.querySelector) {
+        const stage = document.querySelector('.gameplay-stage');
+        if (stage && stage.dataset) stage.dataset.cardView = mode;
+      }
+      const sel = document.getElementById('set-cardview');
+      if (sel && sel.value !== undefined) sel.value = mode;
+    }
+    render();
+  }
+
+  cycleCardViewMode() {
+    const order = ['auto', 'full', 'compact'];
+    const cur = this.getCardViewMode();
+    const next = order[(order.indexOf(cur) + 1) % order.length];
+    this.setCardViewMode(next);
+    return next;
+  }
+
+  isCardModalOpen() {
+    return !!this.cardModal;
+  }
+
+  openCardModal(uidOrKey, opts = {}) {
+    const baseCard = this.findInspectableCard(uidOrKey) || (typeof resolveCardDef === 'function' ? resolveCardDef(uidOrKey) : null);
+    if (!baseCard) return false;
+    const isEX = !!(opts.isEX || baseCard.isEX);
+    const displayCard = isEX && !baseCard.isEX
+      ? { ...baseCard, isEX: true, pow: (baseCard.pow || 0) + 1, spd: (baseCard.spd || 0) + 1, arm: (baseCard.arm || 0) + 1, grd: (baseCard.grd || 0) + 1 }
+      : baseCard;
+    const human = this.human();
+    const inHand = !!(human && human.hand && human.hand.some(c => c && baseCard.uid && c.uid === baseCard.uid));
+    const isHumanTurn = !!(this.engine && this.engine.active === this.humanId && !this.engine.gameOver);
+    const canQuickPlay = !!(inHand && isHumanTurn && this.mode === 'awaiting_action');
+    const canPayUltra = !!(baseCard.type !== 'ultra' || (this.engine && human && this.engine.canPayUltra(human, baseCard)));
+    const hasExPair = !!(inHand && human && human.hand.filter(c => c.key === baseCard.key).length >= 2 && canPayUltra);
+    const boostForce = (baseCard.boost && baseCard.boost.force) || 0;
+    const canPayBoost = !!(baseCard.boost && (boostForce === 0 || (this.engine && human && this.engine.canPayForce(human, boostForce, baseCard.uid))));
+    this.cardModal = {
+      card: displayCard,
+      rawCard: baseCard,
+      isEX,
+      uid: baseCard.uid || uidOrKey,
+      sourceLabel: opts.sourceLabel || (inHand ? 'In Hand' : 'Card Reference'),
+      canQuickPlay,
+      canPayUltra,
+      hasExPair,
+      canPayBoost,
+    };
+    if (typeof renderCardLightboxModal === 'function') renderCardLightboxModal();
+    return true;
+  }
+
+  closeCardModal() {
+    this.cardModal = null;
+    if (typeof renderCardLightboxModal === 'function') renderCardLightboxModal();
+  }
+
+  openActiveCardModal() {
+    if (this.inspectorTarget) {
+      if (this.inspectorTarget.kind === 'card' && this.inspectorTarget.card) {
+        return this.openCardModal(this.inspectorTarget.uid || this.inspectorTarget.card.uid || this.inspectorTarget.card.key, {
+          isEX: !!this.inspectorTarget.isEX,
+        });
+      }
+      if (this.inspectorTarget.kind === 'boost' && this.inspectorTarget.card) {
+        return this.openCardModal(this.inspectorTarget.card.uid || this.inspectorTarget.card.key, {
+          sourceLabel: this.inspectorTarget.who === 'human' ? 'Your Active Boost' : 'CPU Active Boost',
+        });
+      }
+    }
+    if (this.selectedActionCardUid) {
+      return this.openCardModal(this.selectedActionCardUid);
+    }
+    return false;
+  }
+
+  modalPlayCard(actionType) {
+    const modal = this.cardModal;
+    this.closeCardModal();
+    if (!modal || !modal.rawCard || !modal.rawCard.uid) return;
+    const uid = modal.rawCard.uid;
+    const p = this.human();
+    if (!p || !p.hand.some(c => c.uid === uid)) return;
+    if (this.mode === 'awaiting_action') {
+      this.selectedActionCardUid = uid;
+      this.confirmActionCard(actionType);
+      return;
+    }
+    if (this.mode === 'strike_select') {
+      if (actionType === 'strike') {
+        this.pickStrikeCard(uid);
+      } else if (actionType === 'ex') {
+        const other = p.hand.find(c => c.key === modal.rawCard.key && c.uid !== uid);
+        if (other) this.pickExStrike(uid, other.uid);
+      }
+      return;
+    }
+    if (this.mode === 'defend_select') {
+      if (actionType === 'strike') {
+        this.humanDefend({ type: 'hand', uid });
+      } else if (actionType === 'ex') {
+        const other = p.hand.find(c => c.key === modal.rawCard.key && c.uid !== uid);
+        if (other) this.humanDefend({ type: 'ex', uid1: uid, uid2: other.uid });
+      }
+      return;
+    }
+    if (this.mode === 'boost_select' && actionType === 'boost') {
+      this.pickBoostCard(uid);
+    }
+  }
+
+  onCardContextMenu(ev, uid, isEX) {
+    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+    this.openCardModal(uid, { isEX: !!isEX });
+    return false;
+  }
+
+  onCardDoubleClick(ev, uid, isEX) {
+    if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+    if (ev && typeof ev.stopPropagation === 'function') ev.stopPropagation();
+    this._suppressNextCardClickUid = uid;
+    this.openCardModal(uid, { isEX: !!isEX });
+    setTimeout(() => {
+      if (this._suppressNextCardClickUid === uid) this._suppressNextCardClickUid = null;
+    }, 360);
+    return false;
+  }
+
+  onCardPointerUp(ev, uid, isEX) {
+    if (!ev || ev.pointerType !== 'touch') return;
+    const now = Date.now();
+    const prev = this._lastCardTap || { uid: null, time: 0 };
+    if (prev.uid === uid && (now - prev.time) <= 320) {
+      this._lastCardTap = { uid: null, time: 0 };
+      this._suppressNextCardClickUid = uid;
+      if (typeof ev.preventDefault === 'function') ev.preventDefault();
+      this.openCardModal(uid, { isEX: !!isEX });
+      setTimeout(() => {
+        if (this._suppressNextCardClickUid === uid) this._suppressNextCardClickUid = null;
+      }, 360);
+      return;
+    }
+    this._lastCardTap = { uid, time: now };
+  }
+
+  onCardTouchStart(ev, uid, isEX) {
+    if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
+    this._longPressTimer = setTimeout(() => {
+      this._longPressTimer = null;
+      this._suppressNextCardClickUid = uid;
+      this.openCardModal(uid, { isEX: !!isEX });
+      setTimeout(() => {
+        if (this._suppressNextCardClickUid === uid) this._suppressNextCardClickUid = null;
+      }, 400);
+    }, 450);
+  }
+
+  onCardTouchEnd() {
+    if (this._longPressTimer) { clearTimeout(this._longPressTimer); this._longPressTimer = null; }
+  }
+
   onCardHover(uid, isEX) {
     const baseCard = this.findInspectableCard(uid);
     if (!baseCard) return;
@@ -2189,6 +2367,10 @@ class GameController {
   }
 
   selectActionCard(uid) {
+    if (this._suppressNextCardClickUid && this._suppressNextCardClickUid === uid) {
+      this._suppressNextCardClickUid = null;
+      return;
+    }
     if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     this.selectedActionCardUid = (this.selectedActionCardUid === uid) ? null : uid;
     if (this.selectedActionCardUid) this.mobilePanelTab = 'inspector';

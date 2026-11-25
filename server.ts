@@ -20,6 +20,8 @@ function ensureFreshGameBundle() {
 
 ensureFreshGameBundle();
 
+app.use(express.static(path.resolve(__dirname, 'public')));
+
 app.get('/', (_req, res) => {
   res.sendFile(htmlPath);
 });

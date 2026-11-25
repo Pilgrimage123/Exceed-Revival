@@ -11,6 +11,46 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-25 — Generate Matching Portraits & Zoomed Headshots for All 24 Remaining Fighters (`game/portraits.js`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
+
+- Generated matching comic-book arcade fighting-game portraits for all 24 fighters previously using SVG silhouettes (`ragna`, `jin`, `noel`, `taokaka`, `tager`, `nu13`, `bang`, `hakumen`, `platinum`, `testament`, `leo`, `guile`, `chipp`, `anji`, `may`, `ramlethal`, `nagoriyuki`, `baiken`, `faust`, `ino`, `jacko`, `happychaos`, `zato1`, `goldlewis`) and processed them via `scripts/import-portraits.mjs` into `FIGHTER_PHOTOS` and headroom-tuned `480×600` `FIGHTER_HEADSHOTS` with zero `NaN`/`undefined` base64 substrings.
+- Achieved 100% portrait coverage across all 41 fighters in `CHARACTERS` (36 headshot-enabled + 5 legacy full-portrait fighters) and updated `tests/strike-preview.test.ts` and `docs/portrait-upload-guide.md`.
+
+## 2026-11-25 — Fix Dan White-Matte Pockets & Add Potemkin Portrait + Headshot (`scripts/import-portraits.mjs`, `game/portraits.js`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
+
+- Fixed `detectBackdropMode` and `removeBackdrop` in `scripts/import-portraits.mjs` so solid white-matte inputs are not misclassified as checkerboards, enclosed `#ffffff` backdrop pockets trapped between hair/limbs/aura ribbons are removed cleanly (while protecting skin speculars, teeth, and white garments via dark-ink/soft-neutral boundary checks), and 1–2px white-matte edge halos are color-decontaminated.
+- Re-extracted `dan` (eliminating all residual white backdrop spots) and generated + integrated matching-style GG Strive artwork for `potemkin` (`potemkin_portrait_1795613188272.jpg`) into `FIGHTER_PHOTOS` and `FIGHTER_HEADSHOTS` (`12` headshot-enabled fighters total).
+
+## 2026-11-25 — Replace Cammy, Vega & Akuma Portraits, Add Dan Portrait + Zoomed Headshots (`game/portraits.js`, `game/shell.html`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
+
+- Processed raw uploads (`image_a0963f8a.png` → `cammy`, `image_01964528.png` → `vega`, `image_bb301da6.png` → `akuma`) and generated matching-style artwork for `dan` (`dan_hibiki_portrait_1795612409135.jpg`) via `scripts/import-portraits.mjs`, updating `FIGHTER_PHOTOS` and adding `480×600` face-centered `FIGHTER_HEADSHOTS` JPEGs.
+- Generalized portrait framing labels in `game/shell.html` and updated `tests/strike-preview.test.ts` + `docs/portrait-upload-guide.md` for all 11 headshot-enabled fighters.
+
+## 2026-11-25 — Automated Portrait Ingestion Pipeline & `game/portraits.js` Extraction (`game/portraits.js`, `game/render.js`, `scripts/build-game.mjs`, `scripts/import-portraits.mjs`, `docs/portrait-upload-guide.md`)
+
+- Extracted `FIGHTER_PHOTOS` and `FIGHTER_HEADSHOTS` out of `game/render.js` (shrinking it from `5.47 MB` to `126 KB`) into `game/portraits.js`, bundled before `render.js` in `scripts/build-game.mjs`.
+- Added `scripts/import-portraits.mjs` (`--stage --serve` / `--apply`) featuring automatic alpha/checkerboard/white-matte extraction (protecting white cloth), automated face/upper-center `480×600` (`4:5`) headshot cropping, `NaN`/`undefined`-free JPEG quality stepping, and a 4-aspect (`3:4` | `4:5` | `1:1` | `5:6`) QA contact sheet.
+- Updated `docs/portrait-upload-guide.md` with the replaced-fighter inventory and AI-owned ingestion playbook so future raw portrait drops need zero user naming or framing prep.
+
+## 2026-11-25 — Zoomed-In Fighter Headshots Option for 7 New Portraits (`game/render.js`, `game/shell.html`, `game/playback.js`, `tests/strike-preview.test.ts`)
+
+- Added `FIGHTER_HEADSHOTS` (`game/render.js`) containing dedicated `480×600` (`4:5`) face-centered headshots cropped from the 7 newly uploaded artworks (`ryu`, `zangief`, `chunli`, `ken`, `axl`, `giovanna`, `cviper`) with checkerboard removal and zero `"NaN"`/`"undefined"` base64 payloads, leaving the other 8 photo fighters unchanged.
+- Updated `fighterPhotoSrc()` / `fighterSilhouette()` (`game/render.js`) with a mode-keyed Blob URL cache (`<key>:full` vs `<key>:headshot`) so toggling applies immediately across Fighter Select cards, Opponent Select cards, HUD thumbnails, Arena Board tokens, and Fighter Info modals.
+- Added persisted `headshotPortraits` setting (default `false`) in `UXSettings` (`game/playback.js`) and synchronized segmented controls on Fighter Select, Opponent Select, and the `#settings-popover` checkbox (`#set-headshots`) in `game/shell.html`, plus automated tests in `tests/strike-preview.test.ts`.
+
+## 2026-11-25 — Replace Ryu, Zangief, Chun-Li, Ken, Axl, Giovanna & C. Viper Fighter Portraits (`game/render.js`, `game/shell.html`)
+
+- Replaced the legacy `ryu`, `zangief`, `chunli`, `ken`, `axl`, `giovanna`, and `cviper` base64 portraits in `FIGHTER_PHOTOS` (`game/render.js`) with newly provided artwork resized to `480px` wide (JPEG quality `86`–`88`, matching existing `FIGHTER_PHOTOS` sizing), removing baked-in checkerboards via adaptive grey-grid and flatness-filtered cutout compositing onto dark radial backdrops while preserving white garments, skin/knuckle highlights, and aura lightning.
+- Added `object-position: top center` to `.fighter-photo` (`game/shell.html`) so square HUD thumbnails (`.slim-hud-bar`) and life-panel portraits preserve head/hair framing consistently across all fighters.
+
+## 2026-11-25 — Inline Fighter Innates, Adaptive Cards, Full Card Lightbox & Unified Stat Icon/Color Pills (`game/render.js`, `game/shell.html`, `game/ui.js`, `game/input.js`, `game/playback.js`, `game/telegraph.js`, `game/howtoplay.js`)
+
+- Added responsive inline active ability strips (`.hud-innate-inline`) directly inside Fighter HUD panels (`lifeBar()`) so Normal Innates and Exceeded abilities appear in full whenever viewport space permits (automatically collapsing to the `✦ Innate`/`★ Exceed` pill on cramped screens).
+- Added adaptive hand card density (`cardViewMode: 'auto' | 'full' | 'compact'` persisted in `UXSettings`), expanding cards with Strike/Critical/Boost rules text automatically on spacious viewports and providing a quick `Cards: Auto/Full/Compact` utility strip toggle plus a Settings popover selector (`#set-cardview`).
+- Added a Full Playing Card Lightbox modal (`#card-lightbox-overlay` mounted outside `#app`) opened via double-tap, double-click, right-click, touch long-press fallback, Inspector `Full Card` button, or `V` key (closed via `Escape` or backdrop click) without repainting `#app`, displaying complete Strike/Boost halves, live board context, and quick-play actions.
+- Unified Range (Amber Crosshair), Power (Crimson Sword), Speed (Cyan Lightning), Armor (Sky Shield), and Guard (Violet Bastion Crest) with distinct color-tinted pills and inline SVG icons (`statIconSVG`/`statPillHTML`) across hand cards, Universal Inspector, Clash Summary Banner, Arena Range Ruler, Printed-vs-Actual Strike Breakdown, Full Card Lightbox, and How to Play Command Manual.
+- Added automated regression tests in `tests/strike-preview.test.ts`.
+
 ## 2026-11-24 — Mobile space optimization & Enriched Arena Stage (`game/render.js`, `game/shell.html`, `game/ui.js`, `game/telegraph.js`)
 
 - Reclaimed dead space around the 9-space arena across mobile, tablet, and desktop by wrapping the board in an Enriched Arena Stage Frame (`.arena-board-frame`) with a live top status strip (`.arena-top-strip` / `.arena-status-bar`, seamlessly replaced by `#clash-banner-slot` via `.has-clash-banner` on card preview), larger fighter portraits/silhouettes, space indices (`1`–`9`), corner/between-fighter markers, dynamic stage spotlight (`--arena-focus-x`), and a structured bottom Range Ruler (`.arena-range-bar`).
