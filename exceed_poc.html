@@ -1128,11 +1128,17 @@
   @media (min-width:1024px){
     body.gameplay-active{height:100dvh;overflow:hidden;}
     #app.gameplay-stage-active{max-width:none;width:100%;height:100dvh;padding:8px 12px;margin:0;overflow:hidden;}
-    .gameplay-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,28%);gap:10px;height:100%;min-height:0;}
-    .gameplay-stage.rail-collapsed{grid-template-columns:minmax(0,1fr) 44px;}
+    .gameplay-stage{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;height:100%;min-height:0;}
+    .gameplay-stage.rail-collapsed{grid-template-columns:minmax(0,1fr);}
     .main-stage{height:100%;min-height:0;}
     .right-rail{height:100%;min-height:0;}
   }
+
+  .top-utility-strip{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:0 0 auto;flex-wrap:wrap;}
+  .top-utility-strip .util-mini-btn{min-height:28px;padding:3px 9px;font-size:11.5px;border-radius:6px;border:1px solid #303f60;background:#151c2c;color:var(--text);cursor:pointer;font-weight:700;}
+  .top-utility-strip .util-mini-btn.active{border-color:var(--you);color:var(--you);}
+  .rail-drawer-backdrop{position:fixed;inset:0;background:rgba(5,7,10,.45);z-index:94;}
+  .right-rail.drawer-open{position:fixed;top:8px;right:8px;bottom:8px;width:min(380px,92vw);height:auto;z-index:95;box-shadow:-10px 0 32px rgba(0,0,0,.65);}
 
   /* Band 1: Slim Fighter HUDs */
   .slim-hud-row{flex:0 0 auto;display:flex;gap:8px;margin:0;}
@@ -2662,6 +2668,7 @@
   <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
   <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
   <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
+  <div class="set-row"><label for="set-pause-strike">Pause after Strike</label><input id="set-pause-strike" type="checkbox" onchange="UXSettings.set('pauseAfterStrike', this.checked)"></div>
   <div class="set-row"><label for="set-cardview">Hand Card Display</label><select id="set-cardview" class="set-select" onchange="if(typeof G!=='undefined'&&G&&G.setCardViewMode) G.setCardViewMode(this.value); else UXSettings.set('cardViewMode', this.value);"><option value="auto">Auto (Responsive)</option><option value="full">Full Cards</option><option value="compact">Compact Tiles</option></select></div>
   <div class="set-row"><label for="set-headshots">Zoomed Headshots</label><input id="set-headshots" type="checkbox" onchange="setHeadshotPortraits(this.checked)"></div>
 </div>
@@ -2765,6 +2772,8 @@ function toggleSettingsPopover(forceState) {
     document.getElementById('set-reduced').checked = !!s.reducedHitStop;
     document.getElementById('set-cb').checked = !!s.colorblindPatterns;
     document.getElementById('set-qc').checked = !!s.quickCommit;
+    const psEl = document.getElementById('set-pause-strike');
+    if (psEl) psEl.checked = !!s.pauseAfterStrike;
     const cvEl = document.getElementById('set-cardview');
     if (cvEl) cvEl.value = s.cardViewMode || 'auto';
     const hsEl = document.getElementById('set-headshots');
@@ -16012,7 +16021,7 @@ class GameController {
     this.showNormalMatrix = false;
     this.rightRailTab = 'log'; // 'log' | 'normals' | 'coach'
     this.mobilePanelTab = 'inspector'; // 'inspector' | 'log' | 'normals' | 'coach' (portrait mobile dock)
-    this.rightRailCollapsed = false;
+    this.rightRailCollapsed = true;
     this.inspectorTarget = null; // { kind: 'card' | 'innate' | 'boost', ... } | null
     this.cardModal = null; // { card, rawCard, isEX, uid, sourceLabel, canQuickPlay } | null
     this._lastCardTap = { uid: null, time: 0 };
@@ -17352,7 +17361,12 @@ class GameController {
     this.shakeOnRender = !!(res.value && res.value.maxSingleHitDamage >= 5);
     render();
     if (typeof StrikePlaybackController !== 'undefined' && typeof document !== 'undefined') {
-      StrikePlaybackController.start(this.engine.lastStrikeInfo);
+      const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!this.beginner;
+      const shouldAutoAdvance = !pauseAfter && !this.engine.gameOver && typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+      StrikePlaybackController.start(
+        this.engine.lastStrikeInfo,
+        shouldAutoAdvance ? () => { if (this.mode === 'strike_result') this.continueAfterStrikeResult(); } : null
+      );
     }
   }
   resolveGraspChoice(amount, direction) { this.driveStrikeGen(this.pendingGen, { amount, direction }); }
@@ -17379,7 +17393,22 @@ class GameController {
   // null to decline (leaving Eddie exactly where he already was, in or out of play).
   resolvePlaceEddie(pos) { this.driveStrikeGen(this.pendingGen, pos == null ? null : Number(pos)); }
 
-  continueAfterStrikeResult() { this.afterStrike(this.pendingStrikeResult); }
+  continueAfterStrikeResult() {
+    if (this.mode !== 'strike_result') return;
+    this.afterStrike(this.pendingStrikeResult);
+  }
+
+  toggleLastStrikeModal() {
+    if (!this.engine || !this.engine.lastStrikeInfo) return;
+    this.showLastStrikeModal = !this.showLastStrikeModal;
+    render();
+  }
+
+  closeLastStrikeModal() {
+    if (!this.showLastStrikeModal) return;
+    this.showLastStrikeModal = false;
+    render();
+  }
 
   // ----- discard-to-7 (human) -----
   toggleDiscardChoice(uid) {
@@ -18609,6 +18638,7 @@ const UXSettings = (() => {
     reducedHitStop: false,
     colorblindPatterns: false,
     quickCommit: false,
+    pauseAfterStrike: false,
     cardViewMode: 'auto',
     headshotPortraits: false,
   };
@@ -18727,12 +18757,18 @@ const StrikePlaybackController = (() => {
     }, reduced ? 450 : 1200);
   }
 
-  function start(strikeInfo) {
+  let onCompleteCb = null;
+
+  function start(strikeInfo, onComplete) {
     stop();
-    if (!strikeInfo || !Array.isArray(strikeInfo.timeline) || strikeInfo.timeline.length === 0) return;
+    if (!strikeInfo || !Array.isArray(strikeInfo.timeline) || strikeInfo.timeline.length === 0) {
+      if (typeof onComplete === 'function') onComplete();
+      return;
+    }
     activeStrikeInfo = strikeInfo;
     activeStepIdx = 0;
     skipped = false;
+    onCompleteCb = typeof onComplete === 'function' ? onComplete : null;
 
     const advance = () => {
       if (skipped || !activeStrikeInfo) return;
@@ -18777,8 +18813,12 @@ const StrikePlaybackController = (() => {
 
       activeStepIdx++;
       if (activeStepIdx < tl.length) {
-        const delay = (step.confirmedLethal && !UXSettings.get('reducedHitStop')) ? 850 : 320;
+        const delay = (step.confirmedLethal && !UXSettings.get('reducedHitStop')) ? 850 : 280;
         timer = setTimeout(advance, delay);
+      } else if (onCompleteCb) {
+        const cb = onCompleteCb;
+        onCompleteCb = null;
+        timer = setTimeout(cb, 350);
       }
     };
 
@@ -18787,6 +18827,8 @@ const StrikePlaybackController = (() => {
 
   function skip() {
     if (!activeStrikeInfo || !activeStrikeInfo.timeline) return;
+    const cb = onCompleteCb;
+    onCompleteCb = null;
     stop();
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
@@ -18794,6 +18836,7 @@ const StrikePlaybackController = (() => {
     activeStepIdx = activeStrikeInfo.timeline.length - 1;
     const slot = typeof document !== 'undefined' ? document.getElementById('trigger-timeline-slot') : null;
     if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
+    if (typeof cb === 'function') cb();
   }
 
   function getCurrentStepIdx(strikeInfo) {
@@ -20374,8 +20417,10 @@ const InputManager = (() => {
       if (sp && sp.style && sp.style.display && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
       if (typeof G !== 'undefined' && G) {
         if (G.cardModal && typeof G.closeCardModal === 'function') { G.closeCardModal(); return; }
+        if (G.showLastStrikeModal && typeof G.closeLastStrikeModal === 'function') { G.closeLastStrikeModal(); return; }
         if (G.infoModal) { G.closeInfo(); return; }
         if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
+        if (!G.rightRailCollapsed && typeof G.toggleRightRail === 'function') { G.toggleRightRail(); return; }
         if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
       }
       if (typeof FullscreenController !== 'undefined' && FullscreenController.isViewportFallback && FullscreenController.isViewportFallback()) {
@@ -24138,12 +24183,7 @@ function rightRailHTML(g) {
   const fsBtnHTML = `<button type="button" class="util-mini-btn fullscreen-btn${isFs ? ' active' : ''}" data-fullscreen-btn="true" onclick="toggleFullscreen()" aria-pressed="${isFs ? 'true' : 'false'}" aria-label="${fsLabel}" title="${fsLabel}">${isFs ? '\u2922' : '\u26F6'}</button>`;
 
   if (collapsed) {
-    return `<aside class="right-rail collapsed" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
-      <div class="rail-utility-strip collapsed">
-        <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Expand Right Rail" aria-label="Expand Right Rail" aria-expanded="false">◀</button>
-        ${fsBtnHTML}
-      </div>
-    </aside>`;
+    return '';
   }
 
   let tabBody = '';
@@ -24167,7 +24207,8 @@ function rightRailHTML(g) {
   const cardModeLabel = cardMode === 'full' ? 'Full' : (cardMode === 'compact' ? 'Compact' : 'Auto');
   const cardViewBtnHTML = `<button type="button" class="util-mini-btn card-view-btn${cardMode !== 'auto' ? ' active' : ''}" data-card-view-btn="true" onclick="G.cycleCardViewMode()" title="Hand card display: Auto (expands when space permits), Full, or Compact. Double-tap or right-click any card for full view."><span class="cv-prefix">Cards: </span>${cardModeLabel}</button>`;
 
-  return `<aside class="right-rail" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
+  return `<div class="rail-drawer-backdrop" onclick="G.toggleRightRail()"></div>
+  <aside class="right-rail drawer-open" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
     <div class="rail-utility-strip">
       <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
       <button type="button" class="settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
@@ -24508,6 +24549,13 @@ function actionPromptBarHTML(g) {
   }
 
   if (g.mode === 'strike_result') {
+    const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!g.beginner;
+    if (!pauseAfter) {
+      return `<div class="action-prompt-row">
+        <span class="prompt-label">Resolving Strike…</span>
+        <button type="button" class="big-btn" onclick="if(typeof StrikePlaybackController!=='undefined') StrikePlaybackController.skip(); else G.continueAfterStrikeResult();">Skip ⏭</button>
+      </div>`;
+    }
     const beats = buildStrikeBeats(engine.lastStrikeInfo);
     const beginner = !!g.beginner;
     const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
@@ -24848,6 +24896,33 @@ function setGameplayBodyClass(active, gameStateName) {
   }
 }
 
+function topUtilityStripHTML(g) {
+  const isMuted = typeof UXSettings !== 'undefined' && !!UXSettings.get('muted');
+  const isFs = typeof isFullscreenActive === 'function' && isFullscreenActive();
+  const fsLabel = isFs ? 'Exit Fullscreen (F)' : 'Toggle Fullscreen (F)';
+  const hasLastStrike = !!(g.engine && g.engine.lastStrikeInfo);
+  return `<div class="top-utility-strip">
+    ${hasLastStrike ? `<button type="button" class="util-mini-btn" onclick="G.toggleLastStrikeModal()" title="View Last Strike Recap">Last Strike</button>` : ''}
+    <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
+    <button type="button" class="util-mini-btn settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
+    <button type="button" class="util-mini-btn${isFs ? ' active' : ''}" data-fullscreen-btn="true" onclick="toggleFullscreen()" aria-pressed="${isFs ? 'true' : 'false'}" aria-label="${fsLabel}" title="${fsLabel}">${isFs ? '\u2922' : '\u26F6'}</button>
+    <button type="button" class="util-mini-btn" onclick="openHowToPlay()" title="How to Play">Rules</button>
+    <button type="button" class="util-mini-btn panel-toggle-btn${!g.rightRailCollapsed ? ' active' : ''}" onclick="G.toggleRightRail()" aria-expanded="${!g.rightRailCollapsed ? 'true' : 'false'}" title="Toggle Log, Normals & Coach Panel">${g.rightRailCollapsed ? '◀ Panel' : '✕ Panel'}</button>
+  </div>`;
+}
+
+function lastStrikeModalHTML(g) {
+  return `<div class="modal-overlay" onclick="if(event.target===this) G.closeLastStrikeModal()">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <b>Last Strike Recap</b>
+        <button type="button" class="modal-close" onclick="G.closeLastStrikeModal()">✕</button>
+      </div>
+      <div class="modal-body">${strikeBreakdownHTML(g)}</div>
+    </div>
+  </div>`;
+}
+
 function paint() {
   const app = document.getElementById('app');
   if (!G) {
@@ -24878,6 +24953,7 @@ function paint() {
   app.innerHTML = `
     <div class="gameplay-stage${G.rightRailCollapsed ? ' rail-collapsed' : ''}" data-mobile-tab="${mobileTab}" data-card-view="${cardViewMode}">
       <main class="main-stage">
+        ${topUtilityStripHTML(G)}
         <div class="top-bar slim-hud-row">
           ${lifeBar(G, 'human')}
           ${lifeBar(G, 'ai')}
@@ -24895,6 +24971,7 @@ function paint() {
       ${rightRailHTML(G)}
     </div>
     ${G.infoModal ? infoModalHTML(G) : ''}
+    ${G.showLastStrikeModal && engine.lastStrikeInfo ? lastStrikeModalHTML(G) : ''}
   `;
   applyPendingShake(app);
   if (typeof StrikePreviewController !== 'undefined') {

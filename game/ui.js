@@ -137,7 +137,7 @@ class GameController {
     this.showNormalMatrix = false;
     this.rightRailTab = 'log'; // 'log' | 'normals' | 'coach'
     this.mobilePanelTab = 'inspector'; // 'inspector' | 'log' | 'normals' | 'coach' (portrait mobile dock)
-    this.rightRailCollapsed = false;
+    this.rightRailCollapsed = true;
     this.inspectorTarget = null; // { kind: 'card' | 'innate' | 'boost', ... } | null
     this.cardModal = null; // { card, rawCard, isEX, uid, sourceLabel, canQuickPlay } | null
     this._lastCardTap = { uid: null, time: 0 };
@@ -1477,7 +1477,12 @@ class GameController {
     this.shakeOnRender = !!(res.value && res.value.maxSingleHitDamage >= 5);
     render();
     if (typeof StrikePlaybackController !== 'undefined' && typeof document !== 'undefined') {
-      StrikePlaybackController.start(this.engine.lastStrikeInfo);
+      const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!this.beginner;
+      const shouldAutoAdvance = !pauseAfter && !this.engine.gameOver && typeof window !== 'undefined' && typeof window.addEventListener === 'function';
+      StrikePlaybackController.start(
+        this.engine.lastStrikeInfo,
+        shouldAutoAdvance ? () => { if (this.mode === 'strike_result') this.continueAfterStrikeResult(); } : null
+      );
     }
   }
   resolveGraspChoice(amount, direction) { this.driveStrikeGen(this.pendingGen, { amount, direction }); }
@@ -1504,7 +1509,22 @@ class GameController {
   // null to decline (leaving Eddie exactly where he already was, in or out of play).
   resolvePlaceEddie(pos) { this.driveStrikeGen(this.pendingGen, pos == null ? null : Number(pos)); }
 
-  continueAfterStrikeResult() { this.afterStrike(this.pendingStrikeResult); }
+  continueAfterStrikeResult() {
+    if (this.mode !== 'strike_result') return;
+    this.afterStrike(this.pendingStrikeResult);
+  }
+
+  toggleLastStrikeModal() {
+    if (!this.engine || !this.engine.lastStrikeInfo) return;
+    this.showLastStrikeModal = !this.showLastStrikeModal;
+    render();
+  }
+
+  closeLastStrikeModal() {
+    if (!this.showLastStrikeModal) return;
+    this.showLastStrikeModal = false;
+    render();
+  }
 
   // ----- discard-to-7 (human) -----
   toggleDiscardChoice(uid) {

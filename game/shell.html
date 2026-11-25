@@ -1128,11 +1128,17 @@
   @media (min-width:1024px){
     body.gameplay-active{height:100dvh;overflow:hidden;}
     #app.gameplay-stage-active{max-width:none;width:100%;height:100dvh;padding:8px 12px;margin:0;overflow:hidden;}
-    .gameplay-stage{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,28%);gap:10px;height:100%;min-height:0;}
-    .gameplay-stage.rail-collapsed{grid-template-columns:minmax(0,1fr) 44px;}
+    .gameplay-stage{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;height:100%;min-height:0;}
+    .gameplay-stage.rail-collapsed{grid-template-columns:minmax(0,1fr);}
     .main-stage{height:100%;min-height:0;}
     .right-rail{height:100%;min-height:0;}
   }
+
+  .top-utility-strip{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex:0 0 auto;flex-wrap:wrap;}
+  .top-utility-strip .util-mini-btn{min-height:28px;padding:3px 9px;font-size:11.5px;border-radius:6px;border:1px solid #303f60;background:#151c2c;color:var(--text);cursor:pointer;font-weight:700;}
+  .top-utility-strip .util-mini-btn.active{border-color:var(--you);color:var(--you);}
+  .rail-drawer-backdrop{position:fixed;inset:0;background:rgba(5,7,10,.45);z-index:94;}
+  .right-rail.drawer-open{position:fixed;top:8px;right:8px;bottom:8px;width:min(380px,92vw);height:auto;z-index:95;box-shadow:-10px 0 32px rgba(0,0,0,.65);}
 
   /* Band 1: Slim Fighter HUDs */
   .slim-hud-row{flex:0 0 auto;display:flex;gap:8px;margin:0;}
@@ -2662,6 +2668,7 @@
   <div class="set-row"><label for="set-reduced">Reduced Hit-Stop / Flash</label><input id="set-reduced" type="checkbox" onchange="UXSettings.set('reducedHitStop', this.checked)"></div>
   <div class="set-row"><label for="set-cb">Colorblind-Safe Patterns</label><input id="set-cb" type="checkbox" onchange="UXSettings.set('colorblindPatterns', this.checked)"></div>
   <div class="set-row"><label for="set-qc">Quick-Commit (Skip Confirm)</label><input id="set-qc" type="checkbox" onchange="UXSettings.set('quickCommit', this.checked)"></div>
+  <div class="set-row"><label for="set-pause-strike">Pause after Strike</label><input id="set-pause-strike" type="checkbox" onchange="UXSettings.set('pauseAfterStrike', this.checked)"></div>
   <div class="set-row"><label for="set-cardview">Hand Card Display</label><select id="set-cardview" class="set-select" onchange="if(typeof G!=='undefined'&&G&&G.setCardViewMode) G.setCardViewMode(this.value); else UXSettings.set('cardViewMode', this.value);"><option value="auto">Auto (Responsive)</option><option value="full">Full Cards</option><option value="compact">Compact Tiles</option></select></div>
   <div class="set-row"><label for="set-headshots">Zoomed Headshots</label><input id="set-headshots" type="checkbox" onchange="setHeadshotPortraits(this.checked)"></div>
 </div>
@@ -2765,6 +2772,8 @@ function toggleSettingsPopover(forceState) {
     document.getElementById('set-reduced').checked = !!s.reducedHitStop;
     document.getElementById('set-cb').checked = !!s.colorblindPatterns;
     document.getElementById('set-qc').checked = !!s.quickCommit;
+    const psEl = document.getElementById('set-pause-strike');
+    if (psEl) psEl.checked = !!s.pauseAfterStrike;
     const cvEl = document.getElementById('set-cardview');
     if (cvEl) cvEl.value = s.cardViewMode || 'auto';
     const hsEl = document.getElementById('set-headshots');

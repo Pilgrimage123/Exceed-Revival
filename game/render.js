@@ -1348,12 +1348,7 @@ function rightRailHTML(g) {
   const fsBtnHTML = `<button type="button" class="util-mini-btn fullscreen-btn${isFs ? ' active' : ''}" data-fullscreen-btn="true" onclick="toggleFullscreen()" aria-pressed="${isFs ? 'true' : 'false'}" aria-label="${fsLabel}" title="${fsLabel}">${isFs ? '\u2922' : '\u26F6'}</button>`;
 
   if (collapsed) {
-    return `<aside class="right-rail collapsed" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
-      <div class="rail-utility-strip collapsed">
-        <button type="button" class="rail-collapse-btn" onclick="G.toggleRightRail()" title="Expand Right Rail" aria-label="Expand Right Rail" aria-expanded="false">◀</button>
-        ${fsBtnHTML}
-      </div>
-    </aside>`;
+    return '';
   }
 
   let tabBody = '';
@@ -1377,7 +1372,8 @@ function rightRailHTML(g) {
   const cardModeLabel = cardMode === 'full' ? 'Full' : (cardMode === 'compact' ? 'Compact' : 'Auto');
   const cardViewBtnHTML = `<button type="button" class="util-mini-btn card-view-btn${cardMode !== 'auto' ? ' active' : ''}" data-card-view-btn="true" onclick="G.cycleCardViewMode()" title="Hand card display: Auto (expands when space permits), Full, or Compact. Double-tap or right-click any card for full view."><span class="cv-prefix">Cards: </span>${cardModeLabel}</button>`;
 
-  return `<aside class="right-rail" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
+  return `<div class="rail-drawer-backdrop" onclick="G.toggleRightRail()"></div>
+  <aside class="right-rail drawer-open" data-mobile-tab="${mobileTab}" aria-label="Tactical Right Rail">
     <div class="rail-utility-strip">
       <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
       <button type="button" class="settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
@@ -1718,6 +1714,13 @@ function actionPromptBarHTML(g) {
   }
 
   if (g.mode === 'strike_result') {
+    const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!g.beginner;
+    if (!pauseAfter) {
+      return `<div class="action-prompt-row">
+        <span class="prompt-label">Resolving Strike…</span>
+        <button type="button" class="big-btn" onclick="if(typeof StrikePlaybackController!=='undefined') StrikePlaybackController.skip(); else G.continueAfterStrikeResult();">Skip ⏭</button>
+      </div>`;
+    }
     const beats = buildStrikeBeats(engine.lastStrikeInfo);
     const beginner = !!g.beginner;
     const beatIndex = beginner ? Math.max(0, Math.min(beats.length, g.beatIndex || 0)) : beats.length;
@@ -2058,6 +2061,33 @@ function setGameplayBodyClass(active, gameStateName) {
   }
 }
 
+function topUtilityStripHTML(g) {
+  const isMuted = typeof UXSettings !== 'undefined' && !!UXSettings.get('muted');
+  const isFs = typeof isFullscreenActive === 'function' && isFullscreenActive();
+  const fsLabel = isFs ? 'Exit Fullscreen (F)' : 'Toggle Fullscreen (F)';
+  const hasLastStrike = !!(g.engine && g.engine.lastStrikeInfo);
+  return `<div class="top-utility-strip">
+    ${hasLastStrike ? `<button type="button" class="util-mini-btn" onclick="G.toggleLastStrikeModal()" title="View Last Strike Recap">Last Strike</button>` : ''}
+    <button type="button" class="util-mini-btn${isMuted ? ' muted' : ''}" onclick="G.toggleMute()" title="Toggle Audio">${isMuted ? '🔇' : '🔊'}</button>
+    <button type="button" class="util-mini-btn settings-btn" onclick="toggleSettingsPopover()" title="Settings">⚙</button>
+    <button type="button" class="util-mini-btn${isFs ? ' active' : ''}" data-fullscreen-btn="true" onclick="toggleFullscreen()" aria-pressed="${isFs ? 'true' : 'false'}" aria-label="${fsLabel}" title="${fsLabel}">${isFs ? '\u2922' : '\u26F6'}</button>
+    <button type="button" class="util-mini-btn" onclick="openHowToPlay()" title="How to Play">Rules</button>
+    <button type="button" class="util-mini-btn panel-toggle-btn${!g.rightRailCollapsed ? ' active' : ''}" onclick="G.toggleRightRail()" aria-expanded="${!g.rightRailCollapsed ? 'true' : 'false'}" title="Toggle Log, Normals & Coach Panel">${g.rightRailCollapsed ? '◀ Panel' : '✕ Panel'}</button>
+  </div>`;
+}
+
+function lastStrikeModalHTML(g) {
+  return `<div class="modal-overlay" onclick="if(event.target===this) G.closeLastStrikeModal()">
+    <div class="modal-panel">
+      <div class="modal-header">
+        <b>Last Strike Recap</b>
+        <button type="button" class="modal-close" onclick="G.closeLastStrikeModal()">✕</button>
+      </div>
+      <div class="modal-body">${strikeBreakdownHTML(g)}</div>
+    </div>
+  </div>`;
+}
+
 function paint() {
   const app = document.getElementById('app');
   if (!G) {
@@ -2088,6 +2118,7 @@ function paint() {
   app.innerHTML = `
     <div class="gameplay-stage${G.rightRailCollapsed ? ' rail-collapsed' : ''}" data-mobile-tab="${mobileTab}" data-card-view="${cardViewMode}">
       <main class="main-stage">
+        ${topUtilityStripHTML(G)}
         <div class="top-bar slim-hud-row">
           ${lifeBar(G, 'human')}
           ${lifeBar(G, 'ai')}
@@ -2105,6 +2136,7 @@ function paint() {
       ${rightRailHTML(G)}
     </div>
     ${G.infoModal ? infoModalHTML(G) : ''}
+    ${G.showLastStrikeModal && engine.lastStrikeInfo ? lastStrikeModalHTML(G) : ''}
   `;
   applyPendingShake(app);
   if (typeof StrikePreviewController !== 'undefined') {

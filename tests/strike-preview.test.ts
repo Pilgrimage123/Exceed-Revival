@@ -263,7 +263,7 @@ test('Horizontal Compact Stage: two-column shell, slim Fighter HUD pills, and Fi
     const ryu = g.human();
     const boostCard = { ...SimulateStrikePreview.resolveCardByKey('focus'), uid: 'b_test' };
     ryu.boostsInPlay.push({ card: boostCard, ownerId: 'p1', turnsUntilExpire: 2 });
-    paint();
+    g.toggleRightRail();
     const appHtml = document.getElementById('app').innerHTML;
     g.openInfo('human');
     const modalHtml = document.getElementById('app').innerHTML;
@@ -274,7 +274,7 @@ test('Horizontal Compact Stage: two-column shell, slim Fighter HUD pills, and Fi
   assert.equal(bodyClasses.has('gameplay-active'), true);
   assert.ok(res.appHtml.includes('class="gameplay-stage"'));
   assert.ok(res.appHtml.includes('class="main-stage"'));
-  assert.ok(res.appHtml.includes('class="right-rail"'));
+  assert.ok(res.appHtml.includes('class="right-rail drawer-open"'));
   assert.ok(res.appHtml.includes('class="rail-utility-strip"'));
   assert.ok(res.appHtml.includes('slim-hud-bar'));
   assert.ok(res.appHtml.includes('innate-pill'));
@@ -295,7 +295,7 @@ test('Universal Inspector updates in-place for card hover/selection, HUD pills, 
     const focusBoost = { ...SimulateStrikePreview.resolveCardByKey('focus'), uid: 'b_insp' };
     ryu.hand = [hadoken];
     ryu.boostsInPlay.push({ card: focusBoost, ownerId: 'p1', turnsUntilExpire: 1 });
-    paint();
+    g.toggleRightRail();
     const idleInspector = document.getElementById('app').innerHTML;
     const appMarkerBefore = document.getElementById('app').innerHTML;
 
@@ -418,9 +418,10 @@ test('Single-Row Action Bar swaps to contextual pre-commit bar and keeps drag dr
 test('strike_result renders Trigger Timeline in Stage Prompt Bar and dual revealed cards in Universal Inspector', () => {
   const { ctx } = createTrackedSandbox();
   const res = vm.runInContext(`(() => {
-    const g = new GameController('ryu', 'ken', 'champion');
+    const g = new GameController('ryu', 'ken', 'champion', { beginner: true });
     G = g;
     g.confirmMulligan();
+    g.toggleRightRail();
     const p1 = g.human(), p2 = g.ai();
     p1.pos = 3; p2.pos = 4;
     const c1 = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'sr1' };
@@ -460,6 +461,7 @@ test('Right Rail tabs switch between Log, Normals, and Coach, auto-switch on Coa
     const g = new GameController('ryu', 'ken', 'champion');
     G = g;
     g.confirmMulligan();
+    g.toggleRightRail();
     const defaultTab = g.rightRailTab;
 
     g.setRightRailTab('normals');
@@ -495,7 +497,7 @@ test('Right Rail tabs switch between Log, Normals, and Coach, auto-switch on Coa
   assert.equal(res.dotAfterExplicit, false);
   assert.equal(res.tabAfterStudyOn, 'coach');
   assert.ok(res.collapsedHtml.includes('rail-collapsed'));
-  assert.ok(res.collapsedHtml.includes('right-rail collapsed'));
+  assert.equal(res.collapsedHtml.includes('right-rail drawer-open'), false);
 });
 
 test('HitParticleEngine classifies fighting-game hit tiers, spawns multi-layered particle bursts, deduplicates Strike events, and respects reducedHitStop', () => {
@@ -692,11 +694,11 @@ test('Fullscreen key (F), Right Rail expanded/collapsed Fullscreen buttons, Esca
     InputManager.handleKeyDown({ key: 'Escape' });
     const activeAfterEsc = isFullscreenActive();
 
-    // 2. Gameplay Right Rail (expanded & collapsed) renders Fullscreen button and reflects active state
+    // 2. Gameplay Right Rail (collapsed by default -> expanded drawer) renders Fullscreen button and reflects active state
     const g = new GameController('ryu', 'ken', 'champion');
     G = g;
     g.confirmMulligan();
-    paint();
+    g.toggleRightRail();
     const expandedInactiveHtml = document.getElementById('app').innerHTML;
 
     InputManager.handleKeyDown({ key: 'F', preventDefault: () => {} });
@@ -767,7 +769,7 @@ test('Keyboard activation, focus collision guards, ARIA attributes, reduced-flas
     const g = new GameController('ryu', 'ken', 'champion');
     G = g;
     g.confirmMulligan();
-    paint();
+    g.toggleRightRail();
     const appHtml = document.getElementById('app').innerHTML;
 
     // Select a card, then simulate pressing Enter while focus is on a native <button> (should NOT fire strike)
@@ -861,7 +863,7 @@ test('Mobile space optimization: Enriched Arena Frame, Range Ruler, mobilePanelT
     G = g;
     g.mode = 'awaiting_action';
     g.engine.active = 'p1';
-    paint();
+    g.toggleRightRail();
 
     const appHtml = document.getElementById('app').innerHTML;
     const defaultMobileTab = g.mobilePanelTab;
@@ -989,6 +991,7 @@ test('Inline Fighter Innates, Adaptive Card View Modes, Full Card Lightbox Modal
     const g = new GameController('ryu', 'ken', 'student');
     G = g;
     g.confirmMulligan();
+    g.toggleRightRail();
     const initialHtml = document.getElementById('app').innerHTML;
 
     // Exceed Ryu and re-render to verify inline Innate updates to Exceeded text
@@ -1215,6 +1218,46 @@ test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portra
   assert.ok(bundledHtml.includes('id="set-headshots"'), 'Settings popover includes Zoomed Headshots checkbox');
   assert.ok(bundledHtml.includes('data-portrait-choice="headshot"'), 'Fighter Select & Opponent Select include Zoomed Headshots toggle');
   assert.ok(bundledHtml.includes('FIGHTER_HEADSHOTS'), 'Built bundle includes FIGHTER_HEADSHOTS');
+});
+
+test('Arena cleanup: Right Panel defaults collapsed as optional drawer, Last Strike recap is optional, and pauseAfterStrike defaults false', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const defaultCollapsed = g.rightRailCollapsed;
+    const defaultPauseAfter = UXSettings.get('pauseAfterStrike');
+    const idleHtml = document.getElementById('app').innerHTML;
+
+    const p1 = g.human(), p2 = g.ai();
+    p1.pos = 3; p2.pos = 4;
+    const c1 = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'ls1' };
+    const c2 = { ...SimulateStrikePreview.resolveCardByKey('sweep'), uid: 'ls2' };
+    const gen = g.engine.resolveStrikeSteps({
+      initiator: 'p1',
+      attackerSel: { card: c1, fromWildSwing: false },
+      defenderSel: { card: c2, fromWildSwing: false },
+      gaugePay: {},
+    });
+    g.driveStrikeGen(gen, undefined);
+    const resolvingHtml = document.getElementById('app').innerHTML;
+    g.continueAfterStrikeResult();
+    const afterContinueHtml = document.getElementById('app').innerHTML;
+    g.toggleLastStrikeModal();
+    const modalHtml = document.getElementById('app').innerHTML;
+    g.closeLastStrikeModal();
+    return { defaultCollapsed, defaultPauseAfter, idleHtml, resolvingHtml, afterContinueHtml, modalHtml };
+  })()`, ctx) as any;
+
+  assert.equal(res.defaultCollapsed, true);
+  assert.equal(res.defaultPauseAfter, false);
+  assert.ok(res.idleHtml.includes('class="top-utility-strip"'));
+  assert.ok(res.idleHtml.includes('◀ Panel'));
+  assert.equal(res.idleHtml.includes('right-rail drawer-open'), false);
+  assert.ok(res.resolvingHtml.includes('Resolving Strike…'));
+  assert.ok(res.afterContinueHtml.includes('Last Strike'));
+  assert.ok(res.modalHtml.includes('Last Strike Recap'));
 });
 
 

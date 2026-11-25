@@ -52,8 +52,10 @@ const InputManager = (() => {
       if (sp && sp.style && sp.style.display && sp.style.display !== 'none') { sp.style.display = 'none'; return; }
       if (typeof G !== 'undefined' && G) {
         if (G.cardModal && typeof G.closeCardModal === 'function') { G.closeCardModal(); return; }
+        if (G.showLastStrikeModal && typeof G.closeLastStrikeModal === 'function') { G.closeLastStrikeModal(); return; }
         if (G.infoModal) { G.closeInfo(); return; }
         if (G.showNormalMatrix) { G.toggleNormalMatrix(); return; }
+        if (!G.rightRailCollapsed && typeof G.toggleRightRail === 'function') { G.toggleRightRail(); return; }
         if (G.selectedActionCardUid) { G.cancelActionCard(); return; }
       }
       if (typeof FullscreenController !== 'undefined' && FullscreenController.isViewportFallback && FullscreenController.isViewportFallback()) {

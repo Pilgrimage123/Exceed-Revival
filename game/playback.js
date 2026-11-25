@@ -9,6 +9,7 @@ const UXSettings = (() => {
     reducedHitStop: false,
     colorblindPatterns: false,
     quickCommit: false,
+    pauseAfterStrike: false,
     cardViewMode: 'auto',
     headshotPortraits: false,
   };
@@ -127,12 +128,18 @@ const StrikePlaybackController = (() => {
     }, reduced ? 450 : 1200);
   }
 
-  function start(strikeInfo) {
+  let onCompleteCb = null;
+
+  function start(strikeInfo, onComplete) {
     stop();
-    if (!strikeInfo || !Array.isArray(strikeInfo.timeline) || strikeInfo.timeline.length === 0) return;
+    if (!strikeInfo || !Array.isArray(strikeInfo.timeline) || strikeInfo.timeline.length === 0) {
+      if (typeof onComplete === 'function') onComplete();
+      return;
+    }
     activeStrikeInfo = strikeInfo;
     activeStepIdx = 0;
     skipped = false;
+    onCompleteCb = typeof onComplete === 'function' ? onComplete : null;
 
     const advance = () => {
       if (skipped || !activeStrikeInfo) return;
@@ -177,8 +184,12 @@ const StrikePlaybackController = (() => {
 
       activeStepIdx++;
       if (activeStepIdx < tl.length) {
-        const delay = (step.confirmedLethal && !UXSettings.get('reducedHitStop')) ? 850 : 320;
+        const delay = (step.confirmedLethal && !UXSettings.get('reducedHitStop')) ? 850 : 280;
         timer = setTimeout(advance, delay);
+      } else if (onCompleteCb) {
+        const cb = onCompleteCb;
+        onCompleteCb = null;
+        timer = setTimeout(cb, 350);
       }
     };
 
@@ -187,6 +198,8 @@ const StrikePlaybackController = (() => {
 
   function skip() {
     if (!activeStrikeInfo || !activeStrikeInfo.timeline) return;
+    const cb = onCompleteCb;
+    onCompleteCb = null;
     stop();
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
@@ -194,6 +207,7 @@ const StrikePlaybackController = (() => {
     activeStepIdx = activeStrikeInfo.timeline.length - 1;
     const slot = typeof document !== 'undefined' ? document.getElementById('trigger-timeline-slot') : null;
     if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
+    if (typeof cb === 'function') cb();
   }
 
   function getCurrentStepIdx(strikeInfo) {
