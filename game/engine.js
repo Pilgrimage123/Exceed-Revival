@@ -596,15 +596,19 @@ class Engine {
   }
 
   advanceSelfPaid(mover, opponent, requestedSpaces) {
-    const { pos, force } = this.simulateAdvance(mover.pos, opponent.pos, requestedSpaces);
+    const allowed = this.cappedSelfMove(mover, requestedSpaces);
+    if (allowed <= 0) return 0;
+    const { pos, force } = this.simulateAdvance(mover.pos, opponent.pos, allowed);
     mover.pos = pos;
     this.recordObservation(mover, { type: 'move', dist: Math.abs(pos - opponent.pos) });
     return force;
   }
 
   retreatSelfPaid(mover, opponent, requestedSpaces) {
+    const allowed = this.cappedSelfMove(mover, requestedSpaces);
+    if (allowed <= 0) return 0;
     const dir = mover.pos <= opponent.pos ? -1 : 1;
-    const target = this.clampPos(mover.pos + dir * requestedSpaces);
+    const target = this.clampPos(mover.pos + dir * allowed);
     const force = Math.abs(target - mover.pos);
     mover.pos = target;
     this.recordObservation(mover, { type: 'move', dist: Math.abs(target - opponent.pos) });
@@ -639,7 +643,7 @@ class Engine {
     } else if (mode === 'retreat') {
       n = Math.abs(this.clampPos(mover.pos + (mover.pos <= opponent.pos ? -8 : 8)) - mover.pos);
     }
-    return n;
+    return this.cappedSelfMove(mover, n, true);
   }
 
   // Iron Tager's Spark Bolt boost: "You cannot be Pushed or Pulled" (the boost's
@@ -828,13 +832,25 @@ class Engine {
     const pool = [...player.hand, ...player.gauge].filter(c => c.uid !== excludeUid);
     const ones = pool.filter(c => this.forceValueOfCard(c) === 1);
     const twos = pool.filter(c => this.forceValueOfCard(c) === 2);
+    // Prefer exact payment first (no wasted Force).
     let useOnes = Math.min(ones.length, cost);
     if ((cost - useOnes) % 2 !== 0) useOnes--;
-    if (useOnes < 0) return null;
-    const needTwos = (cost - useOnes) / 2;
-    if (needTwos > twos.length) return null;
+    if (useOnes >= 0) {
+      const needTwos = (cost - useOnes) / 2;
+      if (needTwos <= twos.length) {
+        return [
+          ...ones.slice(0, useOnes).map(c => c.uid),
+          ...twos.slice(0, needTwos).map(c => c.uid),
+        ];
+      }
+    }
+    // Official Exceed rules allow Force overpayment (excess Force is lost).
+    const total = ones.length + 2 * twos.length;
+    if (total < cost) return null;
+    const needTwos = Math.min(twos.length, Math.ceil(Math.max(0, cost - ones.length) / 2));
+    const remOnes = Math.max(0, cost - 2 * needTwos);
     return [
-      ...ones.slice(0, useOnes).map(c => c.uid),
+      ...ones.slice(0, remOnes).map(c => c.uid),
       ...twos.slice(0, needTwos).map(c => c.uid),
     ];
   }
@@ -1160,7 +1176,7 @@ class Engine {
   // Before/After movement, the Move action, boosts — without each of them knowing
   // about it. Does NOT cap being Pushed or Pulled by the opponent, which the card
   // text doesn't mention and which goes through pushAway/pullTowardWithoutPassing.
-  cappedSelfMove(mover, amount) {
+  cappedSelfMove(mover, amount, silent = false) {
     // Jin's Dual Ice Strike / Nu-13's Sword Dance boosts: "The opponent cannot move."
     // Per those cards' own Notes column they can still be Pushed or Pulled — which go
     // through pushAway/pushToward/pullTowardWithoutPassing and never reach here — but
@@ -1168,7 +1184,7 @@ class Engine {
     const opp = this.P(this.other(mover.id));
     for (const b of opp.boostsInPlay) {
       if (b.card.boost && b.card.boost.opponentCannotMove) {
-        this.logMsg(`${mover.name} cannot move (${b.card.name}).`, 'immune', mover.id);
+        if (!silent) this.logMsg(`${mover.name} cannot move (${b.card.name}).`, 'immune', mover.id);
         return 0;
       }
     }
@@ -1372,14 +1388,8 @@ class Engine {
   // Attempts to pay the Force cost from available hand/gauge. Returns success/failure.
   playForcedBoost(player, opponent, card) {
     const need = this.cardBoostForce(card);
-    const available = [...player.hand, ...player.gauge].filter(c => c.uid !== card.uid);
-    const pool = available.filter(c => this.forceValueOfCard(c) === 2);
-    const ones = available.filter(c => this.forceValueOfCard(c) === 1);
-    const chosen = [];
-    let remaining = need;
-    for (const c of pool) { if (remaining >= 2) { chosen.push(c.uid); remaining -= 2; } }
-    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); remaining -= 1; } }
-    if (remaining !== 0) return false; // Can't afford the Boost
+    const chosen = this.pickExactForceCards(player, need, card.uid);
+    if (!chosen) return false; // Can't afford the Boost
     // Play it
     const forceUids = chosen;
     player.hand = player.hand.filter(c => c.uid !== card.uid);
@@ -1425,7 +1435,7 @@ class Engine {
     const card = player.hand[idx];
     const need = this.cardBoostForce(card);
     const paidValue = this.sumForceValue(player, forceCardsUids);
-    if (paidValue !== need) return { ok: false, reason: 'incorrect force payment' };
+    if (paidValue < need) return { ok: false, reason: 'incorrect force payment' };
     // Boosting instead of attacking is itself a read: it says this hand was not ready to
     // start an exchange from here (see recordObservation).
     this.recordObservation(player, { type: 'boost', dist: Math.abs(player.pos - (opponent ? opponent.pos : player.pos)) });
@@ -2514,7 +2524,7 @@ class Engine {
         // "which specific cards isn't a strategically meaningful choice", which isn't
         // true once the cards differ in both Force value and play value.
         function* spendForPow(spec) {
-          const byCost = [...attacker.hand].sort((a, b) =>
+          const byCost = [...attacker.hand, ...attacker.gauge].sort((a, b) =>
             (engine.forceValueOfCard(a) - engine.forceValueOfCard(b)) || ((a.pow || 0) - (b.pow || 0)));
           const capacity = byCost.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
           const maxForce = Math.min(spec.max, capacity);
@@ -2522,16 +2532,35 @@ class Engine {
           const ans = yield { type: 'optional_force_spend_pow', playerId: attacker.id, max: maxForce, cardName: attCard.name, cardKey: attCard.key };
           const want = Math.max(0, Math.min(maxForce, ans | 0));
           if (want > 0) {
+            const discardFromZone = (uid) => {
+              const taken = engine.discardFromHand(attacker, uid);
+              if (taken) return taken;
+              const gi = attacker.gauge.findIndex(c => c.uid === uid);
+              if (gi !== -1) {
+                const [gCard] = attacker.gauge.splice(gi, 1);
+                attacker.discard.push(gCard);
+                return gCard;
+              }
+              return null;
+            };
             const spentCards = [];
             let spent = 0;
             for (const c of byCost) {
               const v = engine.forceValueOfCard(c);
-              if (spent + v > want) continue; // never overshoot what was actually asked for
-              const taken = engine.discardFromHand(attacker, c.uid);
+              if (spent + v > want) continue;
+              const taken = discardFromZone(c.uid);
               if (taken) { spentCards.push(taken); spent += v; }
               if (spent >= want) break;
             }
-            const gained = spent * (spec.powPerForce || 1);
+            if (spent < want) {
+              for (const c of byCost) {
+                if (spentCards.some(sc => sc.uid === c.uid)) continue;
+                const taken = discardFromZone(c.uid);
+                if (taken) { spentCards.push(taken); spent += engine.forceValueOfCard(c); }
+                if (spent >= want) break;
+              }
+            }
+            const gained = Math.min(spec.max, spent) * (spec.powPerForce || 1);
             ctx.powBonus += gained;
             engine.logMsg(`${attacker.name} spends ${spent} Force for +${gained}POW (${attCard.name}): discards ${spentCards.map(c => c.name).join(', ')}.`, 'force', attacker.id);
           }
@@ -2552,48 +2581,56 @@ class Engine {
         // Block's reactive Force-for-Armor — also matches GG Block ('gg_block',
         // Axl's version of this same card, identical mechanic per cards.js).
         if (defCard.key === 'block' || defCard.key === 'gg_block') {
-          // maxForce is the defender's total spendable Force VALUE from hand (an Ultra is
-          // worth 2 — see forceValueOfCard), NOT the raw card count. Block used to count
-          // every card as exactly 1 Force, which disagreed with every other Force-payment
-          // surface in this engine (Move, Boost, character actions).
-          const maxForce = defender.hand.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
+          const pool = [...defender.hand, ...defender.gauge];
+          const maxForce = pool.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
           if (maxForce > 0) {
             const rawPow = effPow;
             const ans = yield {
               type: 'block_force', playerId: defender.id, maxForce,
               cardName: defCard.name, cardKey: defCard.key,
               attackerPow: rawPow, defenderArmBase: baseDef.arm, defenderGuard: baseDef.grd,
-              // The defender's own hand, for the picker (this yield is only ever routed to
-              // the defender themselves, so this leaks nothing — invariant #1 is about the
-              // OPPONENT's hand).
+              ignoreArmor: !!attStats.ignoreArmor,
               hand: defender.hand.map(c => ({ uid: c.uid, name: c.name, forceValue: engine.forceValueOfCard(c) })),
+              gauge: defender.gauge.map(c => ({ uid: c.uid, name: c.name, forceValue: engine.forceValueOfCard(c) })),
+            };
+            const discardFromZone = (uid) => {
+              const c = engine.discardFromHand(defender, uid);
+              if (c) return c;
+              const gi = defender.gauge.findIndex(x => x.uid === uid);
+              if (gi !== -1) {
+                const [gCard] = defender.gauge.splice(gi, 1);
+                defender.discard.push(gCard);
+                return gCard;
+              }
+              return null;
             };
             const spentCards = [];
             if (ans && typeof ans === 'object' && Array.isArray(ans.uids)) {
-              // The player (or a caller that cares) picked exactly which cards pay.
               for (const uid of ans.uids) {
-                const c = engine.discardFromHand(defender, uid);
+                const c = discardFromZone(uid);
                 if (c) spentCards.push(c);
               }
             } else {
-              // Backwards-compatible integer answer ("spend N Force worth"): ai.js's
-              // resolveAIStrikeRequest and several test harnesses answer with a bare
-              // number. The engine then chooses, cheapest first — lowest Force value,
-              // then lowest POW — so a bare number can never eat an Ultra while a
-              // 1-Force card was available.
               let need = Math.max(0, Math.min(maxForce, ans | 0));
-              const order = [...defender.hand].sort((a, b) =>
+              const order = [...pool].sort((a, b) =>
                 (engine.forceValueOfCard(a) - engine.forceValueOfCard(b)) || ((a.pow || 0) - (b.pow || 0)));
               for (const c of order) {
                 const val = engine.forceValueOfCard(c);
-                if (val > need) continue; // never overshoot the requested amount
-                const got = engine.discardFromHand(defender, c.uid);
+                if (val > need) continue;
+                const got = discardFromZone(c.uid);
                 if (got) { spentCards.push(got); need -= val; }
                 if (need <= 0) break;
               }
+              if (need > 0) {
+                for (const c of order) {
+                  if (spentCards.some(sc => sc.uid === c.uid)) continue;
+                  const got = discardFromZone(c.uid);
+                  if (got) { spentCards.push(got); need -= engine.forceValueOfCard(c); }
+                  if (need <= 0) break;
+                }
+              }
             }
             if (spentCards.length > 0) {
-              // Armor comes from the Force VALUE spent, capped at what the rules allow.
               const forceValue = spentCards.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
               bonusArm = 2 * Math.min(forceValue, maxForce);
               engine.logMsg(`${defender.name} spends ${forceValue} Force from Block for +${bonusArm} Armor (discards ${spentCards.map(c => c.name).join(', ')}).`, 'armor', defender.id, { amount: bonusArm });
@@ -2654,10 +2691,51 @@ class Engine {
           engine.logMsg(`${attacker.name}'s ${attCard.name} misses (range ${rng}, needs ${attCard.range ? attCard.range[0] + '-' + maxR : 'N/A'}).`, 'miss', defender.id, { attackerId: attacker.id });
         }
       }
+      // Check KO & Stun immediately after damage (before After effects run).
+      if (whoTag === first) {
+        if (defender.life <= 0) {
+          secondHappens = false;
+          koWinnerId = attacker.id;
+        } else if (ctx.hitLanded) {
+          const dmg = ctx._dealt;
+          const grd = ctx._effGrd;
+          const secondCritPaid = !!gp[defender.id];
+          const stunImmune = !!(defCard && defCard.critical && defCard.critical.stunImmune && secondCritPaid) ||
+            !!(defCard && defCard.stunImmuneBase) ||
+            defender.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmuneGrant);
+          if (dmg > grd && !stunImmune) {
+            secondHappens = false;
+            stunnedPlayerId = defender.id;
+            pushTimeline({
+              phase: 'stunned',
+              actor: defender.id,
+              stunned: true,
+              guardBroken: true,
+              damageDealt: dmg,
+              effectiveGuard: grd,
+            });
+            engine.logMsg(`${defender.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${defCard.name} is discarded.`, 'stun', defender.id);
+            defender.discard.push(defCard);
+          } else if (dmg > grd && stunImmune) {
+            engine.logMsg(`${defender.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', defender.id);
+          }
+          recordStrikeEvent({
+            type: 'stun',
+            playerId: defender.id,
+            cardName: defCard ? defCard.name : '—',
+            dmg, grd, immune: !!(dmg > grd && stunImmune),
+          });
+        }
+      }
       if (attCard.hooks && attCard.hooks.interactiveAfter === 'hadoken_recycle') {
-        if (ctx.hitLanded) {
-          const wantsRecycle = yield { type: 'hadoken_recycle', playerId: attacker.id, cardName: attCard.name };
+        if (ctx.hitLanded && defender.life > 0) {
+          const wantsRecycle = yield {
+            type: 'hadoken_recycle', playerId: attacker.id,
+            cardName: attCard.name, discardCount: attacker.discard.length,
+          };
           if (wantsRecycle) {
+            const baseCard = attCard._baseCard || attCard;
+            attacker.deck.push(baseCard);
             engine.recycleHadoken(attacker);
             ctx.attackGoesToGauge = false; // returned to deck instead of gauge
           }
@@ -2706,64 +2784,10 @@ class Engine {
       return ctx;
     }
 
-    const firstCtx = yield* activateStep(first);
-    const firstAttacker = first === 'A' ? A : D;
-    const firstDefender = first === 'A' ? D : A;
     let secondHappens = true;
     let stunnedPlayerId = null;
     let koWinnerId = null;
-    if (firstDefender.life <= 0) {
-      // Exceed rule: dropping a fighter to 0 life ends the game immediately;
-      // the slower player does not activate even if Stun Immune.
-      secondHappens = false;
-      koWinnerId = firstAttacker.id;
-    }
-    if (secondHappens && firstCtx.hitLanded) {
-      const dmg = firstCtx._dealt;
-      const grd = firstCtx._effGrd;
-      const secondPlayer = second === 'A' ? A : D;
-      const secondCard = second === 'A' ? aCard : dCard;
-      const secondCritPaid = !!gp[secondPlayer.id];
-      // Zangief's Flying Power Bomb (Critical) / Ultimate Atomic Buster (continuous
-      // boost): Stun Immunity — checked at the moment Stun would apply, from either
-      // source, rather than baked into liveStats (Stun isn't a stat, it's a
-      // pass/fail gate on this specific check).
-      const stunImmune = !!(secondCard && secondCard.critical && secondCard.critical.stunImmune && secondCritPaid) ||
-        !!(secondCard && secondCard.stunImmuneBase) ||
-        secondPlayer.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmuneGrant);
-      if (dmg > grd && !stunImmune) {
-        secondHappens = false;
-        stunnedPlayerId = secondPlayer.id;
-        pushTimeline({
-          phase: 'stunned',
-          actor: secondPlayer.id,
-          stunned: true,
-          guardBroken: true,
-          damageDealt: dmg,
-          effectiveGuard: grd,
-        });
-        this.logMsg(`${secondPlayer.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${secondCard.name} is discarded.`, 'stun', secondPlayer.id);
-        secondPlayer.discard.push(secondCard);
-        if (second === 'A') aCard = null; else dCard = null;
-      } else if (dmg > grd && stunImmune) {
-        this.logMsg(`${secondPlayer.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', secondPlayer.id);
-      }
-      // Recorded whenever the first card connected, INCLUDING the no-stun case
-      // (dmg <= grd) — "your Guard held" is the half of this rule a player never
-      // sees explained, and omitting the event would make Guard look decorative.
-      recordStrikeEvent({
-        type: 'stun',
-        playerId: secondPlayer.id,
-        cardName: secondCard ? secondCard.name : '—',
-        dmg, grd, immune: !!(dmg > grd && stunImmune),
-      });
-    }
-    // Axl's Sickle Storm: "After: If the opponent is stunned, Push 2." Only the
-    // FIRST-acting card can ever be the CAUSE of a stun this exchange (only the
-    // second-to-act can be stunned at all, and only by the first's hit) — so this
-    // only fires for whichever card activated first, with whether a stun actually
-    // happened now known (computed just above, which is why this can't live
-    // inside activateStep's own `after` handling — that runs BEFORE this check).
+    const firstCtx = yield* activateStep(first);
     const firstCard = first === 'A' ? aCard : dCard;
     if (firstCard && firstCard.hooks && firstCard.hooks.afterStunCheck) {
       firstCard.hooks.afterStunCheck(firstCtx, stunnedPlayerId === (first === 'A' ? D.id : A.id));
@@ -2779,6 +2803,7 @@ class Engine {
     const cleanupOne = (whoTag, ctx, card) => {
       if (!card) return;
       const player = whoTag === 'A' ? A : D;
+      if (player.id === stunnedPlayerId) return; // already discarded on Stun
       // Where a used card ends up IS the game's central economy rule (hit -> Gauge,
       // miss -> discard), so every disposal branch below reports itself rather than
       // only the two common ones — a card vanishing to `sealed`/`inplay` with no
@@ -2829,8 +2854,8 @@ class Engine {
     yield* this.cleanupBoosts(A, aCard ? aCard.type : null, wasHit(A), stunnedPlayerId === D.id, stunnedPlayerId === A.id);
     yield* this.cleanupBoosts(D, dCard ? dCard.type : null, wasHit(D), stunnedPlayerId === A.id, stunnedPlayerId === D.id);
     // Card-level cleanup effects (Nagoriyuki's Specials have "Cleanup: Draw 4. Discard 2.")
-    this.triggerCardCleanup(A, aCard);
-    this.triggerCardCleanup(D, dCard);
+    this.triggerCardCleanup(A, stunnedPlayerId === A.id ? null : aCard);
+    this.triggerCardCleanup(D, stunnedPlayerId === D.id ? null : dCard);
     pushTimeline({ phase: 'cleanup', actor: null, confirmedLethal: this.gameOver || this.P('p1').life <= 0 || this.P('p2').life <= 0 });
     // Character-level CLEANUP hooks (Platinum the Trinity's Innate/Exceed are both
     // "Cleanup: You may reveal the top card of your deck..."). Distinct from
@@ -3036,6 +3061,7 @@ class Engine {
   buildExCard(cardA, cardB) {
     return {
       ...cardA,
+      _baseCard: cardA._baseCard || cardA,
       uid: cardA.uid + '+' + cardB.uid,
       isEX: true,
       pow: cardA.pow + 1, spd: cardA.spd + 1, arm: cardA.arm + 1, grd: cardA.grd + 1,

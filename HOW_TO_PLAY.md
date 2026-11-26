@@ -26,7 +26,7 @@
 - **Core Resource Loop:**
   1. **Connect (`Hit → Gauge`):** Attacks that connect go to your **Gauge** instead of Discard, fueling Ultras, Exceeding, Criticals, and Cancels.
   2. **Whiff or Stun (`Miss/Stun → Discard`):** Out-of-range or Stunned attacks go to **Discard** (no Gauge gained).
-  3. **Convert (`Cards → Force`):** Discard cards from **Hand or Gauge** to pay **Force** for Movement and Boosts (**Normal / Special = 1 Force**, **Ultra = 2 Force**).
+  3. **Convert (`Cards → Force`):** Discard cards from **Hand or Gauge** to pay **Force** for Movement and Boosts (**Normal / Special = 1 Force**, **Ultra = 2 Force** from both Hand and Gauge). You may **overpay** a Force cost (e.g., pitching a 2-Force Ultra for a 1-Force cost); any excess Force is lost.
 
 ### Turn Command List
 

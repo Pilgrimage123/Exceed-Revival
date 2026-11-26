@@ -1650,12 +1650,12 @@ class GameController {
     return this.engine.gaugeCount(player) > reserve;
   }
 
-  // Greedily pick hand/gauge uids whose Force VALUE (see engine.forceValueOfCard —
-  // Ultras are worth 2) sums to exactly `target`. Prefers Ultras first purely to
-  // conserve card economy (fewer physical cards spent for the same Force); returns
-  // null if `target` isn't achievable exactly with what's available (e.g. an odd
-  // target with only Ultras left). `excludeUids` accepts a single uid, Array, or Set.
+  // Pick hand/gauge uids whose Force VALUE (Ultras = 2) covers `target`.
+  // Prefers exact payment first (Ultras first to conserve card count), then falls
+  // back to minimal-waste Force overpayment when exact payment is impossible
+  // (e.g. paying 1 Force when only 2-Force Ultras are available).
   pickForceUidsForTarget(player, target, excludeUids) {
+    if (target <= 0) return [];
     const excluded = excludeUids instanceof Set ? excludeUids
       : Array.isArray(excludeUids) ? new Set(excludeUids)
       : (excludeUids ? new Set([excludeUids]) : new Set());
@@ -1663,10 +1663,20 @@ class GameController {
     const twos = pool.filter(c => this.engine.forceValueOfCard(c) === 2);
     const ones = pool.filter(c => this.engine.forceValueOfCard(c) === 1);
     const chosen = [];
+    const chosenSet = new Set();
     let remaining = target;
-    for (const c of twos) { if (remaining >= 2) { chosen.push(c.uid); remaining -= 2; } }
-    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); remaining -= 1; } }
-    return remaining === 0 ? chosen : null;
+    for (const c of twos) { if (remaining >= 2) { chosen.push(c.uid); chosenSet.add(c.uid); remaining -= 2; } }
+    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); chosenSet.add(c.uid); remaining -= 1; } }
+    if (remaining > 0) {
+      for (const c of [...ones, ...twos]) {
+        if (chosenSet.has(c.uid)) continue;
+        chosen.push(c.uid);
+        chosenSet.add(c.uid);
+        remaining -= this.engine.forceValueOfCard(c);
+        if (remaining <= 0) break;
+      }
+    }
+    return remaining <= 0 ? chosen : null;
   }
 
   // M. Bison's action: "Add [up to N] card(s) from hand to Gauge, draw that many."

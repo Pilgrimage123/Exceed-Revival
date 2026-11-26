@@ -1094,4 +1094,171 @@ test('Selecting a fighter opens the Big Fighter Card with unzoomed full portrait
   assert.equal(res.noUndefinedOrNaN, true);
 });
 
+test('Global Exceed rules consistency: overpayment, paid move caps, Gauge Block/spendForPow, Stun timing, Hadoken recycle, and AI alignment', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<any>(`
+    (() => {
+      const card = (k) => SimulateStrikePreview.resolveCardByKey(k);
+      // 1. Force overpayment: 2-Force Ultra pays 1-Force Boost & pickExactForceCards
+      const e1 = new Engine('ryu', 'ken');
+      const p1 = e1.P('p1'), p2 = e1.P('p2');
+      const boost1 = { ...card('metsu_hadoken'), uid: 'b_1f', boost: { force: 1, continuous: true, statMods: { pow: 2 } } };
+      const ultraPay = { ...card('metsu_shoryuken'), uid: 'u_pay' };
+      p1.hand = [boost1, ultraPay];
+      const pickOverpay = e1.pickExactForceCards(p1, 1, 'b_1f');
+      const overpayBoost = e1.playBoost(p1, p2, 'b_1f', ['u_pay']);
+
+      // 2. Paid Move respects selfMoveCap (Iron Tager) and opponentCannotMove (Jin Dual Ice Strike)
+      const e2 = new Engine('tager', 'jin');
+      const tager = e2.P('p1'), jin = e2.P('p2');
+      tager.pos = 1; jin.pos = 7;
+      const tagerMoved = e2.advanceSelfPaid(tager, jin, 4);
+      const tagerPosAfterCap = tager.pos;
+      jin.boostsInPlay.push({ card: card('jin_dual_ice_strike'), ownerId: 'p2' });
+      const tagerBlocked = e2.advanceSelfPaid(tager, jin, 2);
+
+      // 3. Block & spendForPow allow paying Force from Gauge (including Ultra overpayment)
+      const e3 = new Engine('cviper', 'ryu');
+      const v = e3.P('p1'), r = e3.P('p2');
+      v.pos = 3; r.pos = 4;
+      v.hand = [];
+      v.deck = [];
+      v.gauge = [{ ...card('burst_time'), uid: 'v_g_ultra' }];
+      r.hand = [];
+      r.gauge = [{ ...card('metsu_shoryuken'), uid: 'r_g_ultra' }];
+      const powCard = { ...card('temple_massage'), uid: 'v_tm' };
+      const blkCard = { ...card('block'), uid: 'r_blk' };
+      const g3 = e3.resolveStrikeSteps({
+        initiator: 'p1',
+        attackerSel: { type: 'decklook', card: powCard },
+        defenderSel: { type: 'decklook', card: blkCard },
+        gaugePay: { p1: false, p2: false },
+      });
+      let step = g3.next();
+      let sawGaugeInBlock = false;
+      while (!step.done) {
+        const req = step.value;
+        if (req.type === 'optional_force_spend_pow') step = g3.next(1);
+        else if (req.type === 'block_force') {
+          sawGaugeInBlock = Array.isArray(req.gauge) && req.gauge.length === 1;
+          step = g3.next(1);
+        } else step = g3.next(null);
+      }
+      const viperSpentGauge = !v.gauge.some(c => c.uid === 'v_g_ultra');
+      const ryuSpentGauge = !r.gauge.some(c => c.uid === 'r_g_ultra');
+
+      // 4. Stun preserves card identity for sustainIfNoNormalUsed without double-discard
+      const e4 = new Engine('ryu', 'cammy');
+      const a4 = e4.P('p1'), c4 = e4.P('p2');
+      a4.pos = 3; c4.pos = 4;
+      c4.boostsInPlay.push({ card: card('dive_kick'), ownerId: 'p2' });
+      const fastSweep = { ...card('sweep'), uid: 'a_swp', spd: 8 };
+      const cammyNormal = { ...card('cross'), uid: 'c_crs' };
+      const g4 = e4.resolveStrikeSteps({
+        initiator: 'p1',
+        attackerSel: { type: 'decklook', card: fastSweep },
+        defenderSel: { type: 'decklook', card: cammyNormal },
+        gaugePay: { p1: false, p2: false },
+      });
+      let s4 = g4.next();
+      while (!s4.done) s4 = g4.next(true);
+      const cammyDiscardCount = c4.discard.filter(c => c.uid === 'c_crs').length;
+      const diveKickSustained = c4.boostsInPlay.some(b => b.card.key === 'dive_kick');
+
+      // 5. Hadoken recycle: returns base (non-EX) card to top of deck, moves top discard to Gauge,
+      //    skips prompt on lethal KO, AI declines on empty discard
+      const e5 = new Engine('ryu', 'ken');
+      const r5 = e5.P('p1'), k5 = e5.P('p2');
+      r5.pos = 2; k5.pos = 6;
+      r5.deck = [{ ...card('focus'), uid: 'd_bot' }];
+      r5.discard = [{ ...card('cross'), uid: 'disc_top' }];
+      const hadoA = { ...card('hadoken_ryu'), uid: 'h1' };
+      const hadoB = { ...card('hadoken_ryu'), uid: 'h2' };
+      const exHado = e5.buildExCard(hadoA, hadoB);
+      const kenMiss = { ...card('grasp'), uid: 'k_gr' };
+      const g5 = e5.resolveStrikeSteps({
+        initiator: 'p1',
+        attackerSel: { type: 'decklook', card: exHado },
+        defenderSel: { type: 'decklook', card: kenMiss },
+        gaugePay: { p1: false, p2: false },
+      });
+      let s5 = g5.next();
+      let hadoPromptSeen = false;
+      while (!s5.done) {
+        if (s5.value.type === 'hadoken_recycle') { hadoPromptSeen = true; s5 = g5.next(true); }
+        else s5 = g5.next(null);
+      }
+      const topDeckAfter = r5.deck[r5.deck.length - 1];
+      const hadoBackOnTop = topDeckAfter && topDeckAfter.uid === 'h1' && !topDeckAfter.isEX;
+      const discardTopToGauge = r5.gauge.some(c => c.uid === 'disc_top');
+
+      // Lethal KO skips hadoken_recycle prompt
+      k5.life = 2;
+      const g5ko = e5.resolveStrikeSteps({
+        initiator: 'p1',
+        attackerSel: { type: 'decklook', card: { ...card('hadoken_ryu'), uid: 'h_ko' } },
+        defenderSel: { type: 'decklook', card: { ...card('grasp'), uid: 'k_ko' } },
+        gaugePay: { p1: false, p2: false },
+      });
+      let s5ko = g5ko.next();
+      let sawPromptOnKO = false;
+      while (!s5ko.done) {
+        if (s5ko.value.type === 'hadoken_recycle') sawPromptOnKO = true;
+        s5ko = g5ko.next(true);
+      }
+
+      // 6. AI rules fixes
+      const aiBlockVsIgnore = resolveAIStrikeRequest({ type: 'block_force', maxForce: 4, attackerPow: 6, defenderArmBase: 2, defenderGuard: 3, ignoreArmor: true }, () => 0.9, 0);
+      const aiHadoEmptyDiscard = resolveAIStrikeRequest({ type: 'hadoken_recycle', discardCount: 0 }, () => 0.9, 0);
+      const aiCanOverpay = canPayExactForce([{ ...card('metsu_shoryuken'), uid: 'u1' }], 1);
+      const aiPaidBoostCands = buildBoostCandidates(
+        { hand: [{ ...card('metsu_hadoken'), uid: 'mh' }, { ...card('cross'), uid: 'cr' }], gauge: [] },
+        3, { boostsInPlay: [] }, boostModsFromKeys([]),
+        [{ ...card('metsu_hadoken'), uid: 'mh' }, { ...card('cross'), uid: 'cr' }]
+      );
+      const deadCounter = evalMatchupDetail({
+        myCard: { ...card('sweep'), spd: 8, pow: 6, range: [1, 3], arm: 0, grd: 0 },
+        myPos: 3, myBoostMods: boostModsFromKeys([]),
+        oppCard: { ...card('focus'), spd: 1, pow: 4, range: [1, 2], arm: 0, grd: 0, stunImmuneBase: true },
+        oppPos: 4, oppBoostMods: boostModsFromKeys([]),
+        iInitiated: true, myExceeded: false, oppExceeded: false,
+        myCharacterKey: 'ryu', oppCharacterKey: 'zangief',
+        myLife: 30, oppLife: 5,
+      });
+
+      return {
+        overpayOk: overpayBoost.ok,
+        pickOverpay: pickOverpay ? [...pickOverpay] : null,
+        tagerMoved, tagerPosAfterCap, tagerBlocked,
+        sawGaugeInBlock, viperSpentGauge, ryuSpentGauge,
+        cammyDiscardCount, diveKickSustained,
+        hadoPromptSeen, hadoBackOnTop, discardTopToGauge, sawPromptOnKO,
+        aiBlockVsIgnore, aiHadoEmptyDiscard, aiCanOverpay,
+        hasPaidBoostCand: aiPaidBoostCands.some(b => b.card.uid === 'mh'),
+        deadCounterOppDmg: deadCounter.oppDmg,
+      };
+    })()
+  `);
+
+  assert.equal(res.overpayOk, true);
+  assert.deepEqual([...res.pickOverpay], ['u_pay']);
+  assert.equal(res.tagerMoved, 2);
+  assert.equal(res.tagerPosAfterCap, 3);
+  assert.equal(res.tagerBlocked, 0);
+  assert.equal(res.sawGaugeInBlock, true);
+  assert.equal(res.viperSpentGauge, true);
+  assert.equal(res.ryuSpentGauge, true);
+  assert.equal(res.cammyDiscardCount, 1);
+  assert.equal(res.diveKickSustained, false);
+  assert.equal(res.hadoPromptSeen, true);
+  assert.equal(res.hadoBackOnTop, true);
+  assert.equal(res.discardTopToGauge, true);
+  assert.equal(res.sawPromptOnKO, false);
+  assert.equal(res.aiBlockVsIgnore, 0);
+  assert.equal(res.aiHadoEmptyDiscard, false);
+  assert.equal(res.aiCanOverpay, true);
+  assert.equal(res.hasPaidBoostCand, true);
+  assert.equal(res.deadCounterOppDmg, 0);
+});
+
 

@@ -156,17 +156,18 @@ test('pickExactForceCards handles 1-Force + 2-Force parity and UI action/board h
     p1.gauge = [];
     const exact2 = ctrl.engine.pickExactForceCards(p1, 2);
 
-    // Unpayable exact Force 1 when holding only an Ultra
+    // Overpayment: 1-Force cost when holding only a 2-Force Ultra must succeed
     p1.hand = [ultra];
-    const impossible1 = ctrl.engine.pickExactForceCards(p1, 1);
+    const overpay1 = ctrl.engine.pickExactForceCards(p1, 1);
 
-    // Direct-move with only an Ultra to a 1-space target must NOT trap in move_force_select
+    // Direct-move with only an Ultra to a 1-space target opens move_force_select via overpayment
     ctrl.engine.active = 'p1';
     ctrl.clickBoardSpace(3);
-    const modeAfterImpossibleMove = ctrl.mode;
+    const modeAfterOverpayMove = ctrl.mode;
 
     // During CPU's turn, human card selection and direct board-click must be ignored
     p1.hand = [normal, ultra];
+    ctrl.mode = 'awaiting_action';
     ctrl.engine.active = 'p2';
     ctrl.selectActionCard('u_norm');
     const selectedDuringCpuTurn = ctrl.selectedActionCardUid;
@@ -177,8 +178,8 @@ test('pickExactForceCards handles 1-Force + 2-Force parity and UI action/board h
       hadokenName: hadoken && hadoken.name,
       metsuType: metsu && metsu.type,
       exact2,
-      impossible1,
-      modeAfterImpossibleMove,
+      impossible1: overpay1,
+      modeAfterImpossibleMove: modeAfterOverpayMove,
       selectedDuringCpuTurn,
       modeDuringCpuTurn,
     };
@@ -187,8 +188,8 @@ test('pickExactForceCards handles 1-Force + 2-Force parity and UI action/board h
   assert.equal(result.hadokenName, 'Hadoken');
   assert.equal(result.metsuType, 'ultra');
   assert.deepEqual(Array.from(result.exact2), ['u_ultra']);
-  assert.equal(result.impossible1, null);
-  assert.equal(result.modeAfterImpossibleMove, 'awaiting_action');
+  assert.deepEqual(Array.from(result.impossible1), ['u_ultra']);
+  assert.equal(result.modeAfterImpossibleMove, 'move_force_select');
   assert.equal(result.selectedDuringCpuTurn, null);
   assert.equal(result.modeDuringCpuTurn, 'awaiting_action');
 });
@@ -1375,7 +1376,7 @@ test('Inline card modification preview renders stat deltas in prompt bar and mas
     G = gBlk;
     gBlk.confirmMulligan();
     const blockCard = { ...SimulateStrikePreview.resolveCardByKey('block'), uid: 'blk1' };
-    const forcePayCard = gBlk.human().hand[0];
+    const forcePayCard = gBlk.human().hand.find(c => c.type !== 'ultra') || gBlk.human().hand[0];
     gBlk.mode = 'block_force_choice';
     gBlk.sel = {
       request: { type: 'block_force', attackerPow: 6, defenderArmBase: 2, defenderGuard: 4, maxForce: 2, cardKey: 'block', cardName: 'Block' },

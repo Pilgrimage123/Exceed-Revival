@@ -137,30 +137,36 @@ pub fn choose(n: u64, k: u64) -> f64 {
     result
 }
 
-/// Exact canonical payment selection. Lower discard_cost means more disposable.
+/// Canonical Force payment selection allowing overpayment (`total_force >= min_force`).
+/// Lower `discard_cost` means more disposable; ties prefer less wasted Force.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ForceCard { pub id: String, pub force: u8, pub discard_cost: f64 }
 
-pub fn choose_force_payment(cards: &[ForceCard], exact_force: u8, forbidden_id: Option<&str>) -> Option<Vec<String>> {
+pub fn choose_force_payment(cards: &[ForceCard], min_force: u8, forbidden_id: Option<&str>) -> Option<Vec<String>> {
     if cards.len() > 64 { return None; }
-    let target = exact_force as usize;
-    let mut dp: Vec<Option<(f64, u64)>> = vec![None; target + 1];
-    dp[0] = Some((0.0, 0));
+    let target = min_force as usize;
+    let mut dp: Vec<Option<(f64, usize, u64)>> = vec![None; target + 1];
+    dp[0] = Some((0.0, 0, 0));
     for (i, card) in cards.iter().enumerate() {
         if Some(card.id.as_str()) == forbidden_id { continue; }
         let f = card.force as usize;
-        if f > target { continue; }
-        for prev in (0..=target - f).rev() {
-            if let Some((prev_cost, prev_mask)) = dp[prev] {
+        if f == 0 && target > 0 { continue; }
+        for prev in (0..=target).rev() {
+            if let Some((prev_cost, prev_force, prev_mask)) = dp[prev] {
+                let next_s = prev.saturating_add(f).min(target);
                 let next_cost = prev_cost + card.discard_cost;
+                let next_force = prev_force + f;
                 let next_mask = prev_mask | (1u64 << i);
-                if dp[prev + f].map_or(true, |(old, _)| next_cost < old) {
-                    dp[prev + f] = Some((next_cost, next_mask));
+                let better = dp[next_s].map_or(true, |(old_cost, old_force, _)| {
+                    next_cost < old_cost || (next_cost == old_cost && next_force < old_force)
+                });
+                if better {
+                    dp[next_s] = Some((next_cost, next_force, next_mask));
                 }
             }
         }
     }
-    dp[target].map(|(_, mask)| {
+    dp[target].map(|(_, _, mask)| {
         cards.iter().enumerate()
             .filter(|(i, _)| mask & (1u64 << i) != 0)
             .map(|(_, c)| c.id.clone())
@@ -265,6 +271,10 @@ mod tests {
     #[test] fn belief_probability_is_exact() { assert!((belief().probability_at_least_one(0) - 5.0 / 6.0).abs() < 1e-12); assert!((belief().probability_ex_ready(0) - 1.0 / 6.0).abs() < 1e-12); assert_eq!(belief().probability_at_least_one(2), 0.0); }
     #[test] fn exclusion_is_hard_constraint() { let mut state = belief(); state.set_excluded_from_hand(0, true).unwrap(); assert_eq!(state.probability_at_least_one(0), 0.0); }
     #[test] fn force_pruner_preserves_expensive_cards() { let cards = vec![ForceCard { id: "cheap".into(), force: 1, discard_cost: 1.0 }, ForceCard { id: "pair".into(), force: 1, discard_cost: 9.0 }, ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }]; assert_eq!(choose_force_payment(&cards, 2, None), Some(vec!["ultra".into()])); }
+    #[test] fn force_pruner_allows_overpayment_with_ultra() {
+        let cards = vec![ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }];
+        assert_eq!(choose_force_payment(&cards, 1, None), Some(vec!["ultra".into()]));
+    }
     #[test] fn force_pruner_respects_forbidden_at_u8_max() {
         let cards = vec![ForceCard { id: "forbid".into(), force: 255, discard_cost: 0.1 }];
         assert_eq!(choose_force_payment(&cards, 255, Some("forbid")), None);

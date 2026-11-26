@@ -10951,15 +10951,19 @@ class Engine {
   }
 
   advanceSelfPaid(mover, opponent, requestedSpaces) {
-    const { pos, force } = this.simulateAdvance(mover.pos, opponent.pos, requestedSpaces);
+    const allowed = this.cappedSelfMove(mover, requestedSpaces);
+    if (allowed <= 0) return 0;
+    const { pos, force } = this.simulateAdvance(mover.pos, opponent.pos, allowed);
     mover.pos = pos;
     this.recordObservation(mover, { type: 'move', dist: Math.abs(pos - opponent.pos) });
     return force;
   }
 
   retreatSelfPaid(mover, opponent, requestedSpaces) {
+    const allowed = this.cappedSelfMove(mover, requestedSpaces);
+    if (allowed <= 0) return 0;
     const dir = mover.pos <= opponent.pos ? -1 : 1;
-    const target = this.clampPos(mover.pos + dir * requestedSpaces);
+    const target = this.clampPos(mover.pos + dir * allowed);
     const force = Math.abs(target - mover.pos);
     mover.pos = target;
     this.recordObservation(mover, { type: 'move', dist: Math.abs(target - opponent.pos) });
@@ -10994,7 +10998,7 @@ class Engine {
     } else if (mode === 'retreat') {
       n = Math.abs(this.clampPos(mover.pos + (mover.pos <= opponent.pos ? -8 : 8)) - mover.pos);
     }
-    return n;
+    return this.cappedSelfMove(mover, n, true);
   }
 
   // Iron Tager's Spark Bolt boost: "You cannot be Pushed or Pulled" (the boost's
@@ -11183,13 +11187,25 @@ class Engine {
     const pool = [...player.hand, ...player.gauge].filter(c => c.uid !== excludeUid);
     const ones = pool.filter(c => this.forceValueOfCard(c) === 1);
     const twos = pool.filter(c => this.forceValueOfCard(c) === 2);
+    // Prefer exact payment first (no wasted Force).
     let useOnes = Math.min(ones.length, cost);
     if ((cost - useOnes) % 2 !== 0) useOnes--;
-    if (useOnes < 0) return null;
-    const needTwos = (cost - useOnes) / 2;
-    if (needTwos > twos.length) return null;
+    if (useOnes >= 0) {
+      const needTwos = (cost - useOnes) / 2;
+      if (needTwos <= twos.length) {
+        return [
+          ...ones.slice(0, useOnes).map(c => c.uid),
+          ...twos.slice(0, needTwos).map(c => c.uid),
+        ];
+      }
+    }
+    // Official Exceed rules allow Force overpayment (excess Force is lost).
+    const total = ones.length + 2 * twos.length;
+    if (total < cost) return null;
+    const needTwos = Math.min(twos.length, Math.ceil(Math.max(0, cost - ones.length) / 2));
+    const remOnes = Math.max(0, cost - 2 * needTwos);
     return [
-      ...ones.slice(0, useOnes).map(c => c.uid),
+      ...ones.slice(0, remOnes).map(c => c.uid),
       ...twos.slice(0, needTwos).map(c => c.uid),
     ];
   }
@@ -11515,7 +11531,7 @@ class Engine {
   // Before/After movement, the Move action, boosts — without each of them knowing
   // about it. Does NOT cap being Pushed or Pulled by the opponent, which the card
   // text doesn't mention and which goes through pushAway/pullTowardWithoutPassing.
-  cappedSelfMove(mover, amount) {
+  cappedSelfMove(mover, amount, silent = false) {
     // Jin's Dual Ice Strike / Nu-13's Sword Dance boosts: "The opponent cannot move."
     // Per those cards' own Notes column they can still be Pushed or Pulled — which go
     // through pushAway/pushToward/pullTowardWithoutPassing and never reach here — but
@@ -11523,7 +11539,7 @@ class Engine {
     const opp = this.P(this.other(mover.id));
     for (const b of opp.boostsInPlay) {
       if (b.card.boost && b.card.boost.opponentCannotMove) {
-        this.logMsg(`${mover.name} cannot move (${b.card.name}).`, 'immune', mover.id);
+        if (!silent) this.logMsg(`${mover.name} cannot move (${b.card.name}).`, 'immune', mover.id);
         return 0;
       }
     }
@@ -11727,14 +11743,8 @@ class Engine {
   // Attempts to pay the Force cost from available hand/gauge. Returns success/failure.
   playForcedBoost(player, opponent, card) {
     const need = this.cardBoostForce(card);
-    const available = [...player.hand, ...player.gauge].filter(c => c.uid !== card.uid);
-    const pool = available.filter(c => this.forceValueOfCard(c) === 2);
-    const ones = available.filter(c => this.forceValueOfCard(c) === 1);
-    const chosen = [];
-    let remaining = need;
-    for (const c of pool) { if (remaining >= 2) { chosen.push(c.uid); remaining -= 2; } }
-    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); remaining -= 1; } }
-    if (remaining !== 0) return false; // Can't afford the Boost
+    const chosen = this.pickExactForceCards(player, need, card.uid);
+    if (!chosen) return false; // Can't afford the Boost
     // Play it
     const forceUids = chosen;
     player.hand = player.hand.filter(c => c.uid !== card.uid);
@@ -11780,7 +11790,7 @@ class Engine {
     const card = player.hand[idx];
     const need = this.cardBoostForce(card);
     const paidValue = this.sumForceValue(player, forceCardsUids);
-    if (paidValue !== need) return { ok: false, reason: 'incorrect force payment' };
+    if (paidValue < need) return { ok: false, reason: 'incorrect force payment' };
     // Boosting instead of attacking is itself a read: it says this hand was not ready to
     // start an exchange from here (see recordObservation).
     this.recordObservation(player, { type: 'boost', dist: Math.abs(player.pos - (opponent ? opponent.pos : player.pos)) });
@@ -12869,7 +12879,7 @@ class Engine {
         // "which specific cards isn't a strategically meaningful choice", which isn't
         // true once the cards differ in both Force value and play value.
         function* spendForPow(spec) {
-          const byCost = [...attacker.hand].sort((a, b) =>
+          const byCost = [...attacker.hand, ...attacker.gauge].sort((a, b) =>
             (engine.forceValueOfCard(a) - engine.forceValueOfCard(b)) || ((a.pow || 0) - (b.pow || 0)));
           const capacity = byCost.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
           const maxForce = Math.min(spec.max, capacity);
@@ -12877,16 +12887,35 @@ class Engine {
           const ans = yield { type: 'optional_force_spend_pow', playerId: attacker.id, max: maxForce, cardName: attCard.name, cardKey: attCard.key };
           const want = Math.max(0, Math.min(maxForce, ans | 0));
           if (want > 0) {
+            const discardFromZone = (uid) => {
+              const taken = engine.discardFromHand(attacker, uid);
+              if (taken) return taken;
+              const gi = attacker.gauge.findIndex(c => c.uid === uid);
+              if (gi !== -1) {
+                const [gCard] = attacker.gauge.splice(gi, 1);
+                attacker.discard.push(gCard);
+                return gCard;
+              }
+              return null;
+            };
             const spentCards = [];
             let spent = 0;
             for (const c of byCost) {
               const v = engine.forceValueOfCard(c);
-              if (spent + v > want) continue; // never overshoot what was actually asked for
-              const taken = engine.discardFromHand(attacker, c.uid);
+              if (spent + v > want) continue;
+              const taken = discardFromZone(c.uid);
               if (taken) { spentCards.push(taken); spent += v; }
               if (spent >= want) break;
             }
-            const gained = spent * (spec.powPerForce || 1);
+            if (spent < want) {
+              for (const c of byCost) {
+                if (spentCards.some(sc => sc.uid === c.uid)) continue;
+                const taken = discardFromZone(c.uid);
+                if (taken) { spentCards.push(taken); spent += engine.forceValueOfCard(c); }
+                if (spent >= want) break;
+              }
+            }
+            const gained = Math.min(spec.max, spent) * (spec.powPerForce || 1);
             ctx.powBonus += gained;
             engine.logMsg(`${attacker.name} spends ${spent} Force for +${gained}POW (${attCard.name}): discards ${spentCards.map(c => c.name).join(', ')}.`, 'force', attacker.id);
           }
@@ -12907,48 +12936,56 @@ class Engine {
         // Block's reactive Force-for-Armor — also matches GG Block ('gg_block',
         // Axl's version of this same card, identical mechanic per cards.js).
         if (defCard.key === 'block' || defCard.key === 'gg_block') {
-          // maxForce is the defender's total spendable Force VALUE from hand (an Ultra is
-          // worth 2 — see forceValueOfCard), NOT the raw card count. Block used to count
-          // every card as exactly 1 Force, which disagreed with every other Force-payment
-          // surface in this engine (Move, Boost, character actions).
-          const maxForce = defender.hand.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
+          const pool = [...defender.hand, ...defender.gauge];
+          const maxForce = pool.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
           if (maxForce > 0) {
             const rawPow = effPow;
             const ans = yield {
               type: 'block_force', playerId: defender.id, maxForce,
               cardName: defCard.name, cardKey: defCard.key,
               attackerPow: rawPow, defenderArmBase: baseDef.arm, defenderGuard: baseDef.grd,
-              // The defender's own hand, for the picker (this yield is only ever routed to
-              // the defender themselves, so this leaks nothing — invariant #1 is about the
-              // OPPONENT's hand).
+              ignoreArmor: !!attStats.ignoreArmor,
               hand: defender.hand.map(c => ({ uid: c.uid, name: c.name, forceValue: engine.forceValueOfCard(c) })),
+              gauge: defender.gauge.map(c => ({ uid: c.uid, name: c.name, forceValue: engine.forceValueOfCard(c) })),
+            };
+            const discardFromZone = (uid) => {
+              const c = engine.discardFromHand(defender, uid);
+              if (c) return c;
+              const gi = defender.gauge.findIndex(x => x.uid === uid);
+              if (gi !== -1) {
+                const [gCard] = defender.gauge.splice(gi, 1);
+                defender.discard.push(gCard);
+                return gCard;
+              }
+              return null;
             };
             const spentCards = [];
             if (ans && typeof ans === 'object' && Array.isArray(ans.uids)) {
-              // The player (or a caller that cares) picked exactly which cards pay.
               for (const uid of ans.uids) {
-                const c = engine.discardFromHand(defender, uid);
+                const c = discardFromZone(uid);
                 if (c) spentCards.push(c);
               }
             } else {
-              // Backwards-compatible integer answer ("spend N Force worth"): ai.js's
-              // resolveAIStrikeRequest and several test harnesses answer with a bare
-              // number. The engine then chooses, cheapest first — lowest Force value,
-              // then lowest POW — so a bare number can never eat an Ultra while a
-              // 1-Force card was available.
               let need = Math.max(0, Math.min(maxForce, ans | 0));
-              const order = [...defender.hand].sort((a, b) =>
+              const order = [...pool].sort((a, b) =>
                 (engine.forceValueOfCard(a) - engine.forceValueOfCard(b)) || ((a.pow || 0) - (b.pow || 0)));
               for (const c of order) {
                 const val = engine.forceValueOfCard(c);
-                if (val > need) continue; // never overshoot the requested amount
-                const got = engine.discardFromHand(defender, c.uid);
+                if (val > need) continue;
+                const got = discardFromZone(c.uid);
                 if (got) { spentCards.push(got); need -= val; }
                 if (need <= 0) break;
               }
+              if (need > 0) {
+                for (const c of order) {
+                  if (spentCards.some(sc => sc.uid === c.uid)) continue;
+                  const got = discardFromZone(c.uid);
+                  if (got) { spentCards.push(got); need -= engine.forceValueOfCard(c); }
+                  if (need <= 0) break;
+                }
+              }
             }
             if (spentCards.length > 0) {
-              // Armor comes from the Force VALUE spent, capped at what the rules allow.
               const forceValue = spentCards.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
               bonusArm = 2 * Math.min(forceValue, maxForce);
               engine.logMsg(`${defender.name} spends ${forceValue} Force from Block for +${bonusArm} Armor (discards ${spentCards.map(c => c.name).join(', ')}).`, 'armor', defender.id, { amount: bonusArm });
@@ -13009,10 +13046,51 @@ class Engine {
           engine.logMsg(`${attacker.name}'s ${attCard.name} misses (range ${rng}, needs ${attCard.range ? attCard.range[0] + '-' + maxR : 'N/A'}).`, 'miss', defender.id, { attackerId: attacker.id });
         }
       }
+      // Check KO & Stun immediately after damage (before After effects run).
+      if (whoTag === first) {
+        if (defender.life <= 0) {
+          secondHappens = false;
+          koWinnerId = attacker.id;
+        } else if (ctx.hitLanded) {
+          const dmg = ctx._dealt;
+          const grd = ctx._effGrd;
+          const secondCritPaid = !!gp[defender.id];
+          const stunImmune = !!(defCard && defCard.critical && defCard.critical.stunImmune && secondCritPaid) ||
+            !!(defCard && defCard.stunImmuneBase) ||
+            defender.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmuneGrant);
+          if (dmg > grd && !stunImmune) {
+            secondHappens = false;
+            stunnedPlayerId = defender.id;
+            pushTimeline({
+              phase: 'stunned',
+              actor: defender.id,
+              stunned: true,
+              guardBroken: true,
+              damageDealt: dmg,
+              effectiveGuard: grd,
+            });
+            engine.logMsg(`${defender.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${defCard.name} is discarded.`, 'stun', defender.id);
+            defender.discard.push(defCard);
+          } else if (dmg > grd && stunImmune) {
+            engine.logMsg(`${defender.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', defender.id);
+          }
+          recordStrikeEvent({
+            type: 'stun',
+            playerId: defender.id,
+            cardName: defCard ? defCard.name : '—',
+            dmg, grd, immune: !!(dmg > grd && stunImmune),
+          });
+        }
+      }
       if (attCard.hooks && attCard.hooks.interactiveAfter === 'hadoken_recycle') {
-        if (ctx.hitLanded) {
-          const wantsRecycle = yield { type: 'hadoken_recycle', playerId: attacker.id, cardName: attCard.name };
+        if (ctx.hitLanded && defender.life > 0) {
+          const wantsRecycle = yield {
+            type: 'hadoken_recycle', playerId: attacker.id,
+            cardName: attCard.name, discardCount: attacker.discard.length,
+          };
           if (wantsRecycle) {
+            const baseCard = attCard._baseCard || attCard;
+            attacker.deck.push(baseCard);
             engine.recycleHadoken(attacker);
             ctx.attackGoesToGauge = false; // returned to deck instead of gauge
           }
@@ -13061,64 +13139,10 @@ class Engine {
       return ctx;
     }
 
-    const firstCtx = yield* activateStep(first);
-    const firstAttacker = first === 'A' ? A : D;
-    const firstDefender = first === 'A' ? D : A;
     let secondHappens = true;
     let stunnedPlayerId = null;
     let koWinnerId = null;
-    if (firstDefender.life <= 0) {
-      // Exceed rule: dropping a fighter to 0 life ends the game immediately;
-      // the slower player does not activate even if Stun Immune.
-      secondHappens = false;
-      koWinnerId = firstAttacker.id;
-    }
-    if (secondHappens && firstCtx.hitLanded) {
-      const dmg = firstCtx._dealt;
-      const grd = firstCtx._effGrd;
-      const secondPlayer = second === 'A' ? A : D;
-      const secondCard = second === 'A' ? aCard : dCard;
-      const secondCritPaid = !!gp[secondPlayer.id];
-      // Zangief's Flying Power Bomb (Critical) / Ultimate Atomic Buster (continuous
-      // boost): Stun Immunity — checked at the moment Stun would apply, from either
-      // source, rather than baked into liveStats (Stun isn't a stat, it's a
-      // pass/fail gate on this specific check).
-      const stunImmune = !!(secondCard && secondCard.critical && secondCard.critical.stunImmune && secondCritPaid) ||
-        !!(secondCard && secondCard.stunImmuneBase) ||
-        secondPlayer.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmuneGrant);
-      if (dmg > grd && !stunImmune) {
-        secondHappens = false;
-        stunnedPlayerId = secondPlayer.id;
-        pushTimeline({
-          phase: 'stunned',
-          actor: secondPlayer.id,
-          stunned: true,
-          guardBroken: true,
-          damageDealt: dmg,
-          effectiveGuard: grd,
-        });
-        this.logMsg(`${secondPlayer.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${secondCard.name} is discarded.`, 'stun', secondPlayer.id);
-        secondPlayer.discard.push(secondCard);
-        if (second === 'A') aCard = null; else dCard = null;
-      } else if (dmg > grd && stunImmune) {
-        this.logMsg(`${secondPlayer.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', secondPlayer.id);
-      }
-      // Recorded whenever the first card connected, INCLUDING the no-stun case
-      // (dmg <= grd) — "your Guard held" is the half of this rule a player never
-      // sees explained, and omitting the event would make Guard look decorative.
-      recordStrikeEvent({
-        type: 'stun',
-        playerId: secondPlayer.id,
-        cardName: secondCard ? secondCard.name : '—',
-        dmg, grd, immune: !!(dmg > grd && stunImmune),
-      });
-    }
-    // Axl's Sickle Storm: "After: If the opponent is stunned, Push 2." Only the
-    // FIRST-acting card can ever be the CAUSE of a stun this exchange (only the
-    // second-to-act can be stunned at all, and only by the first's hit) — so this
-    // only fires for whichever card activated first, with whether a stun actually
-    // happened now known (computed just above, which is why this can't live
-    // inside activateStep's own `after` handling — that runs BEFORE this check).
+    const firstCtx = yield* activateStep(first);
     const firstCard = first === 'A' ? aCard : dCard;
     if (firstCard && firstCard.hooks && firstCard.hooks.afterStunCheck) {
       firstCard.hooks.afterStunCheck(firstCtx, stunnedPlayerId === (first === 'A' ? D.id : A.id));
@@ -13134,6 +13158,7 @@ class Engine {
     const cleanupOne = (whoTag, ctx, card) => {
       if (!card) return;
       const player = whoTag === 'A' ? A : D;
+      if (player.id === stunnedPlayerId) return; // already discarded on Stun
       // Where a used card ends up IS the game's central economy rule (hit -> Gauge,
       // miss -> discard), so every disposal branch below reports itself rather than
       // only the two common ones — a card vanishing to `sealed`/`inplay` with no
@@ -13184,8 +13209,8 @@ class Engine {
     yield* this.cleanupBoosts(A, aCard ? aCard.type : null, wasHit(A), stunnedPlayerId === D.id, stunnedPlayerId === A.id);
     yield* this.cleanupBoosts(D, dCard ? dCard.type : null, wasHit(D), stunnedPlayerId === A.id, stunnedPlayerId === D.id);
     // Card-level cleanup effects (Nagoriyuki's Specials have "Cleanup: Draw 4. Discard 2.")
-    this.triggerCardCleanup(A, aCard);
-    this.triggerCardCleanup(D, dCard);
+    this.triggerCardCleanup(A, stunnedPlayerId === A.id ? null : aCard);
+    this.triggerCardCleanup(D, stunnedPlayerId === D.id ? null : dCard);
     pushTimeline({ phase: 'cleanup', actor: null, confirmedLethal: this.gameOver || this.P('p1').life <= 0 || this.P('p2').life <= 0 });
     // Character-level CLEANUP hooks (Platinum the Trinity's Innate/Exceed are both
     // "Cleanup: You may reveal the top card of your deck..."). Distinct from
@@ -13391,6 +13416,7 @@ class Engine {
   buildExCard(cardA, cardB) {
     return {
       ...cardA,
+      _baseCard: cardA._baseCard || cardA,
       uid: cardA.uid + '+' + cardB.uid,
       isEX: true,
       pow: cardA.pow + 1, spd: cardA.spd + 1, arm: cardA.arm + 1, grd: cardA.grd + 1,
@@ -15273,6 +15299,7 @@ function evalMatchupDetail({
   myCharacterKey, oppCharacterKey,
   myGaugeCount = 0, oppGaugeCount = 0,
   eddiePositions = null,
+  myLife = null, oppLife = null,
 }) {
   const mb = myBoostMods || { pow: 0, spd: 0, arm: 0, grd: 0, ignoreArmor: false, rangeImmuneRanges: [], stunImmune: false, opponentPowMod: 0, hasOwnContinuousBoost: false };
   const ob = oppBoostMods || { pow: 0, spd: 0, arm: 0, grd: 0, ignoreArmor: false, rangeImmuneRanges: [], stunImmune: false, opponentPowMod: 0, hasOwnContinuousBoost: false };
@@ -15423,7 +15450,8 @@ function evalMatchupDetail({
       myDmg = Math.max(0, myPowTotal - effOppArmForMyHit);
       if (myDmg > effOppGrdForMyHit && !oppStunImmune) oppStunned = true;
     }
-    if (!oppStunned && oppHits) {
+    const oppKilled = oppLife != null && myDmg >= oppLife;
+    if (!oppKilled && !oppStunned && oppHits) {
       oppDmg = Math.max(0, oppPowTotal - effMyArmForOppHit);
     }
   } else {
@@ -15431,7 +15459,8 @@ function evalMatchupDetail({
       oppDmg = Math.max(0, oppPowTotal - effMyArmForOppHit);
       if (oppDmg > effMyGrdForOppHit && !myStunImmune) iStunned = true;
     }
-    if (!iStunned && myHits) {
+    const myKilled = myLife != null && oppDmg >= myLife;
+    if (!myKilled && !iStunned && myHits) {
       myDmg = Math.max(0, myPowTotal - effOppArmForMyHit);
     }
   }
@@ -15880,8 +15909,8 @@ function resolveAIStrikeRequest(request, rng, randomness = 0, ctx = null) {
       const direction = request.forceDirection || (rng() < 0.5 ? 'advance' : 'retreat');
       return { amount, direction };
     }
-    if (request.type === 'block_force') return Math.floor(rng() * (request.maxForce + 1));
-    if (request.type === 'hadoken_recycle') return rng() < 0.5;
+    if (request.type === 'block_force') return request.ignoreArmor ? 0 : Math.floor(rng() * (request.maxForce + 1));
+    if (request.type === 'hadoken_recycle') return request.discardCount === 0 ? false : rng() < 0.5;
     if (request.type === 'sustain_choice') return rng() < 0.5;
     if (request.type === 'optional_gauge_spend') return rng() < 0.5;
     if (request.type === 'optional_retreat') return rng() < 0.5;
@@ -15926,6 +15955,7 @@ function resolveAIStrikeRequest(request, rng, randomness = 0, ctx = null) {
     return { amount: best.amount, direction: best.direction };
   }
   if (request.type === 'block_force') {
+    if (request.ignoreArmor) return 0;
     // Two DIFFERENT objectives, which the old single formula silently conflated:
     //
     //   zero the damage — each Force spent is +2 Armor and damage is
@@ -15954,8 +15984,8 @@ function resolveAIStrikeRequest(request, rng, randomness = 0, ctx = null) {
     return Math.max(Math.min(toAvoidStun, request.maxForce), Math.min(want, cap));
   }
   if (request.type === 'hadoken_recycle') {
-    // recycling (Deck-return + Gauge gain) is almost always correct — keep the AI's
-    // prior always-true behavior as its heuristic.
+    if (request.discardCount === 0) return false;
+    // recycling (Deck-return + Gauge gain) is almost always correct when discard has cards.
     return true;
   }
   if (request.type === 'sustain_choice') {
@@ -15991,13 +16021,13 @@ function resolveAIStrikeRequest(request, rng, randomness = 0, ctx = null) {
     return true;
   }
   if (request.type === 'optional_force_spend_pow') {
-    // Temple Massage/Thunder Knuckle's "spend up to N Force for +1POW each". Spending
-    // the maximum was the old answer, and it ignores that every point of Force is a
-    // CARD out of hand — emptying the hand for +3 POW on one exchange leaves nothing to
-    // defend or strike with next turn. Keep a working hand where one exists.
-    if (ctx && ctx.hand) {
-      const keep = 2;
-      return Math.max(0, Math.min(request.max, ctx.hand.length - keep));
+    // Temple Massage/Thunder Knuckle's "spend up to N Force for +1POW each".
+    // Compute spendable Force from both Hand and Gauge while keeping a small reserve.
+    if (ctx && (ctx.hand || ctx.gauge)) {
+      const handForce = (ctx.hand || []).reduce((s, c) => s + planForceValueOf(c), 0);
+      const gaugeForce = (ctx.gauge || []).reduce((s, c) => s + planForceValueOf(c), 0);
+      const FORCE_RESERVE = 2;
+      return Math.max(0, Math.min(request.max, handForce + gaugeForce - FORCE_RESERVE));
     }
     return request.max;
   }
@@ -16887,7 +16917,12 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
     }
   }
 
-  return { cfg, exchangeValue, exchangeDetail, oppInitiateValue, oppInitiateDetail, oppInRangeFraction, myInRangeFraction, oppPreferredDist, oppMods, myHand, oppHands };
+  const oppCannotMove = (oppPublic.boostsInPlay || []).some(k => {
+    const c = typeof CARD_BY_KEY !== 'undefined' && CARD_BY_KEY[k];
+    return c && c.boost && c.boost.opponentCannotMove;
+  });
+
+  return { cfg, exchangeValue, exchangeDetail, oppInitiateValue, oppInitiateDetail, oppInRangeFraction, myInRangeFraction, oppPreferredDist, oppMods, myHand, oppHands, oppCannotMove };
 }
 
 // The abstract state the search moves through. Deliberately small: everything the
@@ -16976,12 +17011,18 @@ function planCardsForForce(st, force) { return force / (st.forcePerCard || 1); }
 function planCandidateActions(st, ctx, mePublicFull, canExceed, boosts, windowOverride) {
   const acts = [{ type: 'strike' }]; // with an empty hand this is the forced Wild Swing
   const window = windowOverride === undefined ? ctx.cfg.moveTargets : windowOverride;
-  // Distance 0 is not a legal board state (two fighters never share a space), so the
-  // closest a Move can ever target is 1.
-  for (let d = Math.max(1, st.dist - window); d <= Math.min(BOARD_SIZE - 1, st.dist + window); d++) {
-    if (d === st.dist) continue;
-    const cost = planMoveCost(st, d);
-    if (cost > 0 && cost <= planAvailableForce(st)) acts.push({ type: 'move', target: d });
+  const canSelfMove = !ctx.oppCannotMove;
+  const charSelfCap = (() => {
+    const ch = CHARACTERS[mePublicFull.characterKey];
+    return ch && ch.selfMoveCap ? ch.selfMoveCap(mePublicFull) : null;
+  })();
+  if (canSelfMove) {
+    for (let d = Math.max(1, st.dist - window); d <= Math.min(BOARD_SIZE - 1, st.dist + window); d++) {
+      if (d === st.dist) continue;
+      const cost = planMoveCost(st, d);
+      if (charSelfCap && cost >= charSelfCap.threshold && cost > charSelfCap.instead) continue;
+      if (cost > 0 && cost <= planAvailableForce(st)) acts.push({ type: 'move', target: d });
+    }
   }
   acts.push({ type: 'prepare' });
   if (st.hand > 0) acts.push({ type: 'changecards', n: Math.min(2, st.hand) });
@@ -17004,91 +17045,70 @@ function planCandidateActions(st, ctx, mePublicFull, canExceed, boosts, windowOv
 // resulting state. Life changes are approximated from the exchange value's sign (the
 // table returns a net swing, not separate damage figures) — good enough for the terms
 // that actually read life here (kill proximity and the life-lead weight).
+function planDraw(st, n) {
+  if (n <= 0) return;
+  if (n > st.deck) {
+    if (st.reshuffleUsed) {
+      st.deckOut = true;
+      st.deck = 0;
+      return;
+    }
+    st.reshuffleUsed = true;
+  }
+  st.deck = Math.max(0, st.deck - n);
+}
+
 function planApplyMyAction(st0, act, ctx, extra) {
   const st = planClone(st0);
   let gain = 0;
   if (act.type === 'strike') {
-    // Both sides of the exchange are applied from the real damage figures. Deriving
-    // both life totals from the single net scalar (the previous implementation) deleted
-    // every mutual trade: a 6-for-5 became "opponent loses 1, I lose 0", so the search
-    // could not tell a safe poke from a race it was losing.
-    // No `gain` here on purpose: an exchange's whole effect is the life swing, and life
-    // is priced exactly once, by planEvaluate's `life` weight, at the leaf.
     const ex = ctx.exchangeDetail(st.dist, st.mods, st.exceeded, true);
     const f = planHandFactor(st);
     st.oppLife = Math.max(0, st.oppLife - ex.myDmg * f);
     st.myLife = Math.max(0, st.myLife - ex.oppDmg * f);
     st.gauge += 0.7;      // a connecting attack banks itself; a miss discards
     st.usedAttacks = (st.usedAttacks || 0) + 1;
-    st.deck = Math.max(0, st.deck - 1);
+    planDraw(st, 1);
     st.advantage = false; // whoever wins the exchange is resolved by the engine, not guessed here
   } else if (act.type === 'move') {
-    // `cost` is in Force; what leaves hand/Gauge is CARDS, which is fewer whenever the
-    // payers average more than 1 Force each (Ultras).
     const cards = Math.min(st.hand + st.gauge, planCardsForForce(st, planMoveCost(st, act.target)));
     const fromHand = Math.min(cards, st.hand);
     st.hand -= fromHand;
     st.gauge = Math.max(0, st.gauge - (cards - fromHand));
     st.dist = act.target;
-    st.hand += 1; st.deck = Math.max(0, st.deck - 1); // end-of-turn draw
+    st.hand += 1; planDraw(st, 1); // end-of-turn draw
   } else if (act.type === 'prepare') {
-    st.hand += 2; st.deck = Math.max(0, st.deck - 2); // Prepare draws 1, plus the end-of-turn draw
+    st.hand += 2; planDraw(st, 2); // Prepare draws 1, plus the end-of-turn draw
   } else if (act.type === 'changecards') {
-    st.hand += 1; st.deck = Math.max(0, st.deck - (act.n + 1));
-    // Trading dead cards for live ones is real but small — priced well under a point of
-    // life so it can never outbid an actual exchange.
-    //
-    // Booked into `st.quality`, which planEvaluate reads at the LEAF, rather than as an
-    // immediate `gain`. That asymmetry is why the planner never once chose Prepare: an
-    // immediate gain is undiscounted while Prepare's whole benefit (two extra cards) is
-    // a leaf term multiplied by d^2 = 0.64, so Change Cards' 0.30 always beat Prepare's
-    // 0.19 on where the reward was booked rather than on merit. Measured: 0 Prepares in
-    // 400 sampled planner decisions before this, and 514 Change Cards in 100 real games.
+    const draws = Math.round(act.n * (st.forcePerCard || 1));
+    st.hand += (draws - act.n) + 1;
+    planDraw(st, draws + 1);
     st.quality = (st.quality || 0) + 0.15 * act.n;
   } else if (act.type === 'boost') {
     st.hand -= 1;
     const boost = act._boost && act._boost.card.boost;
+    if (boost && boost.force > 0) {
+      const cards = Math.min(st.hand + st.gauge, planCardsForForce(st, boost.force));
+      const fromHand = Math.min(cards, st.hand);
+      st.hand -= fromHand;
+      st.gauge = Math.max(0, st.gauge - (cards - fromHand));
+    }
     if (boost && boost.continuous) {
       st.mods = planApplyBoostMods(st.mods, boost);
       st.continuous += 1;
     }
-    // A movement Boost (Cross's Run, Assault's Backstep) buys position, not stats — the
-    // planner has to actually move for it, or "boost" scores as a wasted turn and the
-    // whole class is invisible to the search.
     if (act._boost && act._boost.reposition != null) st.dist = act._boost.reposition;
-    // Focus's Reading and Block's naming have no stat effect at all; their value is
-    // information and denial. Priced through the same leaf-evaluated quality channel as
-    // Change Cards so it can't jump the discount queue.
     if (act._boost && act._boost.staticValue) st.quality = (st.quality || 0) + act._boost.staticValue * 0.2;
-    // The card spent on a Boost is one the hand no longer has as an attack. The
-    // end-of-turn draw replaces the COUNT (so st.hand is unchanged) but not necessarily
-    // the quality, and the exchange table always reports the root hand's best attack —
-    // so charge Boosting a partial share of the same decay a Strike pays in full.
     st.usedAttacks = (st.usedAttacks || 0) + 0.5;
-    // NOTE: no separate credit for the boost's timing delta here — playing it merges its
-    // grants into st.mods, which every downstream exchangeValue lookup already reads.
-    // Adding estimateBoostTimingValue on top double-counted the same benefit and made
-    // the planner buy Boosts roughly a third of all turns.
-    st.hand += 1; st.deck = Math.max(0, st.deck - 1);
+    st.hand += 1; planDraw(st, 1);
   } else if (act.type === 'exceed') {
     st.gauge = Math.max(0, st.gauge - st.exceedCost);
     st.exceeded = true;
-    st.hand += 1; st.deck = Math.max(0, st.deck - 1);
+    st.hand += 1; planDraw(st, 1);
   } else if (act.type === 'action') {
-    // Same leaf-booking as Change Cards above, for the same reason.
     st.quality = (st.quality || 0) + ((extra && extra.actionScore) || 0);
-    // Character actions that reposition and then always Strike (Baiken's Pull, I-No's
-    // Advance, Giovanna's free Strike) are modelled as exactly that — declared on the
-    // action itself in cards.js rather than inferred here, so the planner never has to
-    // call a resolve() that mutates real game state. `planning` (added to every
-    // character action in cards.js) is the current home for this; the older top-level
-    // `planCloses`/`alwaysStrikes` fields are still read as a fallback so the two can't
-    // silently disagree.
     const spec = act._spec || {};
     const plan = spec.planning || {};
-    // The paid actions ([1] for Baiken/I-No/Jack-O') cost Force, which this branch used to
-    // ignore entirely — so in the plan they were free, and a hand that could barely afford
-    // one looked identical to a hand that could. Same conversion as the move branch.
     if (act._forceCost > 0) {
       const cards = Math.min(st.hand + st.gauge, planCardsForForce(st, act._forceCost));
       const fromHand = Math.min(cards, st.hand);
@@ -17098,7 +17118,7 @@ function planApplyMyAction(st0, act, ctx, extra) {
     const closes = plan.closes != null ? plan.closes : spec.planCloses;
     const alwaysStrikes = plan.alwaysStrikes != null ? plan.alwaysStrikes : spec.alwaysStrikes;
     if (closes) st.dist = Math.max(1, st.dist - closes);
-    if (plan.draws) { st.hand += plan.draws; st.deck = Math.max(0, st.deck - plan.draws); }
+    if (plan.draws) { st.hand += plan.draws; planDraw(st, plan.draws); }
     if (plan.gauges) st.gauge += plan.gauges;
     if (alwaysStrikes) {
       const ex = ctx.exchangeDetail(st.dist, st.mods, st.exceeded, true);
@@ -17108,7 +17128,7 @@ function planApplyMyAction(st0, act, ctx, extra) {
       st.gauge += 0.7;
       st.usedAttacks = (st.usedAttacks || 0) + 1;
     }
-    st.hand += 1; st.deck = Math.max(0, st.deck - 1);
+    st.hand += 1; planDraw(st, 1);
   }
   return { st, gain };
 }
@@ -17150,7 +17170,7 @@ function planApplyOppTurn(st0, ctx) {
   // If they don't Strike they close/back off toward their preferred band.
   const drift = (1 - pStrike) * 0.5;
   st.dist = Math.round(st.dist + (ctx.oppPreferredDist - st.dist) * drift);
-  st.dist = Math.max(0, Math.min(BOARD_SIZE - 1, st.dist));
+  st.dist = Math.max(1, Math.min(BOARD_SIZE - 1, st.dist));
   return { st, gain };
 }
 
@@ -17179,6 +17199,7 @@ function planEvaluate(st, ctx) {
   v += w.boost * st.continuous;
   if (st.exceeded) v += w.exceeded;
   if (st.advantage) v += w.advantage;
+  if (st.deckOut) v -= 25;
   if (st.deck <= 2 && st.reshuffleUsed) v += w.deckRisk;
   v += w.multiUse * Math.min(st.multiUse, st.hand);
   // Everything an action was worth beyond its state change — hand quality traded up by
@@ -17455,6 +17476,7 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
         iInitiated: true, myExceeded: !!mePublicFull.exceeded, oppExceeded: !!oppPublic.exceeded,
         myCharacterKey: mePublicFull.characterKey, oppCharacterKey: oppPublic.characterKey,
         myGaugeCount: myGauge, oppGaugeCount: oppGauge,
+        myLife: mePublicFull.life, oppLife: oppPublic.life,
       });
       if (d.myDmg < worst) worst = d.myDmg;
       if (worst < oppPublic.life) break;
@@ -17472,9 +17494,12 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
 //                   for the planner to simulate and would otherwise score as zero.
 function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) {
   const ctx = { hand, dist, oppBoostsInPlay: oppPublic.boostsInPlay, boostMods: myBoostMods };
+  const pool = [...hand, ...(mePublicFull.gauge || [])];
   const out = [];
   for (const card of hand) {
-    if (!card.boost || card.boost.force !== 0) continue;
+    if (!card.boost) continue;
+    const cost = card.boost.force || 0;
+    if (cost > 0 && !canPayExactForce(pool, cost, card.uid)) continue;
     const score = scoreBoostCardContextual(card, ctx);
     const entry = { card, score };
     const reachable = movementBoostReachableDist(card.key, dist);
@@ -17505,7 +17530,8 @@ function canPayExactForce(cards, targetForce, excludeUid = null) {
     if (c.type === 'ultra') twos++;
     else ones++;
   }
-  return targetForce <= ones + 2 * twos && (targetForce % 2 === 0 || ones > 0);
+  // Official Exceed rules allow Force overpayment (e.g. a 2-Force Ultra paying a 1-Force cost).
+  return targetForce <= ones + 2 * twos;
 }
 
 // `usePlanner` defaults to the global switch; a caller can force it off for one side to
@@ -17531,7 +17557,15 @@ function isNativeActionLegal(action, me, opp, canExceed) {
   if (action.type === 'move') {
     if (!Number.isInteger(action.targetSpace) || action.targetSpace < 0 || action.targetSpace > 8) return false;
     if (action.targetSpace === me.pos || (opp && action.targetSpace === opp.pos)) return false;
+    const blocked = opp && (opp.boostsInPlay || []).some(k => {
+      const c = typeof CARD_BY_KEY !== 'undefined' && CARD_BY_KEY[k];
+      return c && c.boost && c.boost.opponentCannotMove;
+    });
+    if (blocked) return false;
     const forceCost = Math.abs(action.targetSpace - me.pos);
+    const ch = CHARACTERS[me.characterKey];
+    const cap = ch && ch.selfMoveCap ? ch.selfMoveCap(me) : null;
+    if (cap && forceCost >= cap.threshold && forceCost > cap.instead) return false;
     return canPayExactForce(pool, forceCost);
   }
   if (action.type === 'changecards') {
@@ -19272,12 +19306,12 @@ class GameController {
     return this.engine.gaugeCount(player) > reserve;
   }
 
-  // Greedily pick hand/gauge uids whose Force VALUE (see engine.forceValueOfCard —
-  // Ultras are worth 2) sums to exactly `target`. Prefers Ultras first purely to
-  // conserve card economy (fewer physical cards spent for the same Force); returns
-  // null if `target` isn't achievable exactly with what's available (e.g. an odd
-  // target with only Ultras left). `excludeUids` accepts a single uid, Array, or Set.
+  // Pick hand/gauge uids whose Force VALUE (Ultras = 2) covers `target`.
+  // Prefers exact payment first (Ultras first to conserve card count), then falls
+  // back to minimal-waste Force overpayment when exact payment is impossible
+  // (e.g. paying 1 Force when only 2-Force Ultras are available).
   pickForceUidsForTarget(player, target, excludeUids) {
+    if (target <= 0) return [];
     const excluded = excludeUids instanceof Set ? excludeUids
       : Array.isArray(excludeUids) ? new Set(excludeUids)
       : (excludeUids ? new Set([excludeUids]) : new Set());
@@ -19285,10 +19319,20 @@ class GameController {
     const twos = pool.filter(c => this.engine.forceValueOfCard(c) === 2);
     const ones = pool.filter(c => this.engine.forceValueOfCard(c) === 1);
     const chosen = [];
+    const chosenSet = new Set();
     let remaining = target;
-    for (const c of twos) { if (remaining >= 2) { chosen.push(c.uid); remaining -= 2; } }
-    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); remaining -= 1; } }
-    return remaining === 0 ? chosen : null;
+    for (const c of twos) { if (remaining >= 2) { chosen.push(c.uid); chosenSet.add(c.uid); remaining -= 2; } }
+    for (const c of ones) { if (remaining >= 1) { chosen.push(c.uid); chosenSet.add(c.uid); remaining -= 1; } }
+    if (remaining > 0) {
+      for (const c of [...ones, ...twos]) {
+        if (chosenSet.has(c.uid)) continue;
+        chosen.push(c.uid);
+        chosenSet.add(c.uid);
+        remaining -= this.engine.forceValueOfCard(c);
+        if (remaining <= 0) break;
+      }
+    }
+    return remaining <= 0 ? chosen : null;
   }
 
   // M. Bison's action: "Add [up to N] card(s) from hand to Gauge, draw that many."
