@@ -39,12 +39,22 @@ const InputManager = (() => {
         return !!(htp && htp.style && htp.style.display && htp.style.display !== 'none');
       })();
 
+    const fpOpen = typeof isFighterPreviewOpen === 'function' && isFighterPreviewOpen();
+
     if (key === 'Escape') {
       if (htpOpen) {
         if (typeof closeHowToPlay === 'function') closeHowToPlay();
         else {
           const htp = typeof document !== 'undefined' ? document.getElementById('howToPlayOverlay') : null;
           if (htp && htp.style) htp.style.display = 'none';
+        }
+        return;
+      }
+      if (fpOpen && typeof FighterPreview !== 'undefined') {
+        if (FighterPreview.isCardDetailOpen && FighterPreview.isCardDetailOpen()) {
+          FighterPreview.closeCardDetail();
+        } else {
+          FighterPreview.close();
         }
         return;
       }
@@ -90,6 +100,17 @@ const InputManager = (() => {
         if (key >= '1' && key <= '5') { ev.preventDefault(); HowToPlayUI.jumpTabIndex(parseInt(key, 10)); return; }
       }
       // Block underlying match shortcuts while the Command Manual is open.
+      return;
+    }
+
+    if (fpOpen && typeof FighterPreview !== 'undefined') {
+      if (FighterPreview.isCardDetailOpen && FighterPreview.isCardDetailOpen()) {
+        if (key === 'ArrowLeft') { if (ev.preventDefault) ev.preventDefault(); FighterPreview.stepCardDetail(-1); return; }
+        if (key === 'ArrowRight') { if (ev.preventDefault) ev.preventDefault(); FighterPreview.stepCardDetail(1); return; }
+      } else if (typeof FighterPreview.stepFighter === 'function') {
+        if (key === 'ArrowLeft') { if (ev.preventDefault) ev.preventDefault(); FighterPreview.stepFighter(-1); return; }
+        if (key === 'ArrowRight') { if (ev.preventDefault) ev.preventDefault(); FighterPreview.stepFighter(1); return; }
+      }
       return;
     }
 

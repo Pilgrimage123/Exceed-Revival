@@ -220,8 +220,9 @@ function isHeadshotPortraitMode() {
   return typeof UXSettings !== 'undefined' && typeof UXSettings.get === 'function' && !!UXSettings.get('headshotPortraits');
 }
 const _fighterPhotoUrlCache = {};
-function fighterPhotoSrc(characterKey) {
-  const useHeadshot = isHeadshotPortraitMode() && !!FIGHTER_HEADSHOTS[characterKey];
+function fighterPhotoSrc(characterKey, opts) {
+  const forceFull = !!(opts && opts.forceFull);
+  const useHeadshot = !forceFull && isHeadshotPortraitMode() && !!FIGHTER_HEADSHOTS[characterKey];
   const raw = useHeadshot ? FIGHTER_HEADSHOTS[characterKey] : FIGHTER_PHOTOS[characterKey];
   if (!raw) return null;
   const cacheKey = characterKey + (useHeadshot ? ':headshot' : ':full');
@@ -401,6 +402,7 @@ function cardTile(c, opts = {}) {
   if (opts.selected) cls.push('selected');
   if (opts.disabled) cls.push('disabled');
   if (opts.lethalAura) cls.push('lethal-aura');
+  if (opts.quickCommit) cls.push('quick-commit-tile');
   if (opts.highlight === 'strike') cls.push('highlight-strike');
   else if (opts.highlight === 'boost') cls.push('highlight-boost');
   const isEX = !!(c.isEX || opts.isEX);
@@ -408,12 +410,17 @@ function cardTile(c, opts = {}) {
   if (opts.fromSource === 'gauge') cls.push('from-gauge');
   const inspectId = c.uid || c.key;
   const escInspectId = esc(inspectId);
+  const escUid = esc(c.uid || '');
   const exBadge = isEX ? '<span class="ex-chip">EX</span>' : '';
+  const exActionBtn = (opts.quickCommit && opts.exOtherUid && !isEX)
+    ? `<button type="button" class="card-ex-btn" title="Pair duplicate cards for EX Strike (+1 All Stats)" aria-label="EX Strike with ${esc(c.name)}" onclick="event.stopPropagation(); G.quickCommitEx('${escUid}', '${esc(opts.exOtherUid)}')">EX</button>`
+    : '';
   const gaugeBadge = opts.fromSource === 'gauge' ? '<span class="card-source-badge gauge-source-badge">GAUGE</span>' : '';
   const dragAttrs = opts.draggable
-    ? `draggable="true" ondragstart="G.onCardDragStart(event, '${c.uid}')" ondragend="G.onCardDragEnd()"`
+    ? `draggable="true" ondragstart="G.onCardDragStart(event, '${escUid}')" ondragend="G.onCardDragEnd()"`
     : '';
-  const tabAttr = opts.onclick || opts.draggable ? ' tabindex="0"' : '';
+  const tabAttr = !opts.quickCommit && (opts.onclick || opts.draggable) ? ' tabindex="0"' : '';
+  const rootClickAttr = !opts.quickCommit && opts.onclick ? ` onclick="${opts.onclick}"` : '';
   const inspectGestures = inspectId
     ? ` oncontextmenu="return G ? G.onCardContextMenu(event, '${escInspectId}', ${isEX}) : false" ondblclick="return G ? G.onCardDoubleClick(event, '${escInspectId}', ${isEX}) : false" onpointerup="G && G.onCardPointerUp(event, '${escInspectId}', ${isEX})" ontouchstart="G && G.onCardTouchStart(event, '${escInspectId}', ${isEX})" ontouchend="G && G.onCardTouchEnd()" ontouchcancel="G && G.onCardTouchEnd()" ontouchmove="G && G.onCardTouchEnd()"`
     : '';
@@ -422,17 +429,30 @@ function cardTile(c, opts = {}) {
     ? `<div class="card-face-crit">${boldCardKeywords(esc(c.criticalText))}</div>`
     : '';
   const fullBoostHTML = `<div class="card-face-boost-full">${boostHeadline(c)}<div class="card-face-boost-body">${forceCostBadge(c)}${boldCardKeywords(esc(c.boostText || 'No Boost effect.'))}</div></div>`;
-  return `<div class="${cls.join(' ')}" data-uid="${c.uid || ''}" ${dragAttrs}${tabAttr} ${opts.onclick ? `onclick="${opts.onclick}"` : ''}${inspectGestures}${rangeHoverAttrs(opts.band, inspectId, isEX)}>
+  const strikeClickAttrs = opts.quickCommit
+    ? ` onclick="G.quickCommitCard('${escUid}', 'strike')" title="Click to Strike with ${esc(c.name)}"`
+    : '';
+  const strikePartRoleAttrs = opts.quickCommit
+    ? ` role="button" tabindex="0" aria-label="Strike with ${esc(c.name)}" onclick="G.quickCommitCard('${escUid}', 'strike')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();G.quickCommitCard('${escUid}','strike');}" title="Click upper half to Strike with ${esc(c.name)}"`
+    : '';
+  const hasBoost = !!c.boost;
+  const boostCls = opts.quickCommit
+    ? (hasBoost ? ' boost-clickable' : ' boost-empty')
+    : '';
+  const boostAttrs = (opts.quickCommit && hasBoost)
+    ? ` role="button" tabindex="0" aria-label="Boost with ${esc(c.name)}" title="Click bottom half to Boost with ${esc(c.name)}" onclick="event.stopPropagation(); G.quickCommitCard('${escUid}', 'boost')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();G.quickCommitCard('${escUid}','boost');}"`
+    : (opts.quickCommit ? ' onclick="event.stopPropagation();"' : '');
+  return `<div class="${cls.join(' ')}" data-uid="${escUid}" ${dragAttrs}${tabAttr}${rootClickAttr}${inspectGestures}${rangeHoverAttrs(opts.band, inspectId, isEX)}>
     <div class="card-header-row">
-      <span class="card-name">${esc(c.name)}${c.isEX ? ' (EX)' : ''}</span>
-      <span class="card-chips">${gaugeBadge}${exBadge}${gaugeCostBadge(c)}${rangeChipHTML(opts.rangeChip)}</span>
+      <span class="card-name${opts.quickCommit ? ' strike-clickable' : ''}"${strikeClickAttrs}>${esc(c.name)}${c.isEX ? ' (EX)' : ''}</span>
+      <span class="card-chips">${gaugeBadge}${exActionBtn}${exBadge}${gaugeCostBadge(c)}${rangeChipHTML(opts.rangeChip)}</span>
     </div>
-    <div class="strike-part">
+    <div class="strike-part${opts.quickCommit ? ' strike-clickable' : ''}"${strikePartRoleAttrs}>
       <div class="card-stats">${statLine(c)}</div>
       ${attackTextHTML}
       ${critTextHTML}
     </div>
-    <div class="card-boost card-boost-tag">
+    <div class="card-boost card-boost-tag${boostCls}"${boostAttrs}>
       ${compactBoostTagHTML(c)}
       ${fullBoostHTML}
     </div>
@@ -736,7 +756,10 @@ function lifeBar(g, who) {
   const boostPills = player.boostsInPlay.map(b => {
     const bId = esc(b.card.uid || b.card.key);
     const exp = b.turnsUntilExpire != null ? ` <em class="pill-expiry">${b.turnsUntilExpire}T</em>` : '';
-    return `<span class="hud-pill boost-pill" role="button" tabindex="0" data-boost-uid="${bId}" onmouseenter="G.onHudPillHover('boost','${who}','${bId}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('boost','${who}','${bId}')" onblur="G.onHudPillHoverEnd()" oncontextmenu="return G ? G.onCardContextMenu(event,'${bId}',false) : false" ondblclick="return G ? G.onCardDoubleClick(event,'${bId}',false) : false" onclick="event.stopPropagation(); (G.onHudPillClick ? G.onHudPillClick('boost','${who}','${bId}') : G.onHudPillHover('boost','${who}','${bId}'))">⚡ ${esc(b.card.name)}${exp}</span>`;
+    const effectText = boostEffectSummary(b.card) || b.card.name;
+    const fullEffectText = boostEffectSummary(b.card, { full: true }) || effectText;
+    const pillTitle = `${b.card.name}: ${fullEffectText}`;
+    return `<span class="hud-pill boost-pill" role="button" tabindex="0" data-boost-uid="${bId}" title="${esc(pillTitle)}" onmouseenter="G.onHudPillHover('boost','${who}','${bId}')" onmouseleave="G.onHudPillHoverEnd()" onfocus="G.onHudPillHover('boost','${who}','${bId}')" onblur="G.onHudPillHoverEnd()" oncontextmenu="return G ? G.onCardContextMenu(event,'${bId}',false) : false" ondblclick="return G ? G.onCardDoubleClick(event,'${bId}',false) : false" onclick="event.stopPropagation(); (G.onHudPillClick ? G.onHudPillClick('boost','${who}','${bId}') : G.onHudPillHover('boost','${who}','${bId}'))">⚡ ${esc(effectText)}${exp}</span>`;
   }).join('');
   return `<div class="life-panel slim-hud-bar ${accentClass}${lowHpCls}${exceedAuraCls}" onclick="G.openInfo('${who}')" role="button" tabindex="0" aria-label="${esc(label)} details">
     <div class="life-top-row">
@@ -996,7 +1019,13 @@ function captureFlipPositions() {
   if (typeof document === 'undefined' || !document.querySelectorAll) return null;
   const before = {};
   for (const t of document.querySelectorAll('.token[data-pid]')) {
-    if (t.getBoundingClientRect) before[t.dataset.pid] = t.getBoundingClientRect().left;
+    if (!t.getBoundingClientRect) continue;
+    const cell = t.closest ? t.closest('.cell[data-space]') : null;
+    before[t.dataset.pid] = {
+      left: t.getBoundingClientRect().left,
+      space: cell ? Number(cell.getAttribute('data-space')) : null,
+      facing: t.dataset.facing || null,
+    };
   }
   return before;
 }
@@ -1004,12 +1033,32 @@ function captureFlipPositions() {
 function applyFlip(before) {
   if (!before) return;
   const moves = [];
+  const engine = (typeof G !== 'undefined' && G) ? G.engine : null;
+  const p1Pos = engine && engine.P ? engine.P('p1').pos : null;
+  const p2Pos = engine && engine.P ? engine.P('p2').pos : null;
+  const fxKind = (typeof G !== 'undefined' && G && G.currentFx) ? G.currentFx.kind : 'move';
+
   for (const t of document.querySelectorAll('.token[data-pid]')) {
     if (!t.getBoundingClientRect) continue;
-    const prevLeft = before[t.dataset.pid];
-    if (prevLeft == null) continue;
-    const dx = prevLeft - t.getBoundingClientRect().left;
+    const prev = before[t.dataset.pid];
+    if (!prev || prev.left == null) continue;
+    const nextLeft = t.getBoundingClientRect().left;
+    const dx = prev.left - nextLeft;
+    const cell = t.closest ? t.closest('.cell[data-space]') : null;
+    const nextSpace = cell ? Number(cell.getAttribute('data-space')) : null;
     if (dx) moves.push({ t, dx });
+    if ((dx || prev.space !== nextSpace) && typeof StandeeStage !== 'undefined' && StandeeStage.notifyBoardMove) {
+      StandeeStage.notifyBoardMove({
+        pid: t.dataset.pid,
+        prevSpace: prev.space,
+        nextSpace,
+        prevLeft: prev.left,
+        nextLeft,
+        p1Pos,
+        p2Pos,
+        fxKind,
+      });
+    }
   }
   if (moves.length === 0) return;
   for (const { t, dx } of moves) {
@@ -1148,9 +1197,10 @@ function buildStrikeBeats(info) {
 // that just bump G.beatIndex and re-render — no mutation happens in this file).
 // Outside beginner mode every beat shows at once and Continue is live immediately,
 // so an experienced player sees no change from the pre-existing bare panel.
-function strikeBreakdownHTML() {
+function strikeBreakdownHTML(opts = {}) {
+  const isModal = !!(opts && opts.modal);
   const beats = buildStrikeBeats(G.engine.lastStrikeInfo);
-  const beginner = !!G.beginner;
+  const beginner = !isModal && !!G.beginner;
   const beatIndex = beginner ? Math.max(0, Math.min(beats.length, G.beatIndex || 0)) : beats.length;
   const beatsHTML = beats.map((text, i) => {
     const revealed = i < beatIndex;
@@ -1160,6 +1210,9 @@ function strikeBreakdownHTML() {
     </div>`;
   }).join('');
   const allRevealed = beatIndex >= beats.length;
+  if (isModal) {
+    return `<div class="breakdown">${beatsHTML}</div><button type="button" class="big-btn" onclick="G.closeLastStrikeModal()">Close</button>`;
+  }
   const controls = beginner
     ? `<div class="beat-controls">
         ${allRevealed ? '' : `<button onclick="G.revealNextBeat()">Next</button><button onclick="G.revealAllBeats()">Show all</button>`}
@@ -1400,6 +1453,210 @@ function rightRailHTML(g) {
   </aside>`;
 }
 
+function modDeltaPillHTML(label, baseVal, delta) {
+  if (!delta) return '';
+  const afterVal = baseVal + delta;
+  const sign = delta > 0 ? `+${delta}` : String(delta);
+  const cls = delta > 0 ? 'up' : 'down';
+  return `<span class="mod-delta-pill ${cls}">${esc(label)} ${baseVal} → ${afterVal} (${sign})</span>`;
+}
+
+function promptCardModPreviewHTML(g) {
+  if (!g || !g.engine) return '';
+  const engine = g.engine;
+  const p = g.human();
+  const opp = g.ai();
+  const char = CHARACTERS[p.characterKey] || {};
+  const mode = g.mode;
+  const req = g.sel && g.sel.request;
+  let card = (g.sel && (g.sel.card || g.sel.resolvingCard)) || null;
+  if (!card && req && (req.cardKey || req.cardName)) {
+    card = resolveCardDef(req.cardKey || req.cardName);
+  }
+
+  let masked = false;
+  let titleText = '';
+  let typeKey = (card && card.type) || 'normal';
+  let baseStatsHTML = '';
+  let bodyNoteHTML = '';
+  const deltas = { pow: 0, spd: 0, arm: 0, grd: 0 };
+  let rangeMaxDelta = 0;
+  const tags = [];
+
+  if (mode === 'critical_choice') {
+    masked = !!(g.sel && g.sel.hideCardName);
+    const dist = engine.range(p, opp);
+    if (masked) {
+      titleText = 'Wild Swing (Unrevealed Card)';
+      typeKey = 'masked';
+      if (char.wildSwingCriticalStatMods) {
+        const b = char.wildSwingCriticalStatMods(p) || {};
+        deltas.pow += b.pow || 0;
+        deltas.spd += b.spd || 0;
+        deltas.arm += b.arm || 0;
+        deltas.grd += b.grd || 0;
+      }
+      if (char.extraCriticalStatsIfOpponentAtRange1 && dist === 1) {
+        const b = char.extraCriticalStatsIfOpponentAtRange1(p) || {};
+        deltas.pow += b.pow || 0;
+        deltas.spd += b.spd || 0;
+        deltas.arm += b.arm || 0;
+        deltas.grd += b.grd || 0;
+      }
+      if (char.grantsMutualCriticalPow) {
+        const b = char.grantsMutualCriticalPow(p) || {};
+        if (b.pow) tags.push(`Both Players +${b.pow} POW`);
+      }
+      bodyNoteHTML = '<div class="prompt-mod-note masked">Top of deck remains hidden until reveal — only public Critical bonuses are shown.</div>';
+    } else if (card) {
+      titleText = card.name + (card.isEX ? ' (EX)' : '');
+      const crit = card.critical || {};
+      const sm = crit.statMods || {};
+      deltas.pow += sm.pow || 0;
+      deltas.spd += sm.spd || 0;
+      deltas.arm += sm.arm || 0;
+      deltas.grd += sm.grd || 0;
+      if (char.extraCriticalStatsIfOpponentAtRange1 && dist === 1) {
+        const b = char.extraCriticalStatsIfOpponentAtRange1(p) || {};
+        deltas.pow += b.pow || 0;
+        deltas.spd += b.spd || 0;
+        deltas.arm += b.arm || 0;
+        deltas.grd += b.grd || 0;
+      }
+      if (char.grantsMutualCriticalPow) {
+        const b = char.grantsMutualCriticalPow(p) || {};
+        if (b.pow) tags.push(`Mutual +${b.pow} POW`);
+      }
+      if (crit.ignoreArmor) tags.push('Ignores Armor');
+      if (crit.ignoreGuard) tags.push('Ignores Guard');
+      if (crit.stunImmune) tags.push('Stun Immune');
+      if (card.criticalText) {
+        bodyNoteHTML = `<div class="prompt-mod-crit">${boldCardKeywords(esc(card.criticalText))}</div>`;
+      }
+    }
+  } else if (mode === 'face_up_choice' && card) {
+    titleText = card.name + (card.isEX ? ' (EX)' : '');
+    const bonus = (char.faceUpStatBonus && char.faceUpStatBonus(p)) || {};
+    deltas.pow += bonus.pow || 0;
+    deltas.spd += bonus.spd || 0;
+    deltas.arm += bonus.arm || 0;
+    deltas.grd += bonus.grd || 0;
+    if (bonus.ignoreArmor) tags.push('Ignores Armor');
+    if (card.text) bodyNoteHTML = `<div class="prompt-mod-note">${boldCardKeywords(esc(card.text))}</div>`;
+  } else if (mode === 'set_time_option_choice' && card) {
+    titleText = card.name + (card.isEX ? ' (EX)' : '');
+    const key = p.characterKey;
+    if (key === 'noel') deltas.spd += 1;
+    else if (key === 'may') deltas.pow += p.exceeded ? 2 : 1;
+    else if (key === 'anji') {
+      deltas.spd -= 1;
+      if (p.exceeded) deltas.arm += 2;
+      else deltas.grd += 2;
+    } else if (key === 'nu13') {
+      rangeMaxDelta = 4;
+    } else if (key === 'ramlethal') {
+      rangeMaxDelta = 1;
+      if (p.exceeded) deltas.pow += 1;
+    } else if (key === 'jin') {
+      tags.push('After: Draw 2');
+    } else if (key === 'tager') {
+      tags.push('Before: Pull 2');
+    } else if (g.sel && g.sel.text) {
+      tags.push(g.sel.text);
+    }
+    if (card.text) bodyNoteHTML = `<div class="prompt-mod-note">${boldCardKeywords(esc(card.text))}</div>`;
+  } else if (mode === 'block_force_choice' && req) {
+    titleText = (card && card.name) || req.cardName || 'Block';
+    const spend = engine.sumForceValue(p, g.sel.chosen || []);
+    const baseArm = card && card.arm != null ? card.arm : (req.defenderArmBase || 0);
+    if (spend > 0) {
+      tags.push(`ARM ${baseArm} → ${baseArm + spend * 2} (+${spend * 2})`);
+    } else {
+      tags.push(`+2 ARM per Force (max ${req.maxForce}F)`);
+    }
+    const projDmg = Math.max(0, (req.attackerPow || 0) - (req.defenderArmBase || 0) - spend * 2);
+    tags.push(`Proj. DMG ${projDmg}`);
+    if (card && card.text) bodyNoteHTML = `<div class="prompt-mod-note">${boldCardKeywords(esc(card.text))}</div>`;
+  } else if (mode === 'optional_force_spend_pow_choice' && req) {
+    titleText = (card && card.name) || req.cardName || 'Attack';
+    const spend = Math.min(g._forcePowSpend == null ? 0 : g._forcePowSpend, req.max || 0);
+    const perForce = req.powPerForce || 1;
+    if (card && spend > 0) {
+      deltas.pow += spend * perForce;
+    } else {
+      tags.push(`+${perForce} POW per Force (up to ${req.max || 0}F)`);
+    }
+    if (card && card.text) bodyNoteHTML = `<div class="prompt-mod-note">${boldCardKeywords(esc(card.text))}</div>`;
+  } else if (
+    (mode === 'optional_gauge_spend_choice' ||
+     mode === 'optional_retreat_choice' ||
+     mode === 'hadoken_recycle_choice' ||
+     mode === 'grasp_choice' ||
+     mode === 'place_eddie_choice' ||
+     mode === 'may_exceed_choice' ||
+     mode === 'named_choice_effect') && card
+  ) {
+    titleText = card.name + (card.isEX ? ' (EX)' : '');
+    if (mode === 'grasp_choice' && req) {
+      const min = req.min != null ? req.min : 1;
+      const max = req.max != null ? req.max : 2;
+      const amt = g._graspAmount == null ? max : Math.max(min, Math.min(max, g._graspAmount));
+      const dir = req.forceDirection || g._graspDir || 'retreat';
+      tags.push(`${dir === 'advance' ? 'Pull' : 'Push'} ${amt}`);
+    } else if (mode === 'hadoken_recycle_choice') {
+      tags.push('Hit: Deck Top vs Keep in Gauge');
+    } else if (mode === 'optional_gauge_spend_choice' && req) {
+      tags.push(`Optional: Spend ${req.amount} Gauge`);
+    } else if (mode === 'optional_retreat_choice' && req) {
+      tags.push(`Optional: Retreat ${req.amount}`);
+    } else if (mode === 'place_eddie_choice') {
+      tags.push('After: Place Eddie');
+    } else if (mode === 'may_exceed_choice') {
+      tags.push('After: Free Exceed');
+    } else if (mode === 'named_choice_effect' && req && req.promptText) {
+      tags.push(req.promptText);
+    }
+    if (card.text) bodyNoteHTML = `<div class="prompt-mod-note">${boldCardKeywords(esc(card.text))}</div>`;
+  } else {
+    return '';
+  }
+
+  if (!masked && !card) return '';
+  if (!masked && card) {
+    baseStatsHTML = `<div class="prompt-mod-base-stats">${statLine(card, { extraClass: 'stat-inline' })}</div>`;
+  }
+
+  const deltaChips = [];
+  if (!masked && card) {
+    if (rangeMaxDelta && Array.isArray(card.range)) {
+      const lo = card.range[0], hi = card.range[1];
+      deltaChips.push(`<span class="mod-delta-pill up">RNG ${lo}~${hi} → ${lo}~${hi + rangeMaxDelta} (+${rangeMaxDelta})</span>`);
+    }
+    if (deltas.spd) deltaChips.push(modDeltaPillHTML('SPD', card.spd || 0, deltas.spd));
+    if (deltas.pow) deltaChips.push(modDeltaPillHTML('POW', card.pow || 0, deltas.pow));
+    if (deltas.arm) deltaChips.push(modDeltaPillHTML('ARM', card.arm || 0, deltas.arm));
+    if (deltas.grd) deltaChips.push(modDeltaPillHTML('GRD', card.grd || 0, deltas.grd));
+  } else if (masked) {
+    if (deltas.spd) deltaChips.push(`<span class="mod-delta-pill up">${deltas.spd > 0 ? '+' : ''}${deltas.spd} SPD</span>`);
+    if (deltas.pow) deltaChips.push(`<span class="mod-delta-pill up">${deltas.pow > 0 ? '+' : ''}${deltas.pow} POW</span>`);
+    if (deltas.arm) deltaChips.push(`<span class="mod-delta-pill up">${deltas.arm > 0 ? '+' : ''}${deltas.arm} ARM</span>`);
+    if (deltas.grd) deltaChips.push(`<span class="mod-delta-pill up">${deltas.grd > 0 ? '+' : ''}${deltas.grd} GRD</span>`);
+  }
+  for (const t of tags) {
+    deltaChips.push(`<span class="mod-delta-pill tag">${esc(t)}</span>`);
+  }
+
+  return `<div class="stage-prompt-mod-preview ${esc(typeKey)}${masked ? ' is-masked' : ''}" data-preview-mode="${esc(mode)}">
+    <div class="prompt-mod-head">
+      <span class="prompt-mod-name">${esc(titleText)}</span>
+      <span class="insp-type-badge ${esc(typeKey)}">${masked ? 'HIDDEN' : esc((typeKey || 'normal').toUpperCase())}</span>
+    </div>
+    ${baseStatsHTML}
+    ${deltaChips.length ? `<div class="prompt-mod-deltas">${deltaChips.join('')}</div>` : ''}
+    ${bodyNoteHTML}
+  </div>`;
+}
+
 function stagePromptBarHTML(g) {
   const engine = g.engine;
   if (g.mode === 'strike_result') {
@@ -1495,7 +1752,7 @@ function stagePromptBarHTML(g) {
     const card = g.sel.card;
     const char = CHARACTERS[g.human().characterKey];
     const bonus = (char.faceUpStatBonus && card) ? (char.faceUpStatBonus(g.human()) || {}) : {};
-    const bonusText = [bonus.pow ? `+${bonus.pow}POW` : '', bonus.spd ? `+${bonus.spd}SPD` : ''].filter(Boolean).join(' and ');
+    const bonusText = [bonus.pow ? `+${bonus.pow}POW` : '', bonus.spd ? `+${bonus.spd}SPD` : '', bonus.ignoreArmor ? 'Ignores ARM' : ''].filter(Boolean).join(' and ');
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">Set ${esc(card ? card.name : 'attack')} face up?</span>
       <div class="btn-row">
@@ -1684,9 +1941,14 @@ function stagePromptBarHTML(g) {
     </div>`;
   }
 
-  return `<div id="stage-prompt-bar" class="stage-prompt-bar${content ? ' active' : ''}">
+  const modPreview = promptCardModPreviewHTML(g);
+  const combined = modPreview
+    ? `<div class="stage-prompt-with-preview">${modPreview}${content || ''}</div>`
+    : content;
+
+  return `<div id="stage-prompt-bar" class="stage-prompt-bar${combined ? ' active' : ''}">
     <div id="trigger-timeline-slot"></div>
-    ${content}
+    ${combined}
   </div>`;
 }
 
@@ -1714,7 +1976,7 @@ function actionPromptBarHTML(g) {
   }
 
   if (g.mode === 'strike_result') {
-    const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!g.beginner;
+    const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike'));
     if (!pauseAfter) {
       return `<div class="action-prompt-row">
         <span class="prompt-label">Resolving Strike…</span>
@@ -2031,14 +2293,29 @@ function unifiedHandDockHTML(g) {
     })}</div>`;
   }
 
+  const isQuickCommit = isMainAction && typeof UXSettings !== 'undefined' && !!UXSettings.get('quickCommit');
+  const dupMap = new Map();
+  if (isMainAction) {
+    for (const c of p.hand) {
+      if (!dupMap.has(c.key)) dupMap.set(c.key, []);
+      dupMap.get(c.key).push(c.uid);
+    }
+  }
   return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
     tileOpts: isMainAction
-      ? (c) => ({
-          selected: g.selectedActionCardUid === c.uid,
-          hoverPreview: true,
-          draggable: true,
-          onclick: `G.selectActionCard('${c.uid}')`,
-        })
+      ? (c) => {
+          const sameKeyUids = dupMap.get(c.key) || [];
+          const canPayUltra = c.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(p, c);
+          const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+          return {
+            selected: !isQuickCommit && g.selectedActionCardUid === c.uid,
+            hoverPreview: true,
+            draggable: true,
+            quickCommit: isQuickCommit,
+            exOtherUid: otherUid,
+            onclick: isQuickCommit ? null : `G.selectActionCard('${c.uid}')`,
+          };
+        }
       : () => ({ disabled: true }),
   })}</div>`;
 }
@@ -2077,13 +2354,30 @@ function topUtilityStripHTML(g) {
 }
 
 function lastStrikeModalHTML(g) {
+  const info = g && g.engine && g.engine.lastStrikeInfo;
+  const you = info && info.sides && info.sides[g.humanId];
+  const cpu = info && info.sides && info.sides[g.aiId];
+  const youDef = you ? resolveCardDef(you.cardKey || you.cardName) : null;
+  const cpuDef = cpu ? resolveCardDef(cpu.cardKey || cpu.cardName) : null;
+  const headSummary = (you && cpu)
+    ? `<div class="inspector-dual-cards">
+        <div class="inspector-dual-col you-col">
+          <div class="dual-col-head">You: <b>${esc(you.cardName)}</b>${esc(sideMarkers(you))}</div>
+          ${youDef && youDef.text ? `<div class="dual-card-text">${boldCardKeywords(esc(youDef.text))}</div>` : ''}
+        </div>
+        <div class="inspector-dual-col cpu-col">
+          <div class="dual-col-head">CPU: <b>${esc(cpu.cardName)}</b>${esc(sideMarkers(cpu))}</div>
+          ${cpuDef && cpuDef.text ? `<div class="dual-card-text">${boldCardKeywords(esc(cpuDef.text))}</div>` : ''}
+        </div>
+      </div>`
+    : '';
   return `<div class="modal-overlay" onclick="if(event.target===this) G.closeLastStrikeModal()">
     <div class="modal-panel">
       <div class="modal-header">
         <b>Last Strike Recap</b>
         <button type="button" class="modal-close" onclick="G.closeLastStrikeModal()">✕</button>
       </div>
-      <div class="modal-body">${strikeBreakdownHTML(g)}</div>
+      <div class="modal-body">${headSummary}${strikeBreakdownHTML({ modal: true })}</div>
     </div>
   </div>`;
 }
@@ -2155,6 +2449,9 @@ function paint() {
     else vig.classList.remove('active');
   }
   renderCardLightboxModal();
+  if (typeof StandeeStage !== 'undefined' && StandeeStage.syncAfterRender) {
+    StandeeStage.syncAfterRender();
+  }
 }
 
 function fullCardLightboxHTML(g) {

@@ -8,7 +8,7 @@ const UXSettings = (() => {
     volume: 0.65,
     reducedHitStop: false,
     colorblindPatterns: false,
-    quickCommit: false,
+    quickCommit: true,
     pauseAfterStrike: false,
     cardViewMode: 'auto',
     headshotPortraits: false,
@@ -65,9 +65,14 @@ const StrikePlaybackController = (() => {
 
   function stop() {
     if (timer) { clearTimeout(timer); timer = null; }
+    const wasActive = !!activeStrikeInfo;
     skipped = true;
+    activeStrikeInfo = null;
     const callout = typeof document !== 'undefined' ? document.getElementById('callout-overlay') : null;
     if (callout) callout.innerHTML = '';
+    if (wasActive && typeof EventBus !== 'undefined') {
+      EventBus.emit('OnStrikePlaybackEnd', { skipped: true });
+    }
   }
 
   function timelineBarHTML(strikeInfo, currentStepIdx) {
@@ -151,6 +156,12 @@ const StrikePlaybackController = (() => {
       if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
 
       if (typeof EventBus !== 'undefined') {
+        EventBus.emit('OnStrikePhase', {
+          phase: step.phase,
+          step,
+          stepIdx: activeStepIdx,
+          strikeInfo: activeStrikeInfo,
+        });
         if (step.phase === 'reveal') {
           EventBus.emit('OnStrikeReveal', { strikeInfo: activeStrikeInfo });
           EventBus.emit('OnSpeedResolved', { winnerId: step.speedWinner, tie: !!step.speedTie });
@@ -184,12 +195,30 @@ const StrikePlaybackController = (() => {
 
       activeStepIdx++;
       if (activeStepIdx < tl.length) {
-        const delay = (step.confirmedLethal && !UXSettings.get('reducedHitStop')) ? 850 : 280;
+        const reduced = typeof UXSettings !== 'undefined' && UXSettings.get && UXSettings.get('reducedHitStop');
+        let delay = 280;
+        if (step.confirmedLethal && !reduced) {
+          delay = 850;
+        } else if (!reduced) {
+          const prevStep = activeStepIdx >= 2 ? tl[activeStepIdx - 2] : null;
+          const moved = prevStep && (prevStep.p1Pos !== step.p1Pos || prevStep.p2Pos !== step.p2Pos);
+          if (step.phase === 'reveal') delay = 400;
+          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 380 : 280;
+          else if (step.phase === 'range' && step.hitLanded === false) delay = 360;
+          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 420 : 340;
+          else if (step.phase === 'stunned') delay = 440;
+        }
         timer = setTimeout(advance, delay);
-      } else if (onCompleteCb) {
+      } else {
         const cb = onCompleteCb;
         onCompleteCb = null;
-        timer = setTimeout(cb, 350);
+        timer = setTimeout(() => {
+          activeStrikeInfo = null;
+          if (typeof EventBus !== 'undefined') {
+            EventBus.emit('OnStrikePlaybackEnd', { skipped: false });
+          }
+          if (cb) cb();
+        }, 350);
       }
     };
 
@@ -455,22 +484,26 @@ const HitParticleEngine = (() => {
       };
     }
 
+    const attackerExceeded = !!opts.attackerExceeded;
+    const excBonus = (attackerExceeded && cardType === 'normal') ? 1.35 : 1.0;
+    const excTag = (attackerExceeded && cardType === 'normal') ? ' · ★ EXCEEDED' : '';
+
     if (dmg >= 3) {
       return {
         tier: 'medium',
         palette: PALETTES.medium,
-        headline: effArm > 0 ? 'ARMOR CRUSH!' : 'SOLID HIT!',
-        subline: cardName ? cardName.toUpperCase() : 'CLEAN CONNECT',
+        headline: effArm > 0 ? 'ARMOR CRUSH!' : (attackerExceeded && cardType === 'normal' ? 'EXCEED STRIKE!' : 'SOLID HIT!'),
+        subline: (cardName ? cardName.toUpperCase() : 'CLEAN CONNECT') + excTag,
         dmgLabel: `-${dmg}`,
         badgeClass: 'tier-medium',
-        particleCount: Math.max(14, Math.round(42 * scale)),
-        shardCount: Math.max(5, Math.round(10 * scale)),
-        slashCount: 2,
-        ringCount: 2,
-        rayCount: Math.max(6, Math.round(11 * scale)),
-        boltCount: reduced ? 0 : 2,
-        starSpikes: 8,
-        starRadius: 56,
+        particleCount: Math.max(14, Math.round(42 * scale * excBonus)),
+        shardCount: Math.max(5, Math.round(10 * scale * excBonus)),
+        slashCount: attackerExceeded ? 3 : 2,
+        ringCount: attackerExceeded ? 3 : 2,
+        rayCount: Math.max(6, Math.round(11 * scale * excBonus)),
+        boltCount: reduced ? 0 : (attackerExceeded ? 4 : 2),
+        starSpikes: attackerExceeded ? 10 : 8,
+        starRadius: attackerExceeded ? 66 : 56,
         shakeLevel: reduced ? 'none' : 'medium',
       };
     }
@@ -478,18 +511,18 @@ const HitParticleEngine = (() => {
     return {
       tier: 'light',
       palette: PALETTES.light,
-      headline: 'HIT!',
-      subline: cardName ? cardName.toUpperCase() : 'QUICK STRIKE',
+      headline: attackerExceeded && cardType === 'normal' ? 'EXCEED HIT!' : 'HIT!',
+      subline: (cardName ? cardName.toUpperCase() : 'QUICK STRIKE') + excTag,
       dmgLabel: `-${dmg}`,
       badgeClass: 'tier-light',
-      particleCount: Math.max(10, Math.round(26 * scale)),
-      shardCount: Math.max(3, Math.round(6 * scale)),
-      slashCount: 1,
-      ringCount: 1,
-      rayCount: Math.max(4, Math.round(7 * scale)),
-      boltCount: 0,
-      starSpikes: 6,
-      starRadius: 42,
+      particleCount: Math.max(10, Math.round(26 * scale * excBonus)),
+      shardCount: Math.max(3, Math.round(6 * scale * excBonus)),
+      slashCount: attackerExceeded ? 2 : 1,
+      ringCount: attackerExceeded ? 2 : 1,
+      rayCount: Math.max(4, Math.round(7 * scale * excBonus)),
+      boltCount: (!reduced && attackerExceeded) ? 2 : 0,
+      starSpikes: attackerExceeded ? 8 : 6,
+      starRadius: attackerExceeded ? 52 : 42,
       shakeLevel: reduced ? 'none' : 'light',
     };
   }
@@ -571,7 +604,17 @@ const HitParticleEngine = (() => {
     let attX = fallbackAtt.x;
     let attY = fallbackAtt.y;
 
-    if (defToken && typeof defToken.getBoundingClientRect === 'function') {
+    const defStagePt = (typeof StandeeStage !== 'undefined' && StandeeStage.getFighterHitPoint && defenderId)
+      ? StandeeStage.getFighterHitPoint(defenderId, 'impact')
+      : null;
+    const attStagePt = (typeof StandeeStage !== 'undefined' && StandeeStage.getFighterHitPoint && attackerId)
+      ? StandeeStage.getFighterHitPoint(attackerId, 'muzzle')
+      : null;
+
+    if (defStagePt) {
+      x = defStagePt.x;
+      y = defStagePt.y;
+    } else if (defToken && typeof defToken.getBoundingClientRect === 'function') {
       const r = defToken.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) {
         x = r.left + r.width / 2;
@@ -589,7 +632,10 @@ const HitParticleEngine = (() => {
       }
     }
 
-    if (attToken && typeof attToken.getBoundingClientRect === 'function') {
+    if (attStagePt) {
+      attX = attStagePt.x;
+      attY = attStagePt.y;
+    } else if (attToken && typeof attToken.getBoundingClientRect === 'function') {
       const r = attToken.getBoundingClientRect();
       if (r.width > 0 && r.height > 0) {
         attX = r.left + r.width / 2;
@@ -840,6 +886,197 @@ const HitParticleEngine = (() => {
     return { x: clampedX, y: clampedY };
   }
 
+  function escapeCalloutHtml(str) {
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function resolveFighterOverheadAnchor(playerId) {
+    const vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024;
+    const vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 768;
+    const fallback = {
+      x: playerId === 'p1' ? vw * 0.34 : vw * 0.62,
+      y: vh * 0.24,
+    };
+    if (typeof document === 'undefined' || typeof document.querySelector !== 'function') {
+      return fallback;
+    }
+
+    const token = playerId ? document.querySelector(`.board .token[data-pid="${playerId}"]`) : null;
+    let x = fallback.x;
+    let y = fallback.y;
+
+    const headPt = (typeof StandeeStage !== 'undefined' && StandeeStage.getFighterHitPoint && playerId)
+      ? StandeeStage.getFighterHitPoint(playerId, 'head')
+      : null;
+
+    if (headPt && Number.isFinite(headPt.x) && Number.isFinite(headPt.y)) {
+      x = headPt.x;
+      y = headPt.y;
+    } else if (token && typeof token.getBoundingClientRect === 'function') {
+      const r = token.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        x = r.left + r.width / 2;
+        y = r.top;
+      }
+    } else if (typeof G !== 'undefined' && G && G.engine && playerId) {
+      const p = G.engine.P(playerId);
+      const cell = p ? document.querySelector(`.board .cell[data-space="${p.pos}"]`) : null;
+      if (cell && typeof cell.getBoundingClientRect === 'function') {
+        const r = cell.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          x = r.left + r.width / 2;
+          y = r.top + Math.min(28, r.height * 0.18);
+        }
+      }
+    }
+    return { x, y };
+  }
+
+  function computeOverheadCalloutPosition(pos, viewport = {}) {
+    const vw = viewport.width != null
+      ? viewport.width
+      : ((typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024);
+    const vh = viewport.height != null
+      ? viewport.height
+      : ((typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 768);
+    const edgePadX = vw < 700 ? 78 : 112;
+    const clampedX = Math.max(edgePadX, Math.min(vw - edgePadX, pos.x));
+    const isShortViewport = vh < 540;
+    const minY = Math.min(Math.max(46, vh - 40), isShortViewport ? 56 : 78);
+    const maxY = Math.max(minY, vh - (isShortViewport ? 34 : 52));
+    const offsetY = isShortViewport ? 6 : 12;
+    const clampedY = Math.max(minY, Math.min(maxY, pos.y - offsetY));
+    return { x: clampedX, y: clampedY };
+  }
+
+  let overheadCalloutCount = 0;
+  let lastOverheadCallouts = [];
+
+  function mountOverheadCalloutEl(className, x, y, innerHTML, durationMs) {
+    ensureOverlaySurface();
+    const record = { className, x: Math.round(x), y: Math.round(y), html: innerHTML, ts: Date.now() };
+    overheadCalloutCount++;
+    lastOverheadCallouts = [...lastOverheadCallouts.slice(-5), record];
+    if (typeof document === 'undefined' || !calloutLayer || typeof document.createElement !== 'function') {
+      return record;
+    }
+    const el = document.createElement('div');
+    el.className = className;
+    el.style.left = `${Math.round(x)}px`;
+    el.style.top = `${Math.round(y)}px`;
+    el.innerHTML = innerHTML;
+    calloutLayer.appendChild(el);
+    if (typeof requestAnimationFrame === 'function') {
+      setTimeout(() => {
+        if (el && el.remove) el.remove();
+      }, durationMs);
+    } else {
+      while (calloutLayer.children && calloutLayer.children.length > 6) {
+        calloutLayer.children[0].remove();
+      }
+    }
+    return record;
+  }
+
+  function triggerActionCallout(opts = {}) {
+    const playerId = opts.playerId || 'p1';
+    const kind = String(opts.kind || 'action').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const label = String(opts.label || 'ACTION').trim();
+    const subline = opts.subline ? String(opts.subline).trim() : '';
+    if (!opts.skipDedup) {
+      const round = opts.roundNum != null
+        ? opts.roundNum
+        : ((typeof G !== 'undefined' && G && G.engine) ? G.engine.roundNum : 0);
+      const dedupKey = `act:${round}:${playerId}:${kind}:${label}:${subline}`;
+      if (isDuplicateTrigger(dedupKey, 260)) return null;
+    }
+    const reduced = isReducedMotion();
+    const anchor = (opts.x != null && opts.y != null)
+      ? { x: Number(opts.x), y: Number(opts.y) }
+      : resolveFighterOverheadAnchor(playerId);
+    const { x, y } = computeOverheadCalloutPosition(anchor);
+    const sideCls = playerId === 'p1' ? 'is-you' : 'is-cpu';
+    const html = `
+      <div class="overhead-callout-inner">
+        <div class="overhead-callout-title">${escapeCalloutHtml(label)}</div>
+        ${subline ? `<div class="overhead-callout-sub">${escapeCalloutHtml(subline)}</div>` : ''}
+      </div>
+    `;
+    return mountOverheadCalloutEl(
+      `overhead-callout callout-action action-${kind} ${sideCls}${reduced ? ' reduced' : ''}`,
+      x,
+      y,
+      html,
+      reduced ? 720 : 1480
+    );
+  }
+
+  function triggerStrikeReveal(strikeInfo, opts = {}) {
+    if (!strikeInfo || !strikeInfo.sides) return [];
+    const s1 = strikeInfo.sides.p1;
+    const s2 = strikeInfo.sides.p2;
+    if (!s1 || !s2) return [];
+    if (!opts.skipDedup) {
+      const dedupKey = `rev:${strikeInfo.roundNum || 0}:${s1.cardName}:${s2.cardName}`;
+      if (isDuplicateTrigger(dedupKey, 900)) return [];
+    }
+    const vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 1024;
+    const edgePadX = vw < 700 ? 78 : 112;
+    const minGap = vw < 700 ? 128 : 176;
+
+    const a1 = resolveFighterOverheadAnchor('p1');
+    const a2 = resolveFighterOverheadAnchor('p2');
+    const p1Pos = computeOverheadCalloutPosition({ x: a1.x, y: a1.y - 26 });
+    const p2Pos = computeOverheadCalloutPosition({ x: a2.x, y: a2.y - 26 });
+
+    const dx = Math.abs(p1Pos.x - p2Pos.x);
+    if (dx < minGap) {
+      const mid = (p1Pos.x + p2Pos.x) / 2;
+      const half = minGap / 2;
+      if (p1Pos.x <= p2Pos.x) {
+        p1Pos.x = Math.max(edgePadX, Math.min(vw - edgePadX - minGap * 0.5, mid - half));
+        p2Pos.x = Math.min(vw - edgePadX, Math.max(edgePadX + minGap * 0.5, p1Pos.x + minGap));
+      } else {
+        p2Pos.x = Math.max(edgePadX, Math.min(vw - edgePadX - minGap * 0.5, mid - half));
+        p1Pos.x = Math.min(vw - edgePadX, Math.max(edgePadX + minGap * 0.5, p2Pos.x + minGap));
+      }
+    }
+
+    const reduced = isReducedMotion();
+    const dur = reduced ? 1050 : 2400;
+    const renderOne = (side, pos, sideCls) => {
+      const tags = [];
+      if (side.isEX) tags.push('EX');
+      if (side.criticalPaid) tags.push('CRITICAL');
+      if (side.fromWildSwing) tags.push('WILD SWING');
+      if (side.faceUp) tags.push('FACE UP');
+      const cardTypeCls = side.cardType ? ` type-${String(side.cardType).toLowerCase()}` : '';
+      const html = `
+        <div class="overhead-callout-inner">
+          <div class="overhead-callout-title">${escapeCalloutHtml(side.cardName || '—')}</div>
+          ${tags.length ? `<div class="overhead-callout-tags">${tags.map(t => `<span class="overhead-tag tag-${t.toLowerCase().replace(/[^a-z0-9]+/g, '-')}">${escapeCalloutHtml(t)}</span>`).join('')}</div>` : ''}
+        </div>
+      `;
+      return mountOverheadCalloutEl(
+        `overhead-callout callout-reveal ${sideCls}${cardTypeCls}${reduced ? ' reduced' : ''}`,
+        pos.x,
+        pos.y,
+        html,
+        dur
+      );
+    };
+
+    return [
+      renderOne(s1, p1Pos, 'is-you'),
+      renderOne(s2, p2Pos, 'is-cpu'),
+    ];
+  }
+
   function applyDomImpactChoreography(pos, spec, defenderId, attackerId) {
     if (typeof document === 'undefined') return;
     const reduced = isReducedMotion();
@@ -874,8 +1111,11 @@ const HitParticleEngine = (() => {
       }
     }
 
-    // 2. Token Impact Flash, Recoil & Attacker Lunge
-    if (pos.defToken && pos.defToken.classList) {
+    // 2. Token Impact Flash, Recoil & Attacker Lunge (skip DOM box transform when WebGL2/Canvas2D StandeeStage owns the fighter)
+    const defStageOwned = typeof StandeeStage !== 'undefined' && StandeeStage.isFighterActive && StandeeStage.isFighterActive(defenderId);
+    const attStageOwned = typeof StandeeStage !== 'undefined' && StandeeStage.isFighterActive && StandeeStage.isFighterActive(attackerId);
+
+    if (!defStageOwned && pos.defToken && pos.defToken.classList) {
       const recoilCls = pos.dirX >= 0 ? 'token-hit-recoil-right' : 'token-hit-recoil-left';
       pos.defToken.classList.remove('token-hit-flash', 'token-hit-recoil-right', 'token-hit-recoil-left');
       pos.defToken.classList.add('token-hit-flash', recoilCls);
@@ -900,7 +1140,7 @@ const HitParticleEngine = (() => {
       }
     }
 
-    if (pos.attToken && pos.attToken.classList && pos.attToken !== pos.defToken) {
+    if (!attStageOwned && pos.attToken && pos.attToken.classList && pos.attToken !== pos.defToken) {
       const lungeCls = pos.dirX >= 0 ? 'token-attack-lunge-right' : 'token-attack-lunge-left';
       pos.attToken.classList.remove('token-attack-lunge-right', 'token-attack-lunge-left');
       pos.attToken.classList.add(lungeCls);
@@ -1295,6 +1535,10 @@ const HitParticleEngine = (() => {
     if (!out.roundNum && engine) {
       out.roundNum = engine.roundNum || 0;
     }
+    if (out.attackerExceeded == null && engine && typeof engine.P === 'function' && attackerId) {
+      const attP = engine.P(attackerId);
+      if (attP && attP.exceeded) out.attackerExceeded = true;
+    }
     if (info && info.sides && attackerId && info.sides[attackerId]) {
       const side = info.sides[attackerId];
       if (!out.cardName && side.cardName) out.cardName = side.cardName;
@@ -1455,6 +1699,7 @@ const HitParticleEngine = (() => {
     flashes.length = 0;
     recentTriggers.clear();
     clearCallouts();
+    lastOverheadCallouts = [];
     if (ctx2d && canvas) {
       ctx2d.save();
       ctx2d.setTransform(1, 0, 0, 1, 0, 0);
@@ -1467,6 +1712,8 @@ const HitParticleEngine = (() => {
     return {
       totalBursts,
       lastBurst,
+      overheadCalloutCount,
+      lastOverheadCallouts,
       activeCount: activeObjectCount(),
       particles: particles.length,
       starbursts: starbursts.length,
@@ -1479,6 +1726,10 @@ const HitParticleEngine = (() => {
   }
 
   if (typeof EventBus !== 'undefined') {
+    EventBus.on('OnStrikeReveal', (payload) => {
+      if (!payload || !payload.strikeInfo) return;
+      triggerStrikeReveal(payload.strikeInfo);
+    });
     EventBus.on('OnStrikeHit', (payload) => {
       if (!payload) return;
       triggerHit({
@@ -1511,10 +1762,13 @@ const HitParticleEngine = (() => {
   return {
     classifyHitTier,
     computeCalloutPosition,
+    computeOverheadCalloutPosition,
     triggerHit,
     triggerGuardBreak,
     triggerExceed,
     triggerFromFx,
+    triggerActionCallout,
+    triggerStrikeReveal,
     stepFrame,
     clear,
     clearCallouts,

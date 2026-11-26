@@ -415,9 +415,10 @@ test('Single-Row Action Bar swaps to contextual pre-commit bar and keeps drag dr
   assert.equal(elements.get('app')?.innerHTML.includes('undefined'), false);
 });
 
-test('strike_result renders Trigger Timeline in Stage Prompt Bar and dual revealed cards in Universal Inspector', () => {
+test('strike_result (when pauseAfterStrike enabled) renders Trigger Timeline in Stage Prompt Bar and dual revealed cards in Universal Inspector', () => {
   const { ctx } = createTrackedSandbox();
   const res = vm.runInContext(`(() => {
+    UXSettings.set('pauseAfterStrike', true);
     const g = new GameController('ryu', 'ken', 'champion', { beginner: true });
     G = g;
     g.confirmMulligan();
@@ -443,6 +444,7 @@ test('strike_result renders Trigger Timeline in Stage Prompt Bar and dual reveal
     return { mode: g.mode, html, moveSetupHtml };
   })()`, ctx) as any;
 
+  assert.equal(res.mode, 'move_setup');
   assert.ok(res.html.includes('id="stage-prompt-bar"'));
   assert.ok(res.html.includes('id="trigger-timeline-slot"'));
   assert.ok(res.html.includes('trigger-timeline'));
@@ -1135,25 +1137,22 @@ test('Inline Fighter Innates, Adaptive Card View Modes, Full Card Lightbox Modal
   assert.ok(bundledHtml.includes('--stat-rng:#f7c65a'), 'Built bundle defines semantic stat palette variables');
 });
 
-test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portraits across HUD, tokens, and Fighter Info modals, and all 41 fighters have portraits', () => {
+test('Zoomed Headshot Portraits option applies to all 41 fighters across HUD, tokens, and Fighter Info modals, and all 41 fighters have portraits', () => {
   const { ctx } = createTrackedSandbox();
   const res = vm.runInContext(`(() => {
-    const legacyKeys = ['sagat', 'ky', 'sol', 'mbison', 'millia'];
     const allCharKeys = Object.keys(CHARACTERS).sort();
     const photoKeys = Object.keys(FIGHTER_PHOTOS).sort();
-    const newKeys = allCharKeys.filter(k => !legacyKeys.includes(k));
-    const otherKeys = Object.keys(FIGHTER_PHOTOS).filter(k => !newKeys.includes(k));
     const hsKeys = Object.keys(FIGHTER_HEADSHOTS).sort();
     const validPhotoData = allCharKeys.every(k => {
       const u = FIGHTER_PHOTOS[k];
       return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && u.length > 1000;
     });
-    const new24Keys = ['ragna', 'jin', 'noel', 'taokaka', 'tager', 'nu13', 'bang', 'hakumen', 'platinum', 'testament', 'leo', 'guile', 'chipp', 'anji', 'may', 'ramlethal', 'nagoriyuki', 'baiken', 'faust', 'ino', 'jacko', 'happychaos', 'zato1', 'goldlewis'];
-    const cleanNew24Photos = new24Keys.every(k => {
+    const newKeysChecked = ['ragna', 'jin', 'noel', 'taokaka', 'tager', 'nu13', 'bang', 'hakumen', 'platinum', 'testament', 'leo', 'guile', 'chipp', 'anji', 'may', 'ramlethal', 'nagoriyuki', 'baiken', 'faust', 'ino', 'jacko', 'happychaos', 'zato1', 'goldlewis', 'mbison', 'ky', 'sagat', 'millia', 'sol'];
+    const cleanNewPhotos = newKeysChecked.every(k => {
       const u = FIGHTER_PHOTOS[k];
       return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && !u.includes('NaN') && !u.includes('undefined');
     });
-    const validHsData = newKeys.every(k => {
+    const validHsData = allCharKeys.every(k => {
       const u = FIGHTER_HEADSHOTS[k];
       return typeof u === 'string' && u.startsWith('data:image/jpeg;base64,') && !u.includes('NaN') && !u.includes('undefined');
     });
@@ -1165,9 +1164,9 @@ test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portra
     // Toggle headshot mode ON
     UXSettings.set('headshotPortraits', true);
     const ryuHsSrc = fighterPhotoSrc('ryu');
-    const sagatAfterSrc = fighterPhotoSrc('sagat');
+    const sagatHsSrc = fighterPhotoSrc('sagat');
 
-    // Verify in-match HUD, board tokens, and Fighter Info modal reflect headshot for ryu + unchanged full for sagat
+    // Verify in-match HUD, board tokens, and Fighter Info modal reflect headshot for both ryu and sagat
     const g = new GameController('ryu', 'sagat', 'student');
     G = g;
     g.confirmMulligan();
@@ -1179,21 +1178,20 @@ test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portra
     // Toggle headshot mode OFF and confirm live repaint reverts to full portrait
     UXSettings.set('headshotPortraits', false);
     const ryuRevertedSrc = fighterPhotoSrc('ryu');
+    const sagatRevertedSrc = fighterPhotoSrc('sagat');
     paint();
     const matchFullHtml = document.getElementById('app').innerHTML;
 
     return {
       allCharKeys,
       photoKeys,
-      newKeysSorted: [...newKeys].sort(),
-      otherKeysCount: otherKeys.length,
       hsKeys,
       validPhotoData,
-      cleanNew24Photos,
+      cleanNewPhotos,
       validHsData,
       defaultSetting,
       ryuChanged: ryuFullSrc !== ryuHsSrc && ryuHsSrc === FIGHTER_HEADSHOTS.ryu && ryuRevertedSrc === ryuFullSrc,
-      sagatUnchanged: sagatFullSrc === sagatAfterSrc && sagatFullSrc === FIGHTER_PHOTOS.sagat,
+      sagatChanged: sagatFullSrc !== sagatHsSrc && sagatHsSrc === FIGHTER_HEADSHOTS.sagat && sagatRevertedSrc === sagatFullSrc,
       matchHsHtml,
       modalHsHtml,
       matchFullHtml,
@@ -1202,15 +1200,14 @@ test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portra
 
   assert.deepEqual([...res.photoKeys], [...res.allCharKeys], 'Every fighter in CHARACTERS (41/41) has a FIGHTER_PHOTOS portrait');
   assert.equal(res.validPhotoData, true, 'All 41 full portraits are valid base64 JPEGs');
-  assert.equal(res.cleanNew24Photos, true, 'All 24 newly generated full portraits are valid base64 JPEGs without NaN/undefined');
-  assert.deepEqual([...res.hsKeys], [...res.newKeysSorted], 'FIGHTER_HEADSHOTS contains exclusively the 36 headshot-enabled fighters');
-  assert.equal(res.otherKeysCount, 5, 'Other 5 legacy photo fighters remain scoped out of headshots');
-  assert.equal(res.validHsData, true, 'All 36 headshot JPEGs are valid base64 without NaN/undefined');
+  assert.equal(res.cleanNewPhotos, true, 'All newly integrated full portraits are valid base64 JPEGs without NaN/undefined');
+  assert.deepEqual([...res.hsKeys], [...res.allCharKeys], 'FIGHTER_HEADSHOTS covers all 41 fighters in CHARACTERS');
+  assert.equal(res.validHsData, true, 'All 41 headshot JPEGs are valid base64 without NaN/undefined');
   assert.equal(res.defaultSetting, false, 'headshotPortraits defaults to false (Full Portraits)');
-  assert.equal(res.ryuChanged, true, 'fighterPhotoSrc switches cleanly between full and headshot and back without stale cache');
-  assert.equal(res.sagatUnchanged, true, 'Other photo fighters (Sagat) remain on FIGHTER_PHOTOS when headshot mode is enabled');
+  assert.equal(res.ryuChanged, true, 'fighterPhotoSrc switches cleanly between full and headshot and back without stale cache for Ryu');
+  assert.equal(res.sagatChanged, true, 'fighterPhotoSrc switches cleanly between full and headshot and back without stale cache for Sagat');
   assert.ok(res.matchHsHtml.includes('data-portrait-kind="headshot" data-fighter-key="ryu"'), 'In-match HUD/token renders Ryu as headshot when enabled');
-  assert.ok(res.matchHsHtml.includes('data-portrait-kind="full" data-fighter-key="sagat"'), 'In-match HUD/token keeps Sagat as full when enabled');
+  assert.ok(res.matchHsHtml.includes('data-portrait-kind="headshot" data-fighter-key="sagat"'), 'In-match HUD/token renders Sagat as headshot when enabled');
   assert.ok(res.modalHsHtml.includes('class="modal-silhouette-wrap"><img class="fighter-silhouette fighter-photo accent-you" data-portrait-kind="headshot" data-fighter-key="ryu"'), 'Fighter Info modal renders zoomed headshot when enabled');
   assert.ok(!res.matchFullHtml.includes('data-portrait-kind="headshot"'), 'Disabling headshot mode reverts all in-match portraits back to full');
 
@@ -1218,12 +1215,16 @@ test('Zoomed Headshot Portraits option applies to all 36 headshot-enabled portra
   assert.ok(bundledHtml.includes('id="set-headshots"'), 'Settings popover includes Zoomed Headshots checkbox');
   assert.ok(bundledHtml.includes('data-portrait-choice="headshot"'), 'Fighter Select & Opponent Select include Zoomed Headshots toggle');
   assert.ok(bundledHtml.includes('FIGHTER_HEADSHOTS'), 'Built bundle includes FIGHTER_HEADSHOTS');
+  assert.ok(
+    bundledHtml.includes('max-height:0;opacity:0') && bundledHtml.includes('.fighter-card:hover .fighter-card-blurb'),
+    'Fighter card descriptions stay hidden at rest and reveal on mouseover/focus-visible'
+  );
 });
 
-test('Arena cleanup: Right Panel defaults collapsed as optional drawer, Last Strike recap is optional, and pauseAfterStrike defaults false', () => {
+test('Arena cleanup: Right Panel defaults collapsed, Strike jumps straight to next turn while keeping Last Strike Recap modal', () => {
   const { ctx } = createTrackedSandbox();
   const res = vm.runInContext(`(() => {
-    const g = new GameController('ryu', 'ken', 'champion');
+    const g = new GameController('ryu', 'ken', 'champion', { beginner: true });
     G = g;
     g.confirmMulligan();
     const defaultCollapsed = g.rightRailCollapsed;
@@ -1241,24 +1242,227 @@ test('Arena cleanup: Right Panel defaults collapsed as optional drawer, Last Str
       gaugePay: {},
     });
     g.driveStrikeGen(gen, undefined);
-    const resolvingHtml = document.getElementById('app').innerHTML;
-    g.continueAfterStrikeResult();
-    const afterContinueHtml = document.getElementById('app').innerHTML;
+    const postStrikeMode = g.mode;
+    const afterStrikeHtml = document.getElementById('app').innerHTML;
     g.toggleLastStrikeModal();
     const modalHtml = document.getElementById('app').innerHTML;
     g.closeLastStrikeModal();
-    return { defaultCollapsed, defaultPauseAfter, idleHtml, resolvingHtml, afterContinueHtml, modalHtml };
+    const afterCloseModalHtml = document.getElementById('app').innerHTML;
+    return { defaultCollapsed, defaultPauseAfter, idleHtml, postStrikeMode, afterStrikeHtml, modalHtml, afterCloseModalHtml };
   })()`, ctx) as any;
 
   assert.equal(res.defaultCollapsed, true);
   assert.equal(res.defaultPauseAfter, false);
+  assert.equal(res.postStrikeMode, 'awaiting_action', 'Strike should jump straight to next turn by default even in beginner mode');
   assert.ok(res.idleHtml.includes('class="top-utility-strip"'));
   assert.ok(res.idleHtml.includes('◀ Panel'));
   assert.equal(res.idleHtml.includes('right-rail drawer-open'), false);
-  assert.ok(res.resolvingHtml.includes('Resolving Strike…'));
-  assert.ok(res.afterContinueHtml.includes('Last Strike'));
-  assert.ok(res.modalHtml.includes('Last Strike Recap'));
+  assert.equal(res.afterStrikeHtml.includes('Resolving Strike…'), false);
+  assert.ok(res.afterStrikeHtml.includes('Last Strike'));
+  assert.ok(res.modalHtml.includes('<b>Last Strike Recap</b>'));
+  assert.ok(res.modalHtml.includes('G.closeLastStrikeModal()'));
+  assert.equal(res.modalHtml.includes('breakdown-beat pending'), false, 'Last Strike modal must show all beats without beginner gating');
+  assert.equal(res.afterCloseModalHtml.includes('<b>Last Strike Recap</b>'), false);
 });
+
+test('Quick-Commit defaults ON with split card halves and inline EX button, and toggling OFF restores two-step confirm', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const defaultQuickCommit = UXSettings.get('quickCommit');
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const p = g.human();
+    const baseCross = SimulateStrikePreview.resolveCardByKey('cross');
+    const baseSweep = SimulateStrikePreview.resolveCardByKey('sweep');
+    p.hand = [
+      { ...baseCross, uid: 'qc_c1' },
+      { ...baseCross, uid: 'qc_c2' },
+      { ...baseSweep, uid: 'qc_s1' },
+    ];
+    paint();
+    const qcHandHtml = document.getElementById('app').innerHTML;
+
+    // Clicking upper half commits Strike immediately
+    g.quickCommitCard('qc_s1', 'strike');
+    const afterQuickStrikeActive = g.engine.active;
+    const hadStrikeInfo = !!g.engine.lastStrikeInfo;
+
+    // Reset human turn and test instant EX commit
+    g.engine.active = 'p1';
+    g.mode = 'awaiting_action';
+    p.hand.push({ ...baseCross, uid: 'qc_c3' }, { ...baseCross, uid: 'qc_c4' });
+    g.quickCommitEx('qc_c3', 'qc_c4');
+    if (g.mode === 'critical_choice') g.resolveCriticalChoice(false);
+    const lastExUsed = !!(g.engine.lastStrikeInfo && g.engine.lastStrikeInfo.sides && g.engine.lastStrikeInfo.sides.p1 && g.engine.lastStrikeInfo.sides.p1.isEX);
+
+    // Reset human turn and test instant Boost commit (0 Force boost Sweep -> Continuous)
+    g.engine.active = 'p1';
+    g.mode = 'awaiting_action';
+    const freeBoostCard = { ...SimulateStrikePreview.resolveCardByKey('focus'), uid: 'qc_f1' };
+    p.hand.push(freeBoostCard);
+    g.quickCommitCard('qc_f1', 'boost');
+    const modeAfterBoost = g.mode;
+
+    // Toggling quickCommit OFF switches hand tiles back to two-step selectActionCard
+    UXSettings.set('quickCommit', false);
+    g.engine.active = 'p1';
+    g.mode = 'awaiting_action';
+    paint();
+    const twoStepHtml = document.getElementById('app').innerHTML;
+
+    return {
+      defaultQuickCommit,
+      qcHandHtml,
+      afterQuickStrikeActive,
+      hadStrikeInfo,
+      lastExUsed,
+      modeAfterBoost,
+      twoStepHtml,
+    };
+  })()`, ctx) as any;
+
+  assert.equal(res.defaultQuickCommit, true);
+  assert.ok(res.qcHandHtml.includes('quick-commit-tile'));
+  assert.ok(res.qcHandHtml.includes(`G.quickCommitCard('qc_c1', 'strike')`));
+  assert.ok(res.qcHandHtml.includes(`G.quickCommitCard('qc_c1', 'boost')`));
+  assert.ok(res.qcHandHtml.includes(`G.quickCommitEx('qc_c1', 'qc_c2')`));
+  assert.equal(res.hadStrikeInfo, true);
+  assert.equal(res.afterQuickStrikeActive, 'p2');
+  assert.equal(res.lastExUsed, true);
+  assert.notEqual(res.modeAfterBoost, 'boost_select');
+  assert.equal(res.twoStepHtml.includes('quick-commit-tile'), false);
+  assert.ok(res.twoStepHtml.includes('G.selectActionCard('));
+});
+
+test('Inline card modification preview renders stat deltas in prompt bar and masks Wild Swing identity', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const ryuHandoken = { ...SimulateStrikePreview.resolveCardByKey('hadoken_ryu'), uid: 'h1' };
+
+    // 1. Standard critical_choice shows card name, base stats, critical deltas & text
+    g.mode = 'critical_choice';
+    g.sel = { card: ryuHandoken, hideCardName: false };
+    paint();
+    const critNormalHtml = document.getElementById('app').innerHTML;
+
+    // 2. Wild Swing critical_choice masks card identity & base stats while showing public Dan critical bonus
+    const gDan = new GameController('dan', 'ken', 'champion');
+    G = gDan;
+    gDan.confirmMulligan();
+    gDan.human().pos = 3;
+    gDan.ai().pos = 5;
+    gDan.mode = 'critical_choice';
+    gDan.sel = { card: ryuHandoken, hideCardName: true };
+    paint();
+    const critWildHtml = document.getElementById('app').innerHTML;
+
+    // 3. face_up_choice for Sagat shows +SPD delta
+    const gSagat = new GameController('sagat', 'ken', 'champion');
+    G = gSagat;
+    gSagat.confirmMulligan();
+    const spike = { ...SimulateStrikePreview.resolveCardByKey('spike'), uid: 'sp1' };
+    gSagat.mode = 'face_up_choice';
+    gSagat.sel = { card: spike };
+    paint();
+    const faceUpHtml = document.getElementById('app').innerHTML;
+
+    // 4. block_force_choice shows live ARM and projected damage delta when Force card selected
+    const gBlk = new GameController('ryu', 'ken', 'champion');
+    G = gBlk;
+    gBlk.confirmMulligan();
+    const blockCard = { ...SimulateStrikePreview.resolveCardByKey('block'), uid: 'blk1' };
+    const forcePayCard = gBlk.human().hand[0];
+    gBlk.mode = 'block_force_choice';
+    gBlk.sel = {
+      request: { type: 'block_force', attackerPow: 6, defenderArmBase: 2, defenderGuard: 4, maxForce: 2, cardKey: 'block', cardName: 'Block' },
+      chosen: [forcePayCard.uid],
+      resolvingCard: blockCard,
+    };
+    paint();
+    const blockForceHtml = document.getElementById('app').innerHTML;
+
+    return { critNormalHtml, critWildHtml, faceUpHtml, blockForceHtml };
+  })()`, ctx) as any;
+
+  assert.ok(res.critNormalHtml.includes('stage-prompt-mod-preview'));
+  assert.ok(res.critNormalHtml.includes('Hadoken'));
+  assert.ok(res.critNormalHtml.includes('mod-delta-pill'));
+  assert.ok(res.critWildHtml.includes('is-masked'));
+  assert.ok(res.critWildHtml.includes('Wild Swing (Unrevealed Card)'));
+  assert.equal(res.critWildHtml.includes('Hadoken'), false, 'Wild Swing Critical prompt must NOT leak top card name');
+  assert.ok(res.critWildHtml.includes('+1 POW'));
+  assert.ok(res.critWildHtml.includes('+1 SPD'));
+  assert.ok(res.faceUpHtml.includes('stage-prompt-mod-preview'));
+  assert.ok(res.faceUpHtml.includes('SPD'));
+  assert.ok(res.blockForceHtml.includes('ARM 2 → 4 (+2)'));
+});
+
+test('Boost HUD pills and ClashSummaryBanner display boost effects directly instead of card names', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const cross = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'b_cross' };
+    const assault = { ...SimulateStrikePreview.resolveCardByKey('assault'), uid: 'b_assault' };
+    g.human().boostsInPlay.push({ card: cross, turnsUntilExpire: null });
+    g.ai().boostsInPlay.push({ card: assault, turnsUntilExpire: null });
+    paint();
+    const hudHtml = document.getElementById('app').innerHTML;
+    const expectedHumanEffect = boostEffectSummary(cross);
+    const expectedCpuEffect = boostEffectSummary(assault);
+    return { hudHtml, expectedHumanEffect, expectedCpuEffect };
+  })()`, ctx) as any;
+
+  assert.ok(res.hudHtml.includes(`⚡ ${res.expectedHumanEffect}`), 'Human boost pill must render effect text directly');
+  assert.ok(res.hudHtml.includes(`⚡ ${res.expectedCpuEffect}`), 'CPU boost pill must render effect text directly');
+  assert.ok(res.hudHtml.includes(`title="Cross:`), 'Boost pill keeps card name inside tooltip title');
+  assert.equal(res.hudHtml.includes('>⚡ Cross<'), false, 'Boost pill text must not just be card name');
+});
+
+test('HitParticleEngine renders overhead Strike reveal card names with collision separation and action callouts', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    HitParticleEngine.clear();
+
+    // Action callout on Prepare
+    g.actionPrepare();
+    const afterPrepare = HitParticleEngine.getState();
+
+    // Adjacent fighters Strike reveal produces separated dual callouts
+    const p1 = g.human(), p2 = g.ai();
+    p1.pos = 4; p2.pos = 4;
+    const c1 = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'ov1' };
+    const c2 = { ...SimulateStrikePreview.resolveCardByKey('sweep'), uid: 'ov2' };
+    const gen = g.engine.resolveStrikeSteps({
+      initiator: 'p1',
+      attackerSel: { card: c1, fromWildSwing: false },
+      defenderSel: { card: c2, fromWildSwing: false },
+      gaugePay: {},
+    });
+    g.driveStrikeGen(gen, undefined);
+    const afterStrike = HitParticleEngine.getState();
+
+    return { afterPrepare, afterStrike };
+  })()`, ctx) as any;
+
+  assert.ok(res.afterPrepare.overheadCalloutCount >= 1);
+  assert.ok(res.afterPrepare.lastOverheadCallouts.some((c: any) => c.html.includes('PREPARE!')));
+  assert.ok(res.afterStrike.overheadCalloutCount >= 3);
+  const reveals = res.afterStrike.lastOverheadCallouts.slice(-2);
+  assert.equal(reveals.length, 2);
+  assert.ok(Math.abs(reveals[0].x - reveals[1].x) >= 120, 'Adjacent/shared-space reveal callouts must separate horizontally');
+  assert.ok(reveals.some((c: any) => c.html.includes('Cross')));
+  assert.ok(reveals.some((c: any) => c.html.includes('Sweep')));
+});
+
 
 
 

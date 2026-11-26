@@ -387,6 +387,10 @@ class Engine {
         deckCount: player.deck.length,
         discardCount: 0,
       });
+      EventBus.emit('OnNeutralAction', {
+        playerId: player.id,
+        kind: 'reshuffle',
+      });
     }
     // Season 5 Astral Heat: a BlazBlue fighter's Astral starts out of play entirely
     // and comes to hand instead of the end-of-turn draw on the turn they take the
@@ -991,6 +995,13 @@ class Engine {
       }
     }
     this.draw(player, forceValue);
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnNeutralAction', {
+        playerId: player.id,
+        kind: 'change_cards',
+        drawn: forceValue,
+      });
+    }
     return { spent, forceValue, drawn: forceValue, spentFromGauge };
   }
 
@@ -1417,6 +1428,14 @@ class Engine {
     player.hand.splice(idx, 1);
     this.payForceFromHandOrGauge(player, forceCardsUids, `the ${card.name} boost`);
     this.logMsg(`${player.name} boosts with ${card.name}.`, 'boost', player.id);
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnNeutralAction', {
+        playerId: player.id,
+        kind: 'boost',
+        cardKey: card.key,
+        cardName: card.name,
+      });
+    }
     const ctx = {
       engine: this, player, opponent,
       namedCardKey: extra && extra.namedCardKey, namedRange: extra && extra.namedRange,
@@ -2171,6 +2190,8 @@ class Engine {
     });
     const sideInfoOf = (player, card, stats, sel) => ({
       playerId: player.id,
+      cardKey: card ? card.key : null,
+      cardType: card ? (card.type || 'normal') : null,
       cardName: card ? card.name : '—',
       isEX: !!(card && card.isEX),
       fromWildSwing: !!(sel && sel.fromWildSwing),
@@ -2182,6 +2203,7 @@ class Engine {
         ignoreArmor: !!stats.ignoreArmor, ignoreGuard: !!stats.ignoreGuard,
       },
     });
+    this._resolvingCards = { [A.id]: aCard, [D.id]: dCard };
     this.lastStrikeInfo = {
       roundNum,
       initiatorId: initiator,
@@ -2406,7 +2428,7 @@ class Engine {
           const mMin = attCard.hooks.moveMin != null ? attCard.hooks.moveMin : 1;
           const mMax = attCard.hooks.moveMax != null ? attCard.hooks.moveMax : 2;
           const forceDir = attCard.hooks.moveForceDirection || null;
-          const answer = yield { type: 'grasp_move', playerId: attacker.id, min: mMin, max: mMax, forceDirection: forceDir };
+          const answer = yield { type: 'grasp_move', playerId: attacker.id, min: mMin, max: mMax, forceDirection: forceDir, cardName: attCard.name, cardKey: attCard.key };
           const amount = Math.max(mMin, Math.min(mMax, (answer && answer.amount != null) ? answer.amount : mMax));
           const direction = forceDir || (answer && answer.direction) || 'retreat';
           const beforePos = defender.pos;
@@ -2435,7 +2457,7 @@ class Engine {
           const spec = attCard.hooks.optionalGaugeSpend;
           if (engine.gaugeCount(attacker) >= spec.amount) {
             const wantsSpend = yield {
-              type: 'optional_gauge_spend', playerId: attacker.id, cardName: attCard.name,
+              type: 'optional_gauge_spend', playerId: attacker.id, cardName: attCard.name, cardKey: attCard.key,
               amount: spec.amount, grantsAdvantage: !!spec.grantsAdvantage,
             };
             if (wantsSpend) {
@@ -2492,7 +2514,7 @@ class Engine {
           const capacity = byCost.reduce((s, c) => s + engine.forceValueOfCard(c), 0);
           const maxForce = Math.min(spec.max, capacity);
           if (maxForce <= 0) return;
-          const ans = yield { type: 'optional_force_spend_pow', playerId: attacker.id, max: maxForce, cardName: attCard.name };
+          const ans = yield { type: 'optional_force_spend_pow', playerId: attacker.id, max: maxForce, cardName: attCard.name, cardKey: attCard.key };
           const want = Math.max(0, Math.min(maxForce, ans | 0));
           if (want > 0) {
             const spentCards = [];
@@ -2534,6 +2556,7 @@ class Engine {
             const rawPow = effPow;
             const ans = yield {
               type: 'block_force', playerId: defender.id, maxForce,
+              cardName: defCard.name, cardKey: defCard.key,
               attackerPow: rawPow, defenderArmBase: baseDef.arm, defenderGuard: baseDef.grd,
               // The defender's own hand, for the picker (this yield is only ever routed to
               // the defender themselves, so this leaks nothing — invariant #1 is about the
@@ -2860,6 +2883,7 @@ class Engine {
     const dealtValues = [firstCtx, secondCtx].filter(c => c && c.hitLanded).map(c => c._dealt || 0);
     const maxSingleHitDamage = dealtValues.length ? Math.max(...dealtValues) : 0;
 
+    this._resolvingCards = null;
     const viaAdvantage = this._advantageOrder.length > 0;
     const result = {
       roundNum,

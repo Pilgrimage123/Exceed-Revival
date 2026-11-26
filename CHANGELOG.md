@@ -11,6 +11,35 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-26 — Normalize Full Portrait & Face-Filling Headshot Framing + Hover-Only Card Descriptions (`scripts/import-portraits.mjs`, `game/portraits.js`, `game/shell.html`, `docs/portrait-upload-guide.md`)
+
+- Normalized zoom, headroom, and waist-up body framing across all 40 non-Ken fighters in `FIGHTER_PHOTOS` (`game/portraits.js`) using **Ken** as the benchmark (`ryu` also stripped cleanly onto the unified dark `#1c2438 → #08090e` backdrop), while preserving all 41 original unzoomed source portraits on disk.
+- Zoomed all 41 `FIGHTER_HEADSHOTS` (`480×600` `4:5`) tightly onto each character's face (ignoring tall hats, hoods, and halos so faces fill almost the entire card and center cleanly in `1:1` HUD thumbnails).
+- Hid `.fighter-card-blurb` descriptions and lightened `.fighter-card-scrim` at rest in `game/shell.html`, revealing full fighter descriptions on mouseover (`.fighter-card:hover`) and keyboard `:focus-visible`.
+- Added `fullCrop` + `drawCropped` support and `12px`/`6px` checkerboard border sampling to `scripts/import-portraits.mjs`.
+
+## 2026-11-26 — Replace Sagat, Guile, Millia & Sol Portraits + Headshots (41/41 Roster Coverage) (`scripts/import-portraits.mjs`, `game/portraits.js`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
+
+- Processed uploaded portraits (`image_b5a4cd27.png` → `sagat`, `image_26d39d3a.png` → `guile`, `image_ae197dc9.png` → `millia`, `image_7aa39be7.png` → `sol`) into `FIGHTER_PHOTOS` (`480w`) and `FIGHTER_HEADSHOTS` (`480×600` `4:5`) inside `game/portraits.js`, reaching **100% roster coverage (`41/41`)** across both full portraits and zoomed headshots with zero `NaN`/`undefined` base64 substrings.
+- Enhanced `scripts/import-portraits.mjs` (`isCheckerPixel` axial + diagonal neighbor checks, enclosed interior pocket passes inside `checkerboard`, and `hasSubtleCheckerBorder` adaptive `white-matte` thresholds) so `12px` baked grey/white and subtle off-white checkerboards extract cleanly without leaving 4-way tile seam dots or trapped pockets inside flame/energy swirls.
+
+## 2026-11-26 — Replace Testament, M. Bison & Ky Portraits + Headshots & Refine White-Matte Pocket Extraction (`scripts/import-portraits.mjs`, `game/portraits.js`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
+
+- Processed uploaded portraits (`image_07476102.png` → `testament`, `image_0b670002.png` → `mbison`, `image_68ecae23.png` → `ky`) into `FIGHTER_PHOTOS` (`480w`) and `FIGHTER_HEADSHOTS` (`480×600` `4:5`) inside `game/portraits.js` (`38` headshot-enabled fighters total, `3` legacy full-portrait fighters remaining: `sagat`, `sol`, `millia`), with zero `NaN`/`undefined` base64 substrings.
+- Refined `removeBackdrop` (`white-matte` path in `scripts/import-portraits.mjs`) to verify subtle off-white checkerboard borders before running checkerboard pocket matching (preventing false cutouts on painterly white cloth highlights), catch dark-hair-enclosed top silhouette gaps, and preserve warm skin highlights during edge halo decontamination.
+
+## 2026-11-25 — 60 FPS WebGL2 Deformable Standee Animation Engine, Exceed Mode Fresnel Rim-Light Auras & Engineering Post-Mortem (`game/standees.js`, `game/standee-stage.js`, `game/playback.js`, `server.ts`, `docs/standee-animation-lessons-learned.md`, `docs/standee-animation-architecture.md`, `tests/standees.test.ts`)
+
+- Built the persistent `60 FPS` WebGL2 `4×6` deformable standee mesh stage (`#standee-stage-root` in `game/standee-stage.js` + `StandeeRigMath` in `game/standees.js`) with a 4-Knot Hermite Spine (`feet`, `pelvis`, `waist`, `head`), 2-sub-step Symplectic Euler squash-and-stretch springs, Dynamic Lunge-and-Return (`computeDynamicLungeOffset` + `computeIkReachPx` + range-stretching smear arcs), Universal 3-Clip Whiff Recovery (`computeClipEnvelope`), 3-Track concurrent layering (`Track 0/1/2`), Midpoint X-Crossover 2.5D flips, `0.40s` Startup Clash Freeze, and 3-way `Armor` / `Guard` ("Super Armor" Grit) / `Stun` defensive choreography.
+- Added WebGL2 Fresnel Rim-Light silhouette illumination (`u_rimColor`, `u_rimStrength` keeping interior artwork 100% unmuddied at `u_tintAmount = 0`), persistent character-specific Exceed Mode auras (Ryu's white-and-cobalt Ki plumes, Denjin fist-to-shoulder lightning arcs, and levitating stone pebbles; Ken's crimson-and-gold dancing flames, ignited gloves, and drifting foot cinders), Dynamic Startup Flare scaling, and Boost/Overdrive orbiting sparks, with anatomical VFX sockets evaluated in deformed texture UV space (`computeDeformedMeshVertex`).
+- Eliminated external runtime dependencies in `server.ts` (`node:http`) and auto-exported `native/generated/card-dsl.json` in `scripts/build-game.mjs` so cold container boots and `npm test` succeed immediately, and authored `docs/standee-animation-lessons-learned.md` documenting all 10 engineering pitfalls, lessons learned, and what to avoid next time.
+
+## 2026-11-25 — Standee Animation Architecture & Ansatsuken `NORMALS` Choreography Spec (`docs/standee-animation-architecture.md`, `README.md`)
+
+- Authored `docs/standee-animation-architecture.md`, adapting the dual-paradigm standee animation pipeline to **Exceed Revival**'s canonical domain (`GLOSSARY.md`), single-bundle architecture (`scripts/build-game.mjs`, `ADR-0006`, `ADR-0007`), and live standee/FX modules (`game/standees.js`, `game/render.js`, `game/playback.js`, `game/telegraph.js`, `game/shell.html`, `tests/standees.test.ts`).
+- Added Section 4 (*Ansatsuken Normal Attack & Backdash Choreography*), mapping all 8 ground-truth `NORMALS` in `game/cards.js` (`Grasp`, `Cross`, `Assault`, `Dive`, `Spike`, `Sweep`, `Focus`, `Block`) to Ryu (*Disciplined Hop* / grounded karate) vs. Ken (*Flashy Backflip* / acrobatic flair) standee spine, spring, and trajectory parameters while reconciling conversational stat drift (`Sweep` `Rng 1–3, Pow 6, Spd 2, Arm 0, Grd 6`; `Cross` `After: Retreat 3` vs. `Dive` aerial cross-up).
+- Resolved asset format, 9-Space flat lane + plinth perspective, and simultaneous Strike Reveal UX against the existing codebase, documenting concrete mitigations for ghosting, hip-teleportation, non-flipping backdash retreats, `#app` repaint wiping, and `reducedHitStop` accessibility.
+
 ## 2026-11-25 — Generate Matching Portraits & Zoomed Headshots for All 24 Remaining Fighters (`game/portraits.js`, `tests/strike-preview.test.ts`, `docs/portrait-upload-guide.md`)
 
 - Generated matching comic-book arcade fighting-game portraits for all 24 fighters previously using SVG silhouettes (`ragna`, `jin`, `noel`, `taokaka`, `tager`, `nu13`, `bang`, `hakumen`, `platinum`, `testament`, `leo`, `guile`, `chipp`, `anji`, `may`, `ramlethal`, `nagoriyuki`, `baiken`, `faust`, `ino`, `jacko`, `happychaos`, `zato1`, `goldlewis`) and processed them via `scripts/import-portraits.mjs` into `FIGHTER_PHOTOS` and headroom-tuned `480×600` `FIGHTER_HEADSHOTS` with zero `NaN`/`undefined` base64 substrings.

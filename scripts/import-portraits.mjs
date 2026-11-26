@@ -60,6 +60,7 @@ function buildProcessorHTML(entries) {
     const b64 = fs.readFileSync(abs).toString('base64');
     return {
       key: entry.key,
+      fullCrop: entry.fullCrop || null,
       crop: entry.crop || null,
       dataUrl: `data:${mimeForPath(abs)};base64,${b64}`,
     };
@@ -88,26 +89,34 @@ function isCheckerPixel(data, w, h, x, y, requireAlternation = false) {
   if (Math.max(r, g, b) - Math.min(r, g, b) > 20) return false;
   const lum = r * 0.299 + g * 0.587 + b * 0.114;
   if (lum < 178) return false;
-  // Measure high-frequency neutral checkerboard alternation in a 10px cross
+  // Measure high-frequency neutral checkerboard alternation across axial + diagonal tile steps
   let minL = 255, maxL = 0, neutral = 0, total = 0;
-  for (let d = -10; d <= 10; d += 5) {
-    for (const [nx, ny] of [[x + d, y], [x, y + d]]) {
-      if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-      const ni = (ny * w + nx) * 4;
-      const nr = data[ni], ng = data[ni + 1], nb = data[ni + 2];
-      total++;
-      if (Math.max(nr, ng, nb) - Math.min(nr, ng, nb) <= 20) {
-        neutral++;
-        const nl = nr * 0.299 + ng * 0.587 + nb * 0.114;
-        if (nl < minL) minL = nl;
-        if (nl > maxL) maxL = nl;
-      }
+  const pts = requireAlternation
+    ? [
+        [x - 12, y], [x - 6, y], [x - 5, y], [x + 5, y], [x + 6, y], [x + 12, y],
+        [x, y - 12], [x, y - 6], [x, y - 5], [x, y + 5], [x, y + 6], [x, y + 12],
+      ]
+    : [
+        [x - 12, y], [x - 6, y], [x + 6, y], [x + 12, y],
+        [x, y - 12], [x, y - 6], [x, y + 6], [x, y + 12],
+        [x - 6, y - 6], [x + 6, y - 6], [x - 6, y + 6], [x + 6, y + 6],
+      ];
+  for (const [nx, ny] of pts) {
+    if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+    const ni = (ny * w + nx) * 4;
+    const nr = data[ni], ng = data[ni + 1], nb = data[ni + 2];
+    total++;
+    if (Math.max(nr, ng, nb) - Math.min(nr, ng, nb) <= 20) {
+      neutral++;
+      const nl = nr * 0.299 + ng * 0.587 + nb * 0.114;
+      if (nl < minL) minL = nl;
+      if (nl > maxL) maxL = nl;
     }
   }
   if (requireAlternation) {
     return total >= 4 && neutral >= total - 1 && minL <= 232 && maxL >= 242 && (maxL - minL >= 18);
   }
-  return total >= 4 && neutral >= total - 1 && (maxL - minL >= 18 || lum >= 244);
+  return total >= 4 && neutral >= Math.ceil(total * 0.55) && (maxL - minL >= 18 || lum >= 244);
 }
 
 function detectBackdropMode(data, w, h) {
@@ -120,14 +129,15 @@ function detectBackdropMode(data, w, h) {
     const mx = Math.max(data[idx], data[idx + 1], data[idx + 2]);
     const mn = Math.min(data[idx], data[idx + 1], data[idx + 2]);
     const lum = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
-    if (mx - mn <= 18 && lum >= 242) whiteEdge++;
+    if (mx - mn <= 18 && lum >= 238) whiteEdge++;
     if (isCheckerPixel(data, w, h, x, y, true)) checkerEdge++;
   };
   for (let x = 0; x < w; x += step) { checkPt(x, 0); checkPt(x, h - 1); }
   for (let y = 0; y < h; y += step) { checkPt(0, y); checkPt(w - 1, y); }
-  if (transparentEdge / edgeSamples > 0.03) return 'alpha';
-  if (checkerEdge / edgeSamples > 0.20) return 'checkerboard';
+  if (transparentEdge / edgeSamples > 0.25) return 'alpha';
+  if (checkerEdge / edgeSamples > 0.12) return 'checkerboard';
   if (whiteEdge / edgeSamples > 0.35) return 'white-matte';
+  if (transparentEdge / edgeSamples > 0.03) return 'alpha';
   return 'opaque-dark';
 }
 
@@ -135,6 +145,33 @@ function removeBackdrop(imgData) {
   const { data, width: w, height: h } = imgData;
   const mode = detectBackdropMode(data, w, h);
   if (mode === 'alpha' || mode === 'opaque-dark') return { imgData, mode };
+
+  let hasSubtleCheckerBorder = false;
+  if (mode === 'white-matte') {
+    let borderNeutral = 0, borderMid = 0, borderStep = 0;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (x >= 16 && x < w - 16 && y >= 16 && y < h - 16) continue;
+        const i = (y * w + x) * 4;
+        const mn = Math.min(data[i], data[i + 1], data[i + 2]);
+        const mx = Math.max(data[i], data[i + 1], data[i + 2]);
+        if (mn >= 235 && mx - mn <= 7) {
+          borderNeutral++;
+          if (mn >= 236 && mn <= 249) borderMid++;
+          if (x + 12 < w) {
+            const j = (y * w + x + 12) * 4;
+            const mn2 = Math.min(data[j], data[j + 1], data[j + 2]);
+            const mx2 = Math.max(data[j], data[j + 1], data[j + 2]);
+            if (mn2 >= 235 && mx2 - mn2 <= 7 && Math.abs(mn - mn2) >= 3) borderStep++;
+          }
+        }
+      }
+    }
+    hasSubtleCheckerBorder =
+      borderNeutral >= 500 &&
+      (borderMid / borderNeutral) >= 0.25 &&
+      (borderStep / borderNeutral) >= 0.25;
+  }
 
   const total = w * h;
   const bg = new Uint8Array(total);
@@ -147,7 +184,10 @@ function removeBackdrop(imgData) {
     const sat = Math.max(r, g, b) - Math.min(r, g, b);
     const lum = r * 0.299 + g * 0.587 + b * 0.114;
     if (mode === 'white-matte') {
-      return (sat <= 24 && lum >= 230) || (sat <= 34 && lum >= 242);
+      const mn = Math.min(r, g, b);
+      return hasSubtleCheckerBorder
+        ? (mn >= 237 && sat <= 7)
+        : (mn >= 243 && sat <= 8);
     }
     if (sat > 20) return false;
     const x = p % w, y = (p - x) / w;
@@ -210,41 +250,106 @@ function removeBackdrop(imgData) {
     }
   }
 
-  // Enclosed interior pure-white pocket removal for solid white-matte artwork.
-  // Distinguishes flat #ffffff backdrop pockets (trapped between hair, limbs, and swirling aura ribbons)
-  // from painted white cloth/teeth/eyes via pure-white core area and sharp dark/colored boundary contrast.
-  if (mode === 'white-matte') {
+  // Enclosed interior checkerboard pocket cleanup for checkerboard-mode art (e.g. pockets framed by colored aura)
+  if (mode === 'checkerboard') {
+    const isChkPx = (p) => {
+      const i = p * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+      const lum = r * 0.299 + g * 0.587 + b * 0.114;
+      return sat <= 14 && lum >= 202;
+    };
     const visited = new Uint8Array(total);
     const compQ = new Int32Array(total);
     for (let startP = 0; startP < total; startP++) {
-      if (bg[startP] || visited[startP]) continue;
-      const si = startP * 4;
-      const sr = data[si], sg = data[si + 1], sb = data[si + 2];
-      if (sr < 248 || sg < 248 || sb < 248 || Math.max(sr, sg, sb) - Math.min(sr, sg, sb) > 6) continue;
+      if (bg[startP] || visited[startP] || !isChkPx(startP)) continue;
+      let ch = 0, ct = 0;
+      visited[startP] = 1;
+      compQ[ct++] = startP;
+      let hiCount = 0, loCount = 0, bt = 0, bsoft = 0;
+      while (ch < ct) {
+        const cp = compQ[ch++];
+        const cx = cp % w, cy = (cp - cx) / w;
+        const ci = cp * 4;
+        const clum = data[ci] * 0.299 + data[ci + 1] * 0.587 + data[ci + 2] * 0.114;
+        if (clum >= 242) hiCount++;
+        else if (clum >= 202 && clum <= 236) loCount++;
+        for (const np of [cx > 0 ? cp - 1 : -1, cx + 1 < w ? cp + 1 : -1, cy > 0 ? cp - w : -1, cy + 1 < h ? cp + w : -1]) {
+          if (np < 0 || bg[np] || visited[np]) continue;
+          if (isChkPx(np)) {
+            visited[np] = 1;
+            compQ[ct++] = np;
+          } else {
+            const nx = np % w, ny = (np - nx) / w;
+            const sx = Math.max(0, Math.min(w - 1, nx + (nx - cx) * 2));
+            const sy = Math.max(0, Math.min(h - 1, ny + (ny - cy) * 2));
+            const bi = (sy * w + sx) * 4;
+            const bsat = Math.max(data[bi], data[bi + 1], data[bi + 2]) - Math.min(data[bi], data[bi + 1], data[bi + 2]);
+            const blum = data[bi] * 0.299 + data[bi + 1] * 0.587 + data[bi + 2] * 0.114;
+            bt++;
+            if (bsat <= 20 && blum >= 150 && blum < 202) bsoft++;
+          }
+        }
+      }
+      if (ct >= 100 && (hiCount / ct) >= 0.30 && (loCount / ct) >= 0.16 && (bt ? bsoft / bt : 0) <= 0.10) {
+        for (let k = 0; k < ct; k++) bg[compQ[k]] = 1;
+      }
+    }
+  }
+
+  // Enclosed interior backdrop pocket removal for white-matte / subtle-checkerboard artwork.
+  // Flood-fills ONLY strict backdrop pixels so shaded cloth/chrome gradients are preserved right
+  // at the boundary, then requires either verified subtle-checkerboard border + alternation,
+  // a pure core with crisp dark/saturated aura borders, or a dark-hair top silhouette gap.
+  if (mode === 'white-matte') {
+    const minStrict = hasSubtleCheckerBorder ? 238 : 244;
+    const maxStrictSat = hasSubtleCheckerBorder ? 6 : 7;
+    const isStrictPocketPx = (p) => {
+      const i = p * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      return Math.min(r, g, b) >= minStrict && (Math.max(r, g, b) - Math.min(r, g, b)) <= maxStrictSat;
+    };
+    const visited = new Uint8Array(total);
+    const compQ = new Int32Array(total);
+    for (let startP = 0; startP < total; startP++) {
+      if (bg[startP] || visited[startP] || !isStrictPocketPx(startP)) continue;
 
       let ch = 0, ct = 0;
       visited[startP] = 1;
       compQ[ct++] = startP;
+      let maxCompY = 0;
       let pureWhiteCount = 0;
+      let midGreyCount = 0;
+      let checkerStepHits = 0;
       let borderTotal = 0;
       let borderSoftNeutral = 0;
       let borderDarkOrSaturated = 0;
+      let borderSaturated = 0;
       let borderDarkInk = 0;
       let borderLumSum = 0;
-      let minCx = w, maxCx = 0, minCy = h, maxCy = 0;
 
       while (ch < ct) {
         const cp = compQ[ch++];
         const cx = cp % w;
         const cy = (cp - cx) / w;
-        if (cx < minCx) minCx = cx;
-        if (cx > maxCx) maxCx = cx;
-        if (cy < minCy) minCy = cy;
-        if (cy > maxCy) maxCy = cy;
+        if (cy > maxCompY) maxCompY = cy;
         const ci = cp * 4;
         const cr = data[ci], cg = data[ci + 1], cb = data[ci + 2];
-        if (cr >= 250 && cg >= 250 && cb >= 250 && Math.max(cr, cg, cb) - Math.min(cr, cg, cb) <= 5) {
+        const clum = (cr + cg + cb) / 3;
+        const cmn = Math.min(cr, cg, cb);
+        if (cmn >= 250 && Math.max(cr, cg, cb) - cmn <= 5) {
           pureWhiteCount++;
+        } else if (cmn >= minStrict && clum <= 249.5) {
+          midGreyCount++;
+        }
+        if (hasSubtleCheckerBorder && cx + 8 < w) {
+          const sp = cp + 8;
+          if (isStrictPocketPx(sp)) {
+            const si = sp * 4;
+            const slum = (data[si] + data[si + 1] + data[si + 2]) / 3;
+            const d = Math.abs(clum - slum);
+            if (d >= 3 && d <= 16) checkerStepHits++;
+          }
         }
         const nbrs = [
           cx > 0 ? cp - 1 : -1,
@@ -254,21 +359,22 @@ function removeBackdrop(imgData) {
         ];
         for (const np of nbrs) {
           if (np < 0 || bg[np] || visited[np]) continue;
-          if (isBgPixel(np)) {
+          if (isStrictPocketPx(np)) {
             visited[np] = 1;
             compQ[ct++] = np;
           } else {
-            // Sample 2px outward from boundary to see if it fades into white cloth/skin highlight or hits ink/colored aura
+            // Sample 2px outward from strict boundary so cloth/chrome gradients are never swallowed
             const nx = np % w, ny = (np - nx) / w;
-            const sx = Math.max(0, Math.min(w - 1, nx + (nx - cx)));
-            const sy = Math.max(0, Math.min(h - 1, ny + (ny - cy)));
+            const sx = Math.max(0, Math.min(w - 1, nx + (nx - cx) * 2));
+            const sy = Math.max(0, Math.min(h - 1, ny + (ny - cy) * 2));
             const bi = (sy * w + sx) * 4;
             const br = data[bi], bgc = data[bi + 1], bb = data[bi + 2];
             const bsat = Math.max(br, bgc, bb) - Math.min(br, bgc, bb);
             const blum = br * 0.299 + bgc * 0.587 + bb * 0.114;
             borderTotal++;
             borderLumSum += blum;
-            if (bsat <= 20 && blum >= 180 && blum < 235) borderSoftNeutral++;
+            if (bsat <= 24 && blum >= 180 && blum < minStrict) borderSoftNeutral++;
+            if (bsat >= 30) borderSaturated++;
             if (blum < 165 || bsat >= 30) borderDarkOrSaturated++;
             if (blum < 120) borderDarkInk++;
           }
@@ -276,20 +382,37 @@ function removeBackdrop(imgData) {
       }
 
       const compArea = ct;
+      const pureFrac = compArea > 0 ? pureWhiteCount / compArea : 0;
+      const midFrac = compArea > 0 ? midGreyCount / compArea : 0;
+      const stepFrac = compArea > 0 ? checkerStepHits / compArea : 0;
       const softNeutralFrac = borderTotal > 0 ? borderSoftNeutral / borderTotal : 0;
       const crispEdgeFrac = borderTotal > 0 ? borderDarkOrSaturated / borderTotal : 0;
+      const satEdgeFrac = borderTotal > 0 ? borderSaturated / borderTotal : 0;
       const darkInkFrac = borderTotal > 0 ? borderDarkInk / borderTotal : 0;
       const avgBorderLum = borderTotal > 0 ? borderLumSum / borderTotal : 255;
-      // Only remove interior pure-white pockets that have genuine flat #ffffff cores, dark ink/outline
-      // boundaries (protecting bright skin specular highlights and yellow flame cores), and non-cloth edges.
-      const isPocket =
-        pureWhiteCount >= 24 &&
-        compArea >= 45 &&
-        softNeutralFrac < 0.30 &&
-        crispEdgeFrac > 0.55 &&
-        (darkInkFrac >= 0.16 || (compArea >= 450 && avgBorderLum <= 178));
 
-      if (isPocket) {
+      const isSubtleCheckerPocket =
+        hasSubtleCheckerBorder &&
+        compArea >= 250 &&
+        midFrac >= 0.30 &&
+        stepFrac >= 0.22;
+      const isPureBackdropPocket =
+        pureFrac >= 0.75 &&
+        compArea >= 400 &&
+        softNeutralFrac <= 0.08 &&
+        crispEdgeFrac >= 0.58 &&
+        (darkInkFrac >= 0.22 ||
+         (satEdgeFrac >= 0.68 && avgBorderLum <= 194) ||
+         (pureFrac >= 0.80 && softNeutralFrac <= 0.02 && satEdgeFrac >= 0.55 && avgBorderLum <= 232));
+      const isHairGapPocket =
+        !hasSubtleCheckerBorder &&
+        maxCompY < h * 0.24 &&
+        softNeutralFrac <= 0.16 &&
+        satEdgeFrac <= 0.48 &&
+        ((compArea >= 85 && compArea < 1400 && darkInkFrac >= 0.41 && avgBorderLum <= 160 && (pureFrac >= 0.45 || avgBorderLum <= 130)) ||
+         (compArea >= 25 && compArea < 85 && darkInkFrac >= 0.55 && avgBorderLum <= 135));
+
+      if (isSubtleCheckerPocket || isPureBackdropPocket || isHairGapPocket) {
         for (let k = 0; k < ct; k++) bg[compQ[k]] = 1;
       }
     }
@@ -333,6 +456,7 @@ function removeBackdrop(imgData) {
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     const sat = mx - mn;
     const lum = r * 0.299 + g * 0.587 + b * 0.114;
+    const isWarmSkin = r > g && g >= b && (r - b) < 95;
 
     if (mode === 'white-matte') {
       if (dist[p] === 1) {
@@ -342,7 +466,7 @@ function removeBackdrop(imgData) {
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 3] = Math.round(alpha * 255);
-        } else if (mn >= 155) {
+        } else if (mn >= 155 && !isWarmSkin) {
           // Pale white-contaminated colored aura/flame edge: recover vivid color and fade alpha cleanly
           const alpha = Math.max(0.12, Math.min(1, 1 - (mn - 145) / 108));
           data[i] = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
@@ -357,7 +481,7 @@ function removeBackdrop(imgData) {
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
           data[i + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
           data[i + 3] = Math.round(alpha * 255);
-        } else if (mn >= 195) {
+        } else if (mn >= 195 && !isWarmSkin) {
           const alpha = Math.max(0.35, Math.min(1, 1 - (mn - 185) / 70));
           data[i] = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
@@ -469,6 +593,20 @@ function paintRadialBackdrop(ctx, w, h) {
   ctx.fillRect(0, 0, w, h);
 }
 
+function drawCropped(ctx, work, crop, dstW, dstH) {
+  const sx0 = Math.max(0, crop.x);
+  const sy0 = Math.max(0, crop.y);
+  const sx1 = Math.min(work.width, crop.x + crop.w);
+  const sy1 = Math.min(work.height, crop.y + crop.h);
+  if (sx1 > sx0 && sy1 > sy0) {
+    const dx = ((sx0 - crop.x) / crop.w) * dstW;
+    const dy = ((sy0 - crop.y) / crop.h) * dstH;
+    const dw = ((sx1 - sx0) / crop.w) * dstW;
+    const dh = ((sy1 - sy0) / crop.h) * dstH;
+    ctx.drawImage(work, sx0, sy0, sx1 - sx0, sy1 - sy0, dx, dy, dw, dh);
+  }
+}
+
 function encodeSafeJpeg(canvas) {
   for (const q of QUALITIES) {
     const url = canvas.toDataURL('image/jpeg', q);
@@ -511,15 +649,16 @@ async function loadImage(src) {
     const { imgData, mode } = removeBackdrop(rawData);
     wctx.putImageData(imgData, 0, 0);
 
-    // 1. Full portrait (480px wide)
+    // 1. Full portrait (480px wide, optionally cropped via entry.fullCrop)
+    const fullCrop = entry.fullCrop || { x: 0, y: 0, w: work.width, h: work.height };
     const fullW = 480;
-    const fullH = Math.round(work.height * (fullW / work.width));
+    const fullH = Math.round(fullW * (fullCrop.h / fullCrop.w));
     const fullCanvas = document.createElement('canvas');
     fullCanvas.width = fullW;
     fullCanvas.height = fullH;
     const fctx = fullCanvas.getContext('2d');
     paintRadialBackdrop(fctx, fullW, fullH);
-    fctx.drawImage(work, 0, 0, fullW, fullH);
+    drawCropped(fctx, work, fullCrop, fullW, fullH);
     const fullEnc = encodeSafeJpeg(fullCanvas);
     photos[entry.key] = fullEnc.url;
 
@@ -530,7 +669,7 @@ async function loadImage(src) {
     hsCanvas.height = 600;
     const hctx = hsCanvas.getContext('2d');
     paintRadialBackdrop(hctx, 480, 600);
-    hctx.drawImage(work, crop.x, crop.y, crop.w, crop.h, 0, 0, 480, 600);
+    drawCropped(hctx, work, crop, 480, 600);
     const hsEnc = encodeSafeJpeg(hsCanvas);
     headshots[entry.key] = hsEnc.url;
 
@@ -548,7 +687,7 @@ async function loadImage(src) {
     // Token 5:6 (150x180)
     sctx.drawImage(hsCanvas, 0, 0, 480, 576, 565, ry + 10, 150, 180);
 
-    meta.push({ key: entry.key, mode, crop, fullQuality: fullEnc.quality, hsQuality: hsEnc.quality });
+    meta.push({ key: entry.key, mode, fullCrop, crop, fullQuality: fullEnc.quality, hsQuality: hsEnc.quality });
   }
 
   window.__PORTRAIT_RESULTS = { photos, headshots, meta };

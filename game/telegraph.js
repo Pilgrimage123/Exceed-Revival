@@ -194,7 +194,8 @@ const ClashSummaryBanner = (() => {
     const isInitiator = typeof G === 'undefined' || G.mode !== 'defend_select';
     const oppBoosts = (infoSet.opponent.boostKeys || []).map((k) => {
       const c = typeof SimulateStrikePreview !== 'undefined' ? SimulateStrikePreview.resolveCardByKey(k) : null;
-      return c ? c.name : k;
+      if (!c) return k;
+      return typeof boostEffectSummary === 'function' ? boostEffectSummary(c) : c.name;
     });
     const hasOpt = preview.optionalBranches && preview.optionalBranches.length > 0;
     const optActive = !!(hoverMeta && hoverMeta.useOptionalBranch);

@@ -897,3 +897,201 @@ test('Recommended beginner roster includes 6 fighters (adding Giovanna and Potem
   assert.ok(dom);
 });
 
+test('Selecting a fighter opens the Big Fighter Card with unzoomed full portrait, strategy, complexity, full stats, clickable deck review, and Prev/Next Fighter navigation', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    all41Clean: boolean;
+    badFighters: string[];
+    badCardKeys: string[];
+    opensBeforeTransition: boolean;
+    usesFullPortraitUnderHeadshotMode: boolean;
+    hasStrategyAndAbilities: boolean;
+    hasStatsAndRangeChart: boolean;
+    hasComplexityAndVfx: boolean;
+    prevNextFighterWorks: boolean;
+    deckTabWorks: boolean;
+    deckFilterCounts: { all: number; special: number; ultra: number; normal: number };
+    cardDetailWorks: boolean;
+    stepNextChangesCard: boolean;
+    confirmAdvancesToAi: boolean;
+    aiOpensBeforeDiff: boolean;
+    aiConfirmAdvancesToDiff: boolean;
+    noUndefinedOrNaN: boolean;
+  }>(`
+    (() => {
+      // Enable zoomed headshots mode to prove the Big Fighter Card STILL renders the unzoomed full portrait.
+      setHeadshotPortraits(true);
+
+      const badFighters = [];
+      const badCardKeys = [];
+      for (const k of Object.keys(CHARACTERS)) {
+        FighterPreview.open(k, 'human');
+        const html = document.getElementById('fighterPreviewOverlay').innerHTML;
+        const st = FighterPreview.computeFighterStats(k);
+        const entries = FighterPreview.getDeckEntries(k);
+        const seen = new Set();
+        for (const e of entries) {
+          if (!e.card.key || /["'\\\\<>]/.test(e.card.key) || seen.has(e.card.key)) {
+            badCardKeys.push(k + ':' + e.card.key);
+          }
+          seen.add(e.card.key);
+        }
+        let detailOk = false;
+        if (entries.length > 0) {
+          FighterPreview.inspectCard(entries[0].card.key, 'all');
+          const dHtml = document.getElementById('fighterPreviewOverlay').innerHTML;
+          detailOk = dHtml.includes('fp-card-detail-backdrop') && !dHtml.includes('undefined') && !dHtml.includes('NaN');
+          FighterPreview.closeCardDetail();
+        }
+        const complexityOk = st && st.complexity && st.complexity.score >= 1.5 && st.complexity.score <= 5.0
+          && !!st.complexity.stars && !!st.complexity.tier && !!st.complexity.hook;
+        if (!st || !complexityOk || !html || html.includes('undefined') || html.includes('NaN') || !html.includes('data-portrait-kind="full"') || !detailOk) {
+          badFighters.push(k);
+        }
+      }
+      FighterPreview.close();
+
+      // Human fighter selection flow
+      document.getElementById('charSelect').style.display = 'flex';
+      document.getElementById('aiCharSelect').style.display = 'none';
+      document.getElementById('diffSelect').style.display = 'none';
+
+      selectCharacter('ryu');
+      const overlay = document.getElementById('fighterPreviewOverlay');
+      const profileHtml = overlay.innerHTML;
+      const opensBeforeTransition = FighterPreview.isOpen()
+        && overlay.style.display === 'flex'
+        && document.getElementById('charSelect').style.display !== 'none'
+        && document.getElementById('aiCharSelect').style.display === 'none';
+
+      const usesFullPortraitUnderHeadshotMode = profileHtml.includes('data-portrait-kind="full"')
+        && profileHtml.includes('fp-full-portrait');
+      const hasStrategyAndAbilities = profileHtml.includes('Zoning-and-punish shoto')
+        && profileHtml.includes('Innate Ability')
+        && profileHtml.includes('Exceeded Ability');
+      const hasStatsAndRangeChart = profileHtml.includes('Full Fighter Stats')
+        && profileHtml.includes('Special &amp; Ultra Range Coverage')
+        && profileHtml.includes('Deck Size');
+      const hasComplexityAndVfx = profileHtml.includes('data-stat="complexity"')
+        && profileHtml.includes('fp-complexity-meter')
+        && profileHtml.includes('fp-complexity-banner')
+        && profileHtml.includes('1.5')
+        && profileHtml.includes('Low Pilot Load')
+        && profileHtml.includes('fp-vfx-aura')
+        && profileHtml.includes('fp-vfx-sparks')
+        && profileHtml.includes('fp-top-energy-beam')
+        && profileHtml.includes('data-action="prev-fighter"')
+        && profileHtml.includes('data-action="next-fighter"');
+
+      // Test Next Fighter and Previous Fighter buttons
+      FighterPreview.nextFighter();
+      const steppedToKen = FighterPreview.getState().charKey === 'ken'
+        && overlay.innerHTML.includes('2 / 41')
+        && overlay.innerHTML.includes('Ken');
+      FighterPreview.prevFighter();
+      const steppedBackToRyu = FighterPreview.getState().charKey === 'ryu'
+        && overlay.innerHTML.includes('1 / 41');
+      FighterPreview.prevFighter();
+      const wrappedToLast = FighterPreview.getState().charKey !== 'ryu'
+        && overlay.innerHTML.includes('41 / 41');
+      FighterPreview.nextFighter();
+      const wrappedBackToRyu = FighterPreview.getState().charKey === 'ryu';
+      const prevNextFighterWorks = steppedToKen && steppedBackToRyu && wrappedToLast && wrappedBackToRyu;
+
+      // Deck review tab + filters
+      FighterPreview.setTab('deck');
+      const deckHtmlAll = overlay.innerHTML;
+      const deckTabWorks = deckHtmlAll.includes('fp-deck-grid') && deckHtmlAll.includes('Hadoken') && deckHtmlAll.includes('Metsu Shoryuken');
+      const countCards = (h) => (h.match(/class="fp-deck-card /g) || []).length;
+      const allCount = countCards(deckHtmlAll);
+      FighterPreview.setDeckFilter('special');
+      const specialCount = countCards(overlay.innerHTML);
+      FighterPreview.setDeckFilter('ultra');
+      const ultraCount = countCards(overlay.innerHTML);
+      FighterPreview.setDeckFilter('normal');
+      const normalCount = countCards(overlay.innerHTML);
+      FighterPreview.setDeckFilter('all');
+
+      // Click a card to inspect full card detail lightbox & step next
+      FighterPreview.inspectCard('hadoken_ryu', 'all');
+      const detailHtml1 = overlay.innerHTML;
+      const cardDetailWorks = FighterPreview.isCardDetailOpen()
+        && detailHtml1.includes('fp-card-detail-backdrop')
+        && detailHtml1.includes('Hadoken')
+        && detailHtml1.includes('BOOST HALF');
+      FighterPreview.stepCardDetail(1);
+      const detailHtml2 = overlay.innerHTML;
+      const stepNextChangesCard = detailHtml2 !== detailHtml1 && FighterPreview.isCardDetailOpen();
+      FighterPreview.closeCardDetail();
+
+      // Confirm human fighter -> advances to AI select
+      FighterPreview.confirm();
+      const confirmAdvancesToAi = !FighterPreview.isOpen()
+        && pendingChar === 'ryu'
+        && document.getElementById('charSelect').style.display === 'none'
+        && document.getElementById('aiCharSelect').style.display === 'flex';
+
+      // Opponent fighter selection flow
+      selectAiCharacter('zato1');
+      const aiHtml = overlay.innerHTML;
+      const aiOpensBeforeDiff = FighterPreview.isOpen()
+        && aiHtml.includes('role-ai')
+        && aiHtml.includes('Opponent vs. Ryu')
+        && aiHtml.includes('Puppet Token (Eddie)')
+        && aiHtml.includes('5.0')
+        && aiHtml.includes('Master')
+        && document.getElementById('diffSelect').style.display === 'none';
+
+      FighterPreview.confirm();
+      const aiConfirmAdvancesToDiff = !FighterPreview.isOpen()
+        && pendingAiChar === 'zato1'
+        && document.getElementById('aiCharSelect').style.display === 'none'
+        && document.getElementById('diffSelect').style.display === 'flex';
+
+      const noUndefinedOrNaN = ![profileHtml, deckHtmlAll, detailHtml1, aiHtml].some(h => h.includes('undefined') || h.includes('NaN'));
+
+      return {
+        all41Clean: badFighters.length === 0 && badCardKeys.length === 0,
+        badFighters,
+        badCardKeys,
+        opensBeforeTransition,
+        usesFullPortraitUnderHeadshotMode,
+        hasStrategyAndAbilities,
+        hasStatsAndRangeChart,
+        hasComplexityAndVfx,
+        prevNextFighterWorks,
+        deckTabWorks,
+        deckFilterCounts: { all: allCount, special: specialCount, ultra: ultraCount, normal: normalCount },
+        cardDetailWorks,
+        stepNextChangesCard,
+        confirmAdvancesToAi,
+        aiOpensBeforeDiff,
+        aiConfirmAdvancesToDiff,
+        noUndefinedOrNaN,
+      };
+    })()
+  `);
+
+  assert.deepEqual([...res.badFighters], []);
+  assert.deepEqual([...res.badCardKeys], []);
+  assert.equal(res.all41Clean, true);
+  assert.equal(res.opensBeforeTransition, true);
+  assert.equal(res.usesFullPortraitUnderHeadshotMode, true);
+  assert.equal(res.hasStrategyAndAbilities, true);
+  assert.equal(res.hasStatsAndRangeChart, true);
+  assert.equal(res.hasComplexityAndVfx, true);
+  assert.equal(res.prevNextFighterWorks, true);
+  assert.equal(res.deckTabWorks, true);
+  assert.equal(res.deckFilterCounts.special, 5);
+  assert.equal(res.deckFilterCounts.ultra, 2);
+  assert.equal(res.deckFilterCounts.normal, 8);
+  assert.equal(res.deckFilterCounts.all, 15);
+  assert.equal(res.cardDetailWorks, true);
+  assert.equal(res.stepNextChangesCard, true);
+  assert.equal(res.confirmAdvancesToAi, true);
+  assert.equal(res.aiOpensBeforeDiff, true);
+  assert.equal(res.aiConfirmAdvancesToDiff, true);
+  assert.equal(res.noUndefinedOrNaN, true);
+});
+
+

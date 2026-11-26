@@ -328,6 +328,18 @@ class GameController {
   human() { return this.engine.P(this.humanId); }
   ai() { return this.engine.P(this.aiId); }
   log(msg, kind, who, extra) { this.engine.logMsg(msg, kind, who, extra); }
+  emitActionCallout(playerId, kind, label, subline, extra = {}) {
+    if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerActionCallout) {
+      HitParticleEngine.triggerActionCallout({
+        playerId,
+        kind,
+        label,
+        subline,
+        roundNum: this.engine ? this.engine.roundNum : 0,
+        ...extra,
+      });
+    }
+  }
 
   // Steps through engine.fxQueue one event at a time, re-rendering (with the
   // board-badge + FLIP-move treatment) between each so the player has a beat to
@@ -362,7 +374,10 @@ class GameController {
       }
       this.currentFx = q.shift();
       render();
-      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerFromFx) {
+      const deferToStrikeTimeline = this.mode === 'strike_result' &&
+        typeof StrikePlaybackController !== 'undefined' &&
+        (this.currentFx.kind === 'hit' || this.currentFx.kind === 'damage' || this.currentFx.kind === 'stun');
+      if (!deferToStrikeTimeline && typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerFromFx) {
         HitParticleEngine.triggerFromFx(this.currentFx, this.engine);
       }
       // Hits get a slightly longer beat than everything else — it's the
@@ -583,21 +598,29 @@ class GameController {
     this.engine.startRound();
     this.engine.draw(player, 1);
     this.log('You Prepare (draw a card).');
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnNeutralAction', { playerId: player.id, kind: 'prepare' });
+    }
     this.finishNonStrikeAction();
+    this.emitActionCallout(player.id, 'prepare', 'PREPARE!', '+1 CARD');
   }
 
   actionReshuffle() {
     this.engine.startRound();
     this.engine.manualReshuffle(this.human());
     this.finishNonStrikeAction();
+    this.emitActionCallout(this.humanId, 'reshuffle', 'RESHUFFLE!', 'DECK REBUILT');
   }
 
   actionExceed() {
     this.engine.startRound();
-    const res = this.engine.doExceed(this.human());
+    const player = this.human();
+    const res = this.engine.doExceed(player);
+    const charName = (CHARACTERS[player.characterKey] && CHARACTERS[player.characterKey].name || '').toUpperCase();
     if (res.mayStrike) {
       this.mode = 'char_exceed_strike_choice';
       render();
+      this.emitActionCallout(this.humanId, 'exceed', 'EXCEED!', charName);
       return;
     }
     // M. Bison's Exceed: "you may take this action immediately" — same shape as
@@ -605,9 +628,11 @@ class GameController {
     if (res.mayAction) {
       this.mode = 'char_exceed_action_choice';
       render();
+      this.emitActionCallout(this.humanId, 'exceed', 'EXCEED!', charName);
       return;
     }
     this.finishNonStrikeAction();
+    this.emitActionCallout(this.humanId, 'exceed', 'EXCEED!', charName);
   }
 
   // Data-driven "burst" action — see cards.js's `grantsBurstAction` boost flag
@@ -619,6 +644,7 @@ class GameController {
     this.engine.startRound();
     this.engine.useBurstAction(this.human(), boostUid);
     this.finishNonStrikeAction();
+    this.emitActionCallout(this.humanId, 'burst', 'BURST!', 'EXTRA ACTIONS');
   }
 
   // ----- character action (fully data-driven — see CHARACTERS[key].action in cards.js) -----
@@ -679,6 +705,7 @@ class GameController {
     this.log(`You use your Innate/Exceed action: add ${moved.map(c => c.name).join(', ')} to Gauge, draw ${moved.length}.`);
     this.engine.draw(player, moved.length);
     this.finishNonStrikeAction();
+    this.emitActionCallout(player.id, 'special', 'CHARACTER ACTION!', `+${moved.length} GAUGE · +${moved.length} CARD`);
   }
 
   resolveSpecialMove1(direction) {
@@ -724,14 +751,22 @@ class GameController {
     const char = CHARACTERS[player.characterKey];
     if (!roundAlreadyStarted) this.engine.startRound();
     const res = char.action.resolve(this.engine, player, opp, direction) || {};
+    const actionLbl = (typeof charActionLabel === 'function' ? charActionLabel(player) : 'Character Action').replace(/\.$/, '').toUpperCase();
     this.log(`You use ${player.exceeded ? 'Exceeded' : 'Innate'} action: ${charActionLabel(player)}${direction ? ` (${direction})` : ''}`);
-    if (res.mayStrike) { this.mode = 'char_exceed_strike_choice'; render(); return; }
+    if (res.mayStrike) {
+      this.mode = 'char_exceed_strike_choice';
+      render();
+      this.emitActionCallout(player.id, 'special', actionLbl, direction ? direction.toUpperCase() : 'CHARACTER ACTION');
+      return;
+    }
     if (res.triggersStrike) {
       player.actionStrikeThisTurn = true; // Mark that this Strike came from a character action
       this.startStrike();
+      this.emitActionCallout(player.id, 'special', actionLbl, 'TRIGGERS STRIKE');
       return;
     }
     this.finishNonStrikeAction();
+    this.emitActionCallout(player.id, 'special', actionLbl, direction ? direction.toUpperCase() : 'CHARACTER ACTION');
   }
 
   // ----- Move action -----
@@ -779,12 +814,16 @@ class GameController {
     const player = this.human(), opp = this.ai();
     const chosen = this.sel.chosen || [];
     if (this.engine.sumForceValue(player, chosen) !== this.sel.force) { this.mode = 'awaiting_action'; render(); return; }
+    const moveDir = this.sel.dir;
+    const moveSpaces = this.sel.spaces;
+    const moveForce = this.sel.force;
     this.engine.startRound();
     this.engine.payForceFromHandOrGauge(player, chosen, 'your Move');
-    if (this.sel.dir === 'advance') this.engine.advanceSelfPaid(player, opp, this.sel.spaces);
-    else this.engine.retreatSelfPaid(player, opp, this.sel.spaces);
-    this.log(`You ${this.sel.dir} ${this.engine.spaceWord(this.sel.spaces)}, spending ${this.sel.force} Force.`, 'move', this.humanId, { amount: this.sel.spaces });
+    if (moveDir === 'advance') this.engine.advanceSelfPaid(player, opp, moveSpaces);
+    else this.engine.retreatSelfPaid(player, opp, moveSpaces);
+    this.log(`You ${moveDir} ${this.engine.spaceWord(moveSpaces)}, spending ${moveForce} Force.`, 'move', this.humanId, { amount: moveSpaces });
     this.finishNonStrikeAction();
+    this.emitActionCallout(player.id, 'move', `${moveDir === 'advance' ? 'ADVANCE' : 'RETREAT'} ×${moveSpaces}`, `${moveForce} FORCE`);
   }
 
   // ----- Change Cards -----
@@ -831,9 +870,11 @@ class GameController {
       this.sel = {};
       this.mode = 'may_strike_choice';
       render();
+      this.emitActionCallout(player.id, 'changecards', `CHANGE CARDS ×${res.drawn}`, `${res.forceValue} FORCE`);
       return;
     }
     this.finishNonStrikeAction();
+    this.emitActionCallout(player.id, 'changecards', `CHANGE CARDS ×${res.drawn}`, `${res.forceValue} FORCE`);
   }
 
   // ----- Critical (see engine.canPayCritical / cards.js's header comment for the
@@ -1029,11 +1070,29 @@ class GameController {
       this.engine.roundNum--;
       this.mode = 'awaiting_action'; render(); return;
     }
+    const boostCardName = res.card ? res.card.name.toUpperCase() : '';
     const afterRetreatChoice = () => {
-      if (res.bonusAction) { this.log('You get to take another action.'); this.mode = 'awaiting_action'; render(); return; }
-      if (res.triggersStrike) { this.startStrike(); return; }
-      if (res.mayTriggerStrike) { this.maybeAskMayStrike(res.freeCriticalOnFollowupStrike, () => this.maybeAskCancel(player, res.card, () => this.finishNonStrikeAction())); return; }
-      this.maybeAskCancel(player, res.card, () => this.finishNonStrikeAction());
+      if (res.bonusAction) {
+        this.log('You get to take another action.');
+        this.mode = 'awaiting_action';
+        render();
+        this.emitActionCallout(player.id, 'boost', 'BOOST!', boostCardName);
+        return;
+      }
+      if (res.triggersStrike) {
+        this.startStrike();
+        this.emitActionCallout(player.id, 'boost', 'BOOST!', boostCardName);
+        return;
+      }
+      if (res.mayTriggerStrike) {
+        this.maybeAskMayStrike(res.freeCriticalOnFollowupStrike, () => this.maybeAskCancel(player, res.card, () => this.finishNonStrikeAction()));
+        this.emitActionCallout(player.id, 'boost', 'BOOST!', boostCardName);
+        return;
+      }
+      this.maybeAskCancel(player, res.card, () => {
+        this.finishNonStrikeAction();
+        this.emitActionCallout(player.id, 'boost', 'BOOST!', boostCardName);
+      });
     };
     // Chun-Li's Innate: "After you resolve a Boost, you may Retreat 1" — before any
     // follow-up Strike this Boost might trigger, per her own printed clarification
@@ -1056,6 +1115,7 @@ class GameController {
       const player = this.human(), opp = this.ai();
       this.engine.retreatSelf(player, opp, 1);
       this.log('You retreat 1 (Innate).', 'move', this.humanId, { amount: 1 });
+      this.emitActionCallout(player.id, 'move', 'RETREAT ×1', 'INNATE');
     }
     if (done) done();
   }
@@ -1123,10 +1183,12 @@ class GameController {
         this.mode = 'move_direction_choice';
         this.sel = { ...this.sel, promptText: `Advance or Retreat ${hookResult.moveAmount}?`, pendingCancelDone: done };
         render();
+        this.emitActionCallout(player.id, 'cancel', 'CANCEL!', '1 GAUGE · EXTRA ACTION');
         return;
       }
       this.mode = 'awaiting_action';
       render();
+      this.emitActionCallout(player.id, 'cancel', 'CANCEL!', '1 GAUGE · EXTRA ACTION');
       return;
     }
     if (done) done(); else this.finishNonStrikeAction();
@@ -1416,9 +1478,10 @@ class GameController {
       const req = res.value;
       if (req.playerId === this.humanId) {
         this.pendingGen = gen;
+        const resolvingCard = (this.engine && this.engine._resolvingCards && this.engine._resolvingCards[req.playerId]) || null;
         // `chosen` is used by the yields that present a card picker (block_force);
         // harmless for the ones that don't.
-        this.sel = { request: req, chosen: [] };
+        this.sel = { request: req, chosen: [], resolvingCard };
         if (req.type === 'grasp_move') {
           this._graspAmount = req.max != null ? req.max : 2;
           this._graspDir = req.forceDirection || 'retreat';
@@ -1460,14 +1523,7 @@ class GameController {
       res = gen.next(answer);
     }
     this.pendingGen = null;
-    this.mode = 'strike_result';
-    this.mobilePanelTab = 'inspector';
     this.pendingStrikeResult = res.value;
-    // Breakdown pacing: beginner mode reveals the resolution one beat at a time
-    // (see render.js's `.breakdown`), so start from the first beat on every new
-    // Strike; outside beginner mode render.js shows everything at once and this
-    // index is simply ignored.
-    this.beatIndex = this.beginner ? 1 : Number.MAX_SAFE_INTEGER;
     this.hintText = null;  // a suggestion from before this exchange is stale now
     this.noteBeginnerDamage();
     // Screenshake trigger: a single hit landing for 5+ damage this exchange. Consumed
@@ -1475,14 +1531,25 @@ class GameController {
     // strike rather than replaying on every subsequent re-render while still on this
     // strike_result screen.
     this.shakeOnRender = !!(res.value && res.value.maxSingleHitDamage >= 5);
+    const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike'));
+    if (!pauseAfter) {
+      this.beatIndex = Number.MAX_SAFE_INTEGER;
+      this.afterStrike(res.value);
+      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerStrikeReveal) {
+        HitParticleEngine.triggerStrikeReveal(this.engine.lastStrikeInfo);
+      }
+      return;
+    }
+    this.mode = 'strike_result';
+    this.mobilePanelTab = 'inspector';
+    // Breakdown pacing: beginner mode reveals the resolution one beat at a time
+    // (see render.js's `.breakdown`), so start from the first beat on every new
+    // Strike; outside beginner mode render.js shows everything at once and this
+    // index is simply ignored.
+    this.beatIndex = this.beginner ? 1 : Number.MAX_SAFE_INTEGER;
     render();
     if (typeof StrikePlaybackController !== 'undefined' && typeof document !== 'undefined') {
-      const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike')) || !!this.beginner;
-      const shouldAutoAdvance = !pauseAfter && !this.engine.gameOver && typeof window !== 'undefined' && typeof window.addEventListener === 'function';
-      StrikePlaybackController.start(
-        this.engine.lastStrikeInfo,
-        shouldAutoAdvance ? () => { if (this.mode === 'strike_result') this.continueAfterStrikeResult(); } : null
-      );
+      StrikePlaybackController.start(this.engine.lastStrikeInfo, null);
     }
   }
   resolveGraspChoice(amount, direction) { this.driveStrikeGen(this.pendingGen, { amount, direction }); }
@@ -1606,6 +1673,7 @@ class GameController {
     this.log(`CPU uses character action: adds ${moved.map(c => c.name).join(', ')} to Gauge, draws ${moved.length}.`);
     this.engine.draw(player, moved.length);
     this.aiFinishNonStrike();
+    this.emitActionCallout(player.id, 'special', 'CHARACTER ACTION!', `+${moved.length} GAUGE · +${moved.length} CARD`);
   }
 
   // =================== AI TURN ===================
@@ -1619,6 +1687,7 @@ class GameController {
     if (action.type === 'exceed') {
       this.engine.startRound();
       const res = this.engine.doExceed(player);
+      const charName = (CHARACTERS[player.characterKey] && CHARACTERS[player.characterKey].name || '').toUpperCase();
       // Follow through on a real "you may Strike/act immediately upon Exceeding"
       // bonus (Anji/May's onExceed mayStrike, M. Bison's onExceed mayAction) — a
       // pre-existing gap: this branch used to ignore doExceed's return value
@@ -1628,13 +1697,28 @@ class GameController {
         const dist = this.engine.range(player, opp);
         const mods = this.engine.activeBoostMods(player);
         const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, mods)).length;
-        if (inRangeCount > 0) { this.aiInitiateStrike(); return; }
+        if (inRangeCount > 0) {
+          this.emitActionCallout(player.id, 'exceed', 'EXCEED!', charName);
+          this.aiInitiateStrike();
+          return;
+        }
       }
-      if (res.mayAction && Math.random() < 0.7) { this.aiRunHandToGaugeAction(player); return; }
+      if (res.mayAction && Math.random() < 0.7) {
+        this.emitActionCallout(player.id, 'exceed', 'EXCEED!', charName);
+        this.aiRunHandToGaugeAction(player);
+        return;
+      }
       this.aiFinishNonStrike();
+      this.emitActionCallout(player.id, 'exceed', 'EXCEED!', charName);
       return;
     }
-    if (action.type === 'burst') { this.engine.startRound(); this.engine.useBurstAction(player, action.boostUid); this.aiFinishNonStrike(); return; }
+    if (action.type === 'burst') {
+      this.engine.startRound();
+      this.engine.useBurstAction(player, action.boostUid);
+      this.aiFinishNonStrike();
+      this.emitActionCallout(player.id, 'burst', 'BURST!', 'EXTRA ACTIONS');
+      return;
+    }
     if (action.type === 'action') {
       const char = CHARACTERS[player.characterKey];
       if (char.action.needsHandToGaugeChoice) { this.aiRunHandToGaugeAction(player); return; }
@@ -1650,6 +1734,7 @@ class GameController {
           this.log(`CPU uses its Innate action: looks at the top ${peeked.length} cards and draws one.`);
         }
         this.aiFinishNonStrike();
+        this.emitActionCallout(player.id, 'special', (typeof charActionLabel === 'function' ? charActionLabel(player) : 'CHARACTER ACTION').replace(/\.$/, '').toUpperCase(), 'INNATE ACTION');
         return;
       }
       const actionCost = char.actionForceCost || 0;
@@ -1662,12 +1747,14 @@ class GameController {
         this.engine.startRound();
       }
       const res = char.action.resolve(this.engine, player, opp, action.direction) || {};
+      const aiActionLbl = (typeof charActionLabel === 'function' ? charActionLabel(player) : 'CHARACTER ACTION').replace(/\.$/, '').toUpperCase();
       this.log(`CPU uses character action.`);
       // Mandatory Strike triggered by character actions (Baiken, Faust, Giovanna, I-No, Jack-O):
       // mirrors human executeCharacterAction so CPU actually executes the Strike and gets
       // actionStrikePowBonus / actionStrikeHitHook.
       if (res && res.triggersStrike) {
         player.actionStrikeThisTurn = true;
+        this.emitActionCallout(player.id, 'special', aiActionLbl, 'TRIGGERS STRIKE');
         this.aiInitiateStrike();
         return;
       }
@@ -1679,11 +1766,13 @@ class GameController {
         const mods = this.engine.activeBoostMods(player);
         const inRangeCount = player.hand.filter(c => isEffectivelyInRange(c, dist, mods)).length;
         if (inRangeCount > 0) {
+          this.emitActionCallout(player.id, 'special', aiActionLbl, action.direction ? action.direction.toUpperCase() : 'CHARACTER ACTION');
           this.aiInitiateStrike();
           return;
         }
       }
       this.aiFinishNonStrike();
+      this.emitActionCallout(player.id, 'special', aiActionLbl, action.direction ? action.direction.toUpperCase() : 'CHARACTER ACTION');
       return;
     }
     if (action.type === 'changecards') {
@@ -1706,9 +1795,14 @@ class GameController {
         // hand can actually reach.
         const dist = this.engine.range(player, opp);
         const mods = this.engine.activeBoostMods(player);
-        if (Math.random() < 0.7 && player.hand.some(c => isEffectivelyInRange(c, dist, mods))) { this.aiInitiateStrike(); return; }
+        if (Math.random() < 0.7 && player.hand.some(c => isEffectivelyInRange(c, dist, mods))) {
+          this.emitActionCallout(player.id, 'changecards', `CHANGE CARDS ×${res.drawn}`, `${res.forceValue} FORCE`);
+          this.aiInitiateStrike();
+          return;
+        }
       }
       this.aiFinishNonStrike();
+      this.emitActionCallout(player.id, 'changecards', `CHANGE CARDS ×${res.drawn}`, `${res.forceValue} FORCE`);
       return;
     }
     if (action.type === 'move') {
@@ -1728,12 +1822,15 @@ class GameController {
             else this.engine.retreatSelfPaid(player, opp, steps);
             this.log(`CPU moves (${dir}).`, 'move', this.aiId, { amount: steps });
             this.aiFinishNonStrike();
+            this.emitActionCallout(player.id, 'move', `${dir === 'advance' ? 'ADVANCE' : 'RETREAT'} ×${steps}`, `${force} FORCE`);
             return;
           }
         }
       }
       const dist = this.engine.range(player, opp);
       const dir = dist > action.target ? 'advance' : (dist < action.target ? 'retreat' : null);
+      let movedSteps = 0;
+      let movedForce = 0;
       if (dir) {
         const max = this.engine.maxUsefulSpaces(player, opp, dir);
         const pool = [...player.hand, ...player.gauge];
@@ -1751,11 +1848,16 @@ class GameController {
             if (dir === 'advance') this.engine.advanceSelfPaid(player, opp, d);
             else this.engine.retreatSelfPaid(player, opp, d);
             this.log(`CPU moves (${dir}).`, 'move', this.aiId, { amount: d });
+            movedSteps = d;
+            movedForce = force;
             break;
           }
         }
       }
       this.aiFinishNonStrike();
+      if (movedSteps > 0) {
+        this.emitActionCallout(player.id, 'move', `${dir === 'advance' ? 'ADVANCE' : 'RETREAT'} ×${movedSteps}`, `${movedForce} FORCE`);
+      }
       return;
     }
     if (action.type === 'boost' && player.hand.length > 0) {
@@ -1818,10 +1920,20 @@ class GameController {
           this.log(`CPU retreats 1 (Innate).`, 'move', this.aiId, { amount: 1 });
         }
         const continuation = () => {
-          if (res.triggersStrike) { this.aiInitiateStrike(); return; }
-          if (res.bonusAction) { this.scheduleAITurn(400); render(); return; }
+          if (res.triggersStrike) {
+            this.emitActionCallout(player.id, 'boost', 'BOOST!', card.name.toUpperCase());
+            this.aiInitiateStrike();
+            return;
+          }
+          if (res.bonusAction) {
+            this.scheduleAITurn(400);
+            render();
+            this.emitActionCallout(player.id, 'boost', 'BOOST!', card.name.toUpperCase());
+            return;
+          }
           if (res.mayTriggerStrike && this.aiWantsFollowupStrike(player, opp)) {
             if (res.freeCriticalOnFollowupStrike) this.pendingFreeCritical = true;
+            this.emitActionCallout(player.id, 'boost', 'BOOST!', card.name.toUpperCase());
             this.aiInitiateStrike();
             return;
           }
@@ -1838,10 +1950,12 @@ class GameController {
               this.log(`CPU ${dir}s ${hookResult.moveAmount}.`, 'move', this.aiId, { amount: hookResult.moveAmount });
             }
             render();
+            this.emitActionCallout(player.id, 'cancel', 'CANCEL!', card.name.toUpperCase());
             this.scheduleAITurn(400);
             return;
           }
           this.aiFinishNonStrike();
+          this.emitActionCallout(player.id, 'boost', 'BOOST!', card.name.toUpperCase());
         };
         if (this.handlePendingRangeDiscard(continuation)) return; // paused, waiting on human choice
         continuation();
@@ -1854,12 +1968,17 @@ class GameController {
       this.engine.startRound();
       this.engine.manualReshuffle(player);
       this.aiFinishNonStrike();
+      this.emitActionCallout(player.id, 'reshuffle', 'RESHUFFLE!', 'DECK REBUILT');
       return;
     }
     this.engine.startRound();
     this.engine.draw(player, 1);
     this.log('CPU prepares (draws a card).');
+    if (typeof EventBus !== 'undefined') {
+      EventBus.emit('OnNeutralAction', { playerId: player.id, kind: 'prepare' });
+    }
     this.aiFinishNonStrike();
+    this.emitActionCallout(player.id, 'prepare', 'PREPARE!', '+1 CARD');
   }
 
   // Axl's Sickle Storm boost, AI side. Plays Sickle Storm itself first (same as
@@ -2407,20 +2526,49 @@ class GameController {
     this.selectedActionCardUid = null;
     if (!uid || this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
     const p = this.human();
+    const card = p.hand.find(c => c.uid === uid);
+    if (!card) return;
     if (actionType === 'strike') {
       this.mode = 'strike_select';
       this.pickStrikeCard(uid);
     } else if (actionType === 'boost') {
+      if (!card.boost) { render(); return; }
       this.mode = 'boost_select';
       this.pickBoostCard(uid);
     } else if (actionType === 'ex') {
-      const card = p.hand.find(c => c.uid === uid);
-      const other = card && p.hand.find(c => c.key === card.key && c.uid !== uid);
-      if (card && other) {
+      const other = p.hand.find(c => c.key === card.key && c.uid !== uid);
+      if (other) {
         this.mode = 'strike_select';
         this.pickExStrike(uid, other.uid);
       }
     }
+  }
+
+  quickCommitCard(uid, actionType) {
+    if (this._suppressNextCardClickUid && this._suppressNextCardClickUid === uid) {
+      this._suppressNextCardClickUid = null;
+      return;
+    }
+    if (!uid || this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
+    const p = this.human();
+    const card = p && p.hand.find(c => c.uid === uid);
+    if (!card) return;
+    if (actionType === 'boost' && !card.boost) return;
+    this.selectedActionCardUid = uid;
+    this.confirmActionCard(actionType);
+  }
+
+  quickCommitEx(uid1, uid2) {
+    if (this.mode !== 'awaiting_action' || this.engine.active !== this.humanId || this.engine.gameOver) return;
+    const p = this.human();
+    if (!p) return;
+    const c1 = p.hand.find(c => c.uid === uid1);
+    const c2 = uid2 ? p.hand.find(c => c.uid === uid2 && c.uid !== uid1) : p.hand.find(c => c.key === (c1 && c.key) && c.uid !== uid1);
+    if (!c1 || !c2 || c1.key !== c2.key) return;
+    if (c1.type === 'ultra' && typeof this.engine.canPayUltra === 'function' && !this.engine.canPayUltra(p, c1)) return;
+    this.selectedActionCardUid = null;
+    this.mode = 'strike_select';
+    this.pickExStrike(c1.uid, c2.uid);
   }
 
   onCardDragStart(ev, uid) {
