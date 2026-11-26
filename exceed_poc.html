@@ -3993,7 +3993,31 @@ function toggleFullscreen() {
 // Loaded in global script scope before engine.js, preview.js, and UI modules.
 
 const EventBus = (() => {
+  const EVENT_SCHEMAS = Object.freeze({
+    OnCardHoverStart: { required: [] },
+    OnCardHoverEnd: { required: [] },
+    OnTargetLockChanged: { required: [] },
+    OnToggleEXMode: { required: [] },
+    OnToggleOptionalBranch: { required: [] },
+    OnToggleCriticalPreview: { required: [] },
+    OnNeutralAction: { required: ['playerId'] },
+    OnForcePitched: { required: ['playerId'] },
+    OnExceedActivated: { required: ['playerId'] },
+    OnDeckReshuffled: { required: ['playerId'] },
+    OnStrikePhase: { required: ['phase'] },
+    OnStrikeReveal: { required: ['strikeInfo'] },
+    OnSpeedResolved: { required: ['playerId'] },
+    OnStrikeHit: { required: ['playerId'] },
+    OnLethalDetected: { required: ['playerId'] },
+    OnGuardBreak: { required: ['playerId'] },
+    OnStrikePlaybackEnd: { required: [] },
+  });
+  const EVENT_NAMES = Object.freeze(Object.keys(EVENT_SCHEMAS));
   const listeners = new Map();
+
+  function isKnownEvent(event) {
+    return Object.prototype.hasOwnProperty.call(EVENT_SCHEMAS, event);
+  }
 
   function on(event, handler) {
     if (typeof handler !== 'function') return () => {};
@@ -4026,7 +4050,7 @@ const EventBus = (() => {
     else listeners.clear();
   }
 
-  return { on, off, emit, clear };
+  return { EVENT_SCHEMAS, EVENT_NAMES, isKnownEvent, on, off, emit, clear };
 })();
 // ===== cards.js =====
 // ============================================================
@@ -4131,7 +4155,7 @@ const NORMALS = [
     // Block's reactive Force-for-Armor is handled centrally in engine.activateStep
     // (keyed off defCard.key === 'block'), not here — it happens on the OPPONENT's
     // activation, not this card's own before/hit/after.
-    boost: { force: 0, continuous: false, needsNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' },
       resolve(ctx) {
         const name = ctx.namedCardKey;
         const idx = ctx.opponent.hand.findIndex(c => c.key === name);
@@ -4171,7 +4195,7 @@ const NORMALS = [
         ctx.engine.logMsg(`${ctx.attacker.name}'s Dive advances ${ctx.engine.spaceWord(3)}.${ctx.sideSwapped ? ' [Side swap detected — cannot be hit this Strike]' : ''}`);
       },
     },
-    boost: { force: 0, continuous: false, needsBoostTargetChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'boost_target' },
       resolve(ctx) { ctx.engine.discardOpponentContinuousBoost(ctx.opponent, ctx.targetBoostUid); } }
   },
   {
@@ -4185,9 +4209,8 @@ const NORMALS = [
     // documentation gap, now fixed alongside the generalization.
     text: "Opponents can't move you. After: Draw 1.",
     boostText: 'Name a Normal and Strike. Opponent must Strike with that card or reveal their hand without it.',
-    movementImmune: true,
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } },
-    boost: { force: 0, continuous: false, needsNormalNameChoice: true, triggersStrike: true,
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } , movementImmune: true },
+    boost: { force: 0, continuous: false, choice: { kind: 'normal_name' }, triggersStrike: true,
       resolve(ctx) { ctx.engine.setReading(ctx.player, ctx.namedCardKey); } }
   },
   {
@@ -4200,10 +4223,10 @@ const NORMALS = [
   },
   {
     key: 'spike', name: 'Spike', type: 'normal', owner: 'shared',
-    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4, ignoreGuard: true, ignoreArmor: true,
+    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard, Armor.',
     boostText: '+1 Armor, +3 Guard.',
-    hooks: {},
+    hooks: { ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 1, grd: 3 } }
   },
   {
@@ -4273,7 +4296,7 @@ const GG_NORMALS = [
     text: 'When hit, spend any amount of Force for +2 Armor for each Force.\nAfter: Add to Gauge at end of Strike.',
     boostText: 'Name a card. The opponent must discard a copy of that card or reveal a hand with none.',
     hooks: { goesToGaugeEvenOnMiss: true },
-    boost: { force: 0, continuous: false, needsNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' },
       resolve(ctx) {
         const name = ctx.namedCardKey;
         const idx = ctx.opponent.hand.findIndex(c => c.key === name);
@@ -4293,7 +4316,7 @@ const GG_NORMALS = [
     text: 'After: Retreat 3.',
     boostText: 'Push or Pull 2. If the opponent was Pulled past you, add this card to your Gauge.',
     hooks: { after(ctx) { ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 3); ctx.engine.logMsg(`${ctx.attacker.name} retreats ${ctx.engine.spaceWord(3)} (Cross).`); } },
-    boost: { force: 0, continuous: false, needsPushPullChoice: true, cancelable: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'push_pull' }, cancelable: true,
       resolve(ctx) {
         const opp = ctx.opponent, player = ctx.player;
         if (ctx.pushPullDirection === 'pull') {
@@ -4324,15 +4347,15 @@ const GG_NORMALS = [
         if (before !== after) { ctx.sideSwapped = true; ctx.attacker.strikeState.unhittable = true; }
       },
     },
-    boost: { force: 0, continuous: false, needsBoostTargetChoice: true, cancelable: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'boost_target' }, cancelable: true,
       resolve(ctx) { ctx.engine.discardOpponentContinuousBoost(ctx.opponent, ctx.targetBoostUid); } }
   },
   {
     key: 'gg_dust', name: 'Dust', type: 'normal', owner: 'shared',
-    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4, ignoreGuard: true, ignoreArmor: true,
+    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard, Armor.',
     boostText: '+4 Guard. At the start of your turn, add this card to your Gauge.',
-    hooks: {},
+    hooks: { ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { grd: 4 }, expireToGaugeAtStartOfNextTurn: true, cancelable: true }
   },
   {
@@ -4340,8 +4363,7 @@ const GG_NORMALS = [
     range: [1, 2], pow: 4, spd: 1, arm: 2, grd: 5,
     text: "Opponents can't Push or Pull you. After: Draw 1.",
     boostText: 'When you initiate a Strike, the opponent must respond with a Wild Swing.',
-    movementImmune: true,
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } , movementImmune: true },
     boost: { force: 0, continuous: true, forcesOpponentWildSwingOnInitiate: true, cancelable: true }
   },
   {
@@ -4404,11 +4426,11 @@ const RYU = [
   },
   {
     key: 'one_inch_punch', name: 'One Inch Punch', type: 'special', owner: 'ryu',
-    range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 6, ignoreArmor: true,
+    range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 6,
     text: 'Ignore Armor. Hit: Push 3.',
     boostText: 'Move 1, then take another action.',
     criticalText: 'Critical: +2 Armor.',
-    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); ctx.engine.logMsg(`${ctx.defender.name} is pushed ${ctx.engine.spaceWord(3)} (One Inch Punch).`); } },
+    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); ctx.engine.logMsg(`${ctx.defender.name} is pushed ${ctx.engine.spaceWord(3)} (One Inch Punch).`); } , ignoreArmor: true },
     critical: { statMods: { arm: 2 } },
     boost: { force: 0, continuous: false, bonusAction: true,
       resolve(ctx) { ctx.engine.moveChoice(ctx.player, 1); } }
@@ -4423,7 +4445,7 @@ const RYU = [
       spdBonusIfDefending: 2,
     },
     critical: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } },
-    boost: { force: 0, continuous: true, statMods: {}, ignoreArmorGrant: true,
+    boost: { force: 0, continuous: true, statMods: {}, ignoreArmor: true,
       triggersStrike: true, toGaugeIfHitThisStrike: true }
   },
   {
@@ -4464,7 +4486,7 @@ const RYU = [
 const KEN = [
   {
     key: 'axe_kick', name: 'Axe Kick', type: 'special', owner: 'ken',
-    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true,
+    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     // Fix (this session, cross-checked against the frame-data spreadsheet): base
     // text is "Ignore Armor" AND "Before: Close 1" as two SEPARATE, always-on
     // effects (un-joined lines in the source — same pattern as Hadoken's separate
@@ -4473,7 +4495,7 @@ const KEN = [
     text: 'Ignore Armor. Before: Close 1.',
     boostText: 'Add this card to your Gauge.',
     criticalText: 'Critical: +2 Speed.',
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Axe Kick closes 1 space.`); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Axe Kick closes 1 space.`); } , ignoreArmor: true },
     critical: { statMods: { spd: 2 } },
     boost: { force: 0, continuous: false, toGaugeInstead: true, resolve() {} }
   },
@@ -4646,8 +4668,7 @@ const CAMMY = [
     range: [1, 1], pow: 6, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 1 don't hit you. Hit: Push or Pull any number of spaces.",
     boostText: "Attacks at range 1 don't hit you. At the end of your next turn, add this card to your Gauge.",
-    rangeImmuneRanges: [1],
-    hooks: { interactiveHit: 'grasp_move', moveMin: 0, moveMax: 8 },
+    hooks: { interactiveHit: 'grasp_move', moveMin: 0, moveMax: 8 , rangeImmuneRanges: [1] },
     boost: { force: 0, continuous: true, rangeImmuneRanges: [1], expireToGaugeAfterTurns: 1 }
   },
   {
@@ -4655,8 +4676,8 @@ const CAMMY = [
     range: [1, 1], pow: 5, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 4 or 5 don't hit you. Before: Advance as far as possible. Hit: Pull any number of spaces; +1 Power for each space pulled this way.",
     boostText: 'Retreat up to 3, then Strike.',
-    rangeImmuneRanges: [4, 5],
     hooks: {
+      rangeImmuneRanges: [4, 5],
       before(ctx) {
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceAsFarAsPossible(ctx.attacker, ctx.defender);
@@ -4706,8 +4727,8 @@ const ZANGIEF = [
     // Auto-resolved to the max (2), toward the opponent, per the "up to X" rule —
     // again an implementation note, kept out of the player-facing criticalText.
     criticalText: 'Critical, After: Move 1 or 2.',
-    movementImmune: true,
     critical: { after(ctx) { ctx.engine.moveChoice(ctx.attacker, 2); } },
+    hooks: { movementImmune: true },
     boost: { force: 0, continuous: false, toGaugeInstead: true, resolve() {} }
   },
   {
@@ -4721,7 +4742,7 @@ const ZANGIEF = [
     criticalText: 'Critical: Stun Immunity.',
     hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); ctx.engine.logMsg(`${ctx.attacker.name}'s Flying Power Bomb closes ${ctx.engine.spaceWord(2)}.`); } },
     critical: { stunImmune: true },
-    boost: { force: 0, continuous: false, needsRangeNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'range_name' },
       resolve(ctx) {
         const N = ctx.namedRange;
         const matches = ctx.opponent.hand.filter(c => c.range && N >= c.range[0] && N <= c.range[1]);
@@ -4742,10 +4763,10 @@ const ZANGIEF = [
   },
   {
     key: 'spinning_piledriver', name: 'Spinning Piledriver', type: 'special', owner: 'zangief',
-    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true, ignoreGuard: true,
+    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard. Hit: The opponent must discard a card at random.',
     boostText: '+2 Armor. After: If you were hit this Strike, add this card to your Gauge.',
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } , ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 2 }, toGaugeIfHitThisStrike: true }
   },
   {
@@ -4753,8 +4774,8 @@ const ZANGIEF = [
     range: [1, 1], pow: 8, spd: 2, arm: 0, grd: 6,
     text: "Opponents can't move past you. Before: Close 1. Hit: Draw 2.",
     boostText: 'Advance 1 and draw 3.',
-    blocksOpponentPassThrough: true,
     hooks: {
+      blocksOpponentPassThrough: true,
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Siberian Blizzard closes 1 space.`); },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 2); ctx.engine.logMsg(`${ctx.attacker.name} draws 2 (Siberian Blizzard).`); },
     },
@@ -4767,7 +4788,7 @@ const ZANGIEF = [
     text: 'Hit: You and the opponent discard all cards.',
     boostText: '+1 Power, Stun Immunity. After: If you were hit this Strike, add this card to your Gauge.',
     hooks: { hit(ctx) { ctx.engine.discardAllHand(ctx.attacker); ctx.engine.discardAllHand(ctx.defender); ctx.engine.logMsg(`${ctx.attacker.name} and ${ctx.defender.name} discard all cards.`); } },
-    boost: { force: 0, continuous: true, statMods: { pow: 1 }, stunImmuneGrant: true, toGaugeIfHitThisStrike: true }
+    boost: { force: 0, continuous: true, statMods: { pow: 1 }, stunImmune: true, toGaugeIfHitThisStrike: true }
   },
 ];
 
@@ -4778,8 +4799,8 @@ const SOL_BADGUY = [
     range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard.\nBefore: Advance 2.',
     boostText: '[+] Advance or Retreat up to 2.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
     },
     // DEFERRED: interactive "Advance or Retreat up to 2" boost movement
@@ -4860,14 +4881,14 @@ const SOL_BADGUY = [
     text: 'Ignore Armor.\nYou cannot be Pushed or Pulled.\nHit: Pull 1, Advantage.',
     boostText: '[+] Hit: +1 POW.\nAdd this to your Gauge.',
     hooks: {
+      ignoreArmor: true,
+      movementImmune: true,
       hit(ctx) { 
         ctx.engine.pushToward(ctx.defender, ctx.attacker, 1);
         ctx.engine.logMsg(`${ctx.defender.name} is pulled 1 space (Wild Throw).`);
         ctx.engine.grantAdvantage(ctx.attacker, 'Wild Throw');
       }
     },
-    ignoreArmor: true,
-    movementImmune: true,
     boost: { force: 0, continuous: false, cancelable: true, toGaugeInstead: true }
     // NOTE: source text says "[+] Hit: +1 POW" on the boost, but toGaugeInstead
     // boosts resolve at boost-PLAY time (no Strike/hit occurs then) — there is
@@ -4985,7 +5006,7 @@ const CVIPER = [
       optionalForceSpendForPow: { max: 4, powPerForce: 1 }
     },
     critical: {},
-    boost: { force: 0, continuous: false, needsDiscardBoostChoice: true }
+    boost: { force: 0, continuous: false, choice: { kind: 'discard_boost' } }
   },
   {
     key: 'thunder_knuckle', name: 'Thunder Knuckle', type: 'special', owner: 'cviper',
@@ -5006,10 +5027,10 @@ const CVIPER = [
     text: 'Ignore Armor.\nHit: Push 8.\nAfter: Close 8.',
     boostText: '[+] Opponent has +3 POW.\nNow: Draw 3.\nTake another action.',
     hooks: {
+      ignoreArmor: true,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 8); },
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); }
     },
-    ignoreArmor: true,
     boost: { force: 0, continuous: true, bonusAction: true, nowDraw: 3,
       opponentPowMod: 3 // Debuffs opponent; checked in liveStats for opponent
     }
@@ -5019,8 +5040,8 @@ const CVIPER = [
     range: [1, 2], pow: 10, spd: 2, arm: 0, grd: 0,
     text: 'Stun Immunity.\nIf you do not have any Continuous Boosts in play,\nyour attack does not hit.',
     boostText: '[+] +3 ARM, +1 GRD.\nCleanup: If you weren\'t stunned,\nspend {1} to sustain.',
-    stunImmuneBase: true,
     noHitWithoutContinuousBoost: true, // Checked in engine.js's inRange gate
+    hooks: { stunImmune: true },
     boost: { force: 0, continuous: true, sustainIfNotStunnedCost: 1 }
   },
 ];
@@ -5072,7 +5093,7 @@ const VEGA = [
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); }
     },
     critical: { statMods: { arm: 2 } },
-    boost: { force: 1, continuous: false, needsDirectionChoice: true, triggersStrike: true }
+    boost: { force: 1, continuous: false, choice: { kind: 'direction' }, triggersStrike: true }
   },
   {
     key: 'rolling_crystal_flash', name: 'Rolling Crystal Flash', type: 'special', owner: 'vega',
@@ -5084,7 +5105,7 @@ const VEGA = [
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 5); },
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         const before = ctx.player.pos < ctx.opponent.pos;
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
@@ -5105,7 +5126,7 @@ const VEGA = [
     critical: { statMods: { spd: 2 } },
     boost: { force: 2, continuous: false,
       // DEFERRED: needsAnySpaceChoice + edge innate bonus tracking
-      needsAnySpaceChoice: true, triggersStrike: true
+      choice: { kind: 'any_space' }, triggersStrike: true
     }
   },
   {
@@ -5119,7 +5140,7 @@ const VEGA = [
     critical: { statMods: { pow: 2 } },
     // `force: 1` is this card's printed FRC cost on the Vega sheet; it was 0 here
     // (card-data audit, 2026-08-17).
-    boost: { force: 1, continuous: false, needsDirectionChoice: true,
+    boost: { force: 1, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         const before = ctx.player.pos < ctx.opponent.pos;
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
@@ -5269,8 +5290,8 @@ const AKUMA = [
     text: 'Ignore Armor.\nBefore: Close 2.',
     boostText: '[+] If you have 3 or more bonus POW, +3 SPD.',
     notes: "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); },
     },
     // HARD PART: "if you have 3+ bonus POW" needs to inspect the live
@@ -5314,8 +5335,8 @@ const GUILE = [
     range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nCritical, Hit: The opponent must discard 2 cards at random.',
     boostText: '[+] +1 ARM, +3 GRD.\nAt the end of your next turn, add this card to your Gauge.',
-    ignoreGuard: true,
     critical: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } },
+    hooks: { ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 1, grd: 3 }, expireToGaugeAtStartOfNextTurn: true }
   },
   {
@@ -5439,7 +5460,7 @@ const CHUNLI = [
     // documented ordering hazard at this exact point) plus a direction for
     // the unqualified "Move"
     // Workaround: none — fully deferred
-    boost: { force: 0, continuous: true, ignoreArmorGrant: true, triggersStrike: true }
+    boost: { force: 0, continuous: true, ignoreArmor: true, triggersStrike: true }
   },
   {
     key: 'lightning_legs', name: 'Lightning Legs', type: 'special', owner: 'chunli',
@@ -5500,13 +5521,13 @@ const CHUNLI = [
     range: [1, 3], pow: 7, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 4+ don't hit you.\nAfter: If this attack did not hit the opponent, draw a card and add the top 2 cards of your discard pile to Gauge.",
     boostText: '[+] Stun Immunity\nNow: Strike.\nHit: Add this card to your Gauge.',
-    rangeImmuneRanges: [4, 5, 6, 7, 8],
     // DEFERRED: "if this attack did NOT hit" After-clause
     // Requires: a verified-safe way to branch on hit/miss inside a card's
     // own after() hook at this stage
     // Workaround: none — rangeImmuneRanges above is implemented and
     // independently valuable regardless of this clause
-    boost: { force: 1, continuous: true, stunImmuneGrant: true, triggersStrike: true }
+    hooks: { rangeImmuneRanges: [4, 5, 6, 7, 8] },
+    boost: { force: 1, continuous: true, stunImmune: true, triggersStrike: true }
   },
 ];
 
@@ -5610,7 +5631,6 @@ const DAN = [
     text: "If you have no cards in hand, ignore this card's Gauge cost.\nAttacks at range 2~5 don't hit you.",
     boostText: '[+] Hit: If you have no cards in hand, +4 POW.',
     notes: "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-    rangeImmuneRanges: [2, 3, 4, 5],
     // DEFERRED: "ignore Gauge cost if hand is empty" (a conditional
     // cost-waiver at Special/Ultra play time) and "Hit: if hand is empty,
     // +4POW" (no existing hook reads hand-size at hit-resolution time for a
@@ -5618,6 +5638,7 @@ const DAN = [
     // Requires: cost-waiver hook + hand-size-aware onHit
     // Workaround: still costs Gauge as normal; rangeImmuneRanges above is
     // implemented and independently valuable
+    hooks: { rangeImmuneRanges: [2, 3, 4, 5] },
     boost: { force: 0, continuous: true }
   },
   {
@@ -5668,7 +5689,7 @@ const MBISON = [
       // "if the opponent is stunned, Push or Pull up to 2" is a real
       // conditional choice deferred — the unconditional Close 2 above is real.
     },
-    boost: { force: 1, continuous: true, stunImmuneGrant: true, forcesFreeCritical: true }
+    boost: { force: 1, continuous: true, stunImmune: true, forcesFreeCritical: true }
   },
   {
     key: 'psycho_crusher', name: 'Psycho Crusher', type: 'special', owner: 'mbison',
@@ -5906,12 +5927,12 @@ const AXL = [
     text: 'If you initiated, +2 POW.\nHit: Advance 2. You may spend [1]. If you do, Advantage.',
     boostText: '[+] +1 POW\nAfter: If the opponent is stunned, draw 1.',
     notes: 'Opponents can still be stunned if you go second.',
-    powBonusIfInitiating: 2,
     hooks: {
+      powBonusIfInitiating: 2,
       hit(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
       optionalGaugeSpend: { amount: 1, grantsAdvantage: true },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, drawIfOpponentStunnedThisStrike: true }
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, drawIfOpponentStunnedThisStrike: 1 }
   },
   {
     key: 'rainwater', name: 'Rainwater', type: 'special', owner: 'axl',
@@ -5922,7 +5943,7 @@ const AXL = [
       optionalRetreat: 1,
       hit(ctx) { ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -5964,8 +5985,8 @@ const AXL = [
     range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Guard, Armor.\nBefore: Pull 8 without pulling past yourself.\nHit: Advance 2.',
     boostText: 'Spend up to {2}. For each spent, Push 1 and draw 2.',
-    ignoreGuard: true, ignoreArmor: true,
     hooks: {
+      ignoreGuard: true, ignoreArmor: true,
       before(ctx) { ctx.engine.pullTowardWithoutPassing(ctx.defender, ctx.attacker, 8); },
       hit(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
     },
@@ -6064,7 +6085,7 @@ const TESTAMENT = [
       // Requires: selfBoostAndSustainAfterHit mechanic (Axl's One Vision is only verified example)
       // Workaround: checked engine.js, selfBoostAndSustainAfterHit exists but only tested on Axl
     },
-    boost: { force: 0, continuous: true, needsDirectionChoice: true,
+    boost: { force: 0, continuous: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -6077,8 +6098,8 @@ const TESTAMENT = [
     range: [3, 6], pow: 5, spd: 3, arm: 0, grd: 3,
     text: 'Ignore Armor.\nHit: The opponent must discard a random card.',
     boostText: '[+] +1 SPD.\nNow: Look at the top card of your opponent\'s deck. You may discard it.',
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
     },
     // DEFERRED: "Look at the top card of opponent's deck, may discard it"
@@ -6199,15 +6220,15 @@ const POTEMKIN = [
       // "Advance 1 or 2" (amount choice) simplified to 2 per this codebase's convention.
       hit(ctx) { ctx.engine.draw(ctx.attacker, 2); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, ignoreArmorGrant: true }
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, ignoreArmor: true }
   },
   {
     key: 'potemkin_buster', name: 'Potemkin Buster', type: 'special', owner: 'potemkin',
     range: [1, 2], pow: 6, spd: 3, arm: 0, grd: 3,
     text: 'You cannot be Pushed or Pulled.\nHit: The opponent must discard a random card.',
     boostText: '[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, add this to your Gauge.',
-    movementImmune: true,
     hooks: {
+      movementImmune: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
     },
     boost: { cancelable: true, force: 0, continuous: true, rangeImmuneRanges: [4, 5, 6, 7, 8], expireToGaugeAtStartOfNextTurn: true }
@@ -6233,8 +6254,8 @@ const POTEMKIN = [
     range: [2, 4], pow: 4, spd: 1, arm: 3, grd: 4,
     text: 'Attacks at Range 4+ do not hit you.\nAfter: Close 3, Advantage.',
     boostText: '[+] +4 ARM.\nNow: Close 1.',
-    rangeImmuneRanges: [4, 5, 6, 7, 8],
     hooks: {
+      rangeImmuneRanges: [4, 5, 6, 7, 8],
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); ctx.engine.grantAdvantage(ctx.attacker, 'Giganter Kai'); },
     },
     boost: { force: 0, continuous: true, statMods: { arm: 4 },
@@ -6283,7 +6304,7 @@ const LEO = [
       hit(ctx) { ctx.engine.grantAdvantage(ctx.attacker, 'Blitzschlag'); },
     },
     // "Advance or Retreat 1 or 2" — direction and amount choice. Simplified to Advance 2.
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -6331,7 +6352,7 @@ const LEO = [
         ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2);
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, stunImmuneGrant: true, nowDraw: 2 }
+    boost: { cancelable: true, force: 0, continuous: true, stunImmune: true, nowDraw: 2 }
   },
   {
     key: 'zweites_kaltes_gestöber', name: 'Zweites Kaltes Gestöber', type: 'special', owner: 'leo',
@@ -6361,9 +6382,9 @@ const LEO = [
     range: [1, 2], pow: 6, spd: 0, arm: 0, grd: 0,
     text: 'Attacks at Range 2 do not hit you.',
     boostText: '[+] Your Wild Swings have +2 POW.\nNow: Strike.',
-    rangeImmuneRanges: [2],
     // DEFERRED: "Your Wild Swings have +2POW" — needs Wild Swing detection
     // (same as Blitzschlag's issue)
+    hooks: { rangeImmuneRanges: [2] },
     boost: { force: 0, continuous: true, triggersStrike: true }
   },
   {
@@ -6422,7 +6443,7 @@ const MILLIA = [
         if (opponentWasStunned) ctx.engine.randomDiscardFromHand(ctx.defender, 1);
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -6473,7 +6494,7 @@ const MILLIA = [
     },
     // DEFERRED: "If you Advanced past, return this to your hand"
     // Requires: hand-returning mechanic + boost self-reference
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -6593,10 +6614,10 @@ const CHIPP = [
   },
   {
     key: 'chipp_genrouzan', name: 'Genrouzan', type: 'special', owner: 'chipp',
-    range: [1, 1], pow: 3, spd: 2, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 3, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Guard.\nBefore: Close 2.',
     boostText: '[+] Attacks at Range 1 do not hit you.\nAfter: Add this to your Gauge.',
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } , ignoreGuard: true },
     // `expireToGaugeAtStartOfNextTurn` is the closest supported timing to "After: add
     // this to your Gauge" (the sheet's own note is that it stops protecting you once
     // it leaves play); the exact within-Strike handoff has no extension point.
@@ -6709,8 +6730,7 @@ const KY = [
     // "Range 2: +2SPD" is measured at set time like every other liveStats bonus —
     // `spdBonusPerRangeAtSetTime` is Vega's per-space version; this one is a flat
     // bonus at exactly Range 2, so it uses the generic conditional field below.
-    liveStatMods(owner, opponent, engine) { return engine.range(owner, opponent) === 2 ? { spd: 2 } : {}; },
-    hooks: { after(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } },
+    hooks: { after(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } , liveStatMods(owner, opponent, engine) { return engine.range(owner, opponent) === 2 ? { spd: 2 } : {}; } },
     boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, advantageIfOpponentStunnedThisStrike: false,
       onHit() {} },
   },
@@ -6750,7 +6770,7 @@ const ANJI = [
       },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.grantAdvantage(ctx.attacker, 'Fuujin'); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, needsPushPullChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, choice: { kind: 'push_pull' },
       resolve(ctx) {
         if (ctx.pushPullDirection === 'pull') ctx.engine.pushToward(ctx.opponent, ctx.player, 1);
         else ctx.engine.pushAway(ctx.opponent, ctx.player, 1);
@@ -6787,11 +6807,11 @@ const ANJI = [
   },
   {
     key: 'anji_rin', name: 'Rin', type: 'special', owner: 'anji',
-    range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3, ignoreGuard: true, ignoreArmor: true,
+    range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3,
     text: 'Ignore Guard, Armor.\nHit: Push 1.',
     boostText: '[+] +1 ARM, +1 GRD.\nNow: Advance or Retreat 1.',
-    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); } },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { arm: 1, grd: 1 }, needsDirectionChoice: true,
+    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); } , ignoreArmor: true, ignoreGuard: true },
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { arm: 1, grd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -6831,10 +6851,10 @@ const ANJI = [
   {
     key: 'anji_kachofuugetsu_kai', name: 'Kachofuugetsu Kai', type: 'ultra', owner: 'anji', gaugeCost: 2,
     range: [1, 2], pow: 0, spd: 3, arm: 0, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nBefore: If you were hit, +6 POW and Close 3.',
     boostText: 'Name a Normal. Strike; the opponent must set that Normal or reveal a hand without it.',
     hooks: {
+      stunImmune: true,
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -6844,7 +6864,7 @@ const ANJI = [
     },
     // Same mechanic as Focus's Reading (engine.setReading/mustWildSwing), reused here
     // rather than reimplemented — see the Focus entry in NORMALS/GG_NORMALS.
-    boost: { force: 0, continuous: false, needsNameChoice: true, triggersStrike: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' }, triggersStrike: true,
       resolve(ctx) { ctx.engine.setReading(ctx.player, ctx.namedCardKey); } },
   },
 ];
@@ -6862,7 +6882,7 @@ const MAY = [
         if (top) { ctx.attacker.gauge.push(top); ctx.engine.logMsg(`${ctx.attacker.name} adds ${top.name} to Gauge (Anchor Swing).`); }
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -6894,10 +6914,12 @@ const MAY = [
   },
   {
     key: 'may_overhead_kiss', name: 'Overhead Kiss', type: 'special', owner: 'may',
-    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0, ignoreArmor: true, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard.\nHit: Push 2. Advantage.',
     boostText: '[+] Now: Draw 2.\nHit: Advantage.',
     hooks: {
+      ignoreArmor: true,
+      ignoreGuard: true,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 2); ctx.engine.grantAdvantage(ctx.attacker, 'Overhead Kiss'); },
     },
     boost: { force: 0, continuous: true, nowDraw: 2,
@@ -6917,10 +6939,9 @@ const MAY = [
   {
     key: 'may_great_yamada_attack', name: 'Great Yamada Attack', type: 'ultra', owner: 'may', gaugeCost: 3,
     range: [2, 4], pow: 6, spd: 1, arm: 0, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nAfter: Close 3.',
     boostText: 'Close 3. You may spend {1}. If you do, Strike.',
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); } , stunImmune: true },
     // The paid Strike follow-up uses the existing `optionalForceSpend` boost flag
     // (Winter Mantis's shape) — spend {1}, then Strike.
     boost: { force: 0, continuous: false, triggersStrike: true, optionalForceSpend: { max: 1 },
@@ -7064,10 +7085,11 @@ const RAMLETHAL = [
 const NAGORIYUKI = [
   {
     key: 'nago_bloodsucking_universe', name: 'Bloodsucking Universe', type: 'special', owner: 'nagoriyuki',
-    range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: Shuffle 2 cards from your discard pile into your deck.',
     boostText: '[+] +1 SPD.\nNow: You may spend {1}. If you do, discard another boost from play.',
     hooks: {
+      ignoreGuard: true,
       hit(ctx) {
         const moved = ctx.attacker.discard.splice(0, 2);
         if (moved.length) {
@@ -7116,7 +7138,7 @@ const NAGORIYUKI = [
       // draw rider: `optionalForceSpendForPow` only models "+1POW per Force".
       // DEFERRED: the fixed-price spend.
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -7184,8 +7206,8 @@ const BAIKEN = [
     range: [1, 2], pow: 1, spd: 3, arm: 0, grd: 6,
     text: 'If you have 3 or fewer cards in hand, +2 ARM.\nBefore: If you were hit, +6 POW and Close 2.',
     boostText: 'Retreat up to 2. Draw 1.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { arm: 2 } : {}; },
     hooks: {
+      liveStatMods(owner) { return owner.hand.length <= 3 ? { arm: 2 } : {}; },
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -7249,11 +7271,10 @@ const BAIKEN = [
   },
   {
     key: 'baiken_youzansen', name: 'Youzansen', type: 'special', owner: 'baiken',
-    range: [1, 2], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true,
+    range: [1, 2], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor.\nIf you have 3 or fewer cards in hand, +2 SPD.',
     boostText: '[+] +3 POW.\nNow: Draw 1. Take 3 non-lethal damage.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 2 } : {}; },
-    hooks: {},
+    hooks: { ignoreArmor: true, liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 2 } : {}; } },
     boost: { force: 0, continuous: true, statMods: { pow: 3 },
       resolve(ctx) { ctx.engine.draw(ctx.player, 1); ctx.engine.takeDamageNonLethal(ctx.player, 3); } },
   },
@@ -7262,11 +7283,10 @@ const BAIKEN = [
     range: [1, 1], pow: 5, spd: 5, arm: 0, grd: 0,
     text: 'If you have 3 or fewer cards in hand, +3 SPD.',
     boostText: '[+] Stun Immunity.\nBefore: For each point of damage taken this Strike, +1 POW.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 3 } : {}; },
-    hooks: {},
+    hooks: { liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 3 } : {}; } },
     // DEFERRED: the boost's "+1POW per damage taken this Strike" — damage taken is not
     // tracked as a number anywhere (only the boolean `_wasHitThisStrike`).
-    boost: { force: 0, continuous: true, stunImmuneGrant: true },
+    boost: { force: 0, continuous: true, stunImmune: true },
   },
   {
     key: 'baiken_kenjyu', name: 'Kenjyu', type: 'ultra', owner: 'baiken', gaugeCost: 2,
@@ -7311,7 +7331,7 @@ const INO = [
     hooks: {
       hit(ctx) { ctx.engine.pushToward(ctx.defender, ctx.attacker, 1); ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -7434,8 +7454,7 @@ const FAUST = [
     range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'If you have a Boost in play, +2 POW and -2 SPD.\nBefore: Close 8.',
     boostText: '[+] Now: Push 1. Retreat 1. Draw 1.\nHit: Add this to your Gauge.',
-    liveStatMods(owner) { return owner.boostsInPlay.length > 0 ? { pow: 2, spd: -2 } : {}; },
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } , liveStatMods(owner) { return owner.boostsInPlay.length > 0 ? { pow: 2, spd: -2 } : {}; } },
     boost: { force: 0, continuous: true, toGaugeIfHitThisStrike: true,
       resolve(ctx) {
         ctx.engine.pushAway(ctx.opponent, ctx.player, 1);
@@ -7445,10 +7464,11 @@ const FAUST = [
   },
   {
     key: 'faust_snip_snip_snip', name: 'Snip Snip Snip', type: 'special', owner: 'faust',
-    range: [1, 1], pow: 3, spd: 6, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 3, spd: 6, arm: 0, grd: 0,
     text: 'Ignore Guard.\nAfter: If you hit, add this to the opponent’s Boost area, ignoring Now effects, and sustain it.',
     boostText: '[+] -6 GRD.\nNow: Draw 2.',
     hooks: {
+      ignoreGuard: true,
       // DEFERRED: handing your own used attack card to the OPPONENT's boost area — the
       // engine only ever plays boosts from a player's own hand/Gauge/deck.
     },
@@ -7475,9 +7495,8 @@ const FAUST = [
     key: 'faust_bone_crushing_excitement', name: 'Bone-crushing Excitement', type: 'ultra', owner: 'faust', gaugeCost: 4,
     range: [1, 1], pow: 7, spd: 3, arm: 0, grd: 0,
     text: 'Attacks with higher Speed do not hit you.\nBefore: Advance 3.',
-    hitImmuneToFasterAttacks: true,
     boostText: '[+] +0~1 RNG.\nBoth players have "Before: +1 POW".',
-    hooks: { before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } },
+    hooks: { before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } , hitImmuneToFasterAttacks: true },
     boost: { force: 0, continuous: true, rangeMaxBonus: 1, statMods: { pow: 1 }, opponentPowMod: 1 },
   },
   {
@@ -7493,7 +7512,7 @@ const FAUST = [
         }
       },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -7512,7 +7531,7 @@ const GIOVANNA = [
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -7608,8 +7627,8 @@ const JACKO = [
     range: [0, 0], pow: 1, spd: 2, arm: 3, grd: 4,
     text: 'Before: For each Boost you have in play, +0~1 RNG and +1 POW.',
     boostText: 'Add a card from your discard pile to your Gauge.',
-    dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length; },
     hooks: {
+      dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length; },
       before(ctx) { ctx.powBonus = (ctx.powBonus || 0) + ctx.attacker.boostsInPlay.length; },
     },
     boost: { cancelable: true, force: 0, continuous: false,
@@ -7631,8 +7650,7 @@ const JACKO = [
     range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Before: If you have a Boost in play, +0~3 RNG.',
     boostText: '[+] +0~1 RNG.\nNow: Draw 1.',
-    dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length > 0 ? 3 : 0; },
-    hooks: {},
+    hooks: { dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length > 0 ? 3 : 0; } },
     boost: { force: 0, continuous: true, rangeMaxBonus: 1, nowDraw: 1 },
   },
   {
@@ -7767,11 +7785,11 @@ const HAPPYCHAOS = [
   },
   {
     key: 'hc_gun_down', name: 'Gun Down', type: 'ultra', owner: 'happychaos', gaugeCost: 1, copies: 3,
-    range: [2, 5], pow: 3, spd: 5, arm: 0, grd: 0, ignoreGuard: true,
+    range: [2, 5], pow: 3, spd: 5, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard a card.\nAfter: Seal this.',
     boostText: '[+] Now: Retreat 1 or 2. You may spend {1}. If you do, Strike.\nHit: Add this to your Gauge.',
     sealAfterUse: true,
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } , ignoreGuard: true },
     // NOTE: `triggersStrike` is unconditional, so the follow-up Strike is offered even
     // when the optional Force was not actually spent — the engine has no "Strike only if
     // you paid" shape. Same simplification on Goldlewis's Hurl and Happy Chaos's Gun Down.
@@ -7800,19 +7818,19 @@ const HAPPYCHAOS = [
 const GOLDLEWIS = [
   {
     key: 'gold_bt_crush', name: 'Behemoth Typhoon Crush', type: 'special', owner: 'goldlewis',
-    range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 6, ignoreArmor: true,
+    range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 6,
     text: 'Ignore Armor.\nAfter: Close 2.',
     boostText: '[+] +0~1 RNG.\nHit: Push or Pull 1.',
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } , ignoreArmor: true },
     boost: { cancelable: true, force: 0, continuous: true, rangeMaxBonus: 1,
       onHit(ctx) { ctx.engine.pushAway(ctx.opponent, ctx.player, 1); } },
   },
   {
     key: 'gold_bt_drop', name: 'Behemoth Typhoon Drop', type: 'special', owner: 'goldlewis',
-    range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard 2 random cards.',
     boostText: '[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, Close 2 and discard this.',
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } , ignoreGuard: true },
     // "Range 4+" spelled out to the board's maximum useful distance, the same way
     // Hakumen's Enma boost enumerates its own protected ranges.
     boost: { force: 0, continuous: true, rangeImmuneRanges: [4, 5, 6, 7, 8],
@@ -7864,10 +7882,9 @@ const GOLDLEWIS = [
     range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3,
     text: 'If you initiated, +2 ARM.\nAfter: Draw 2.',
     boostText: '[+] +2 POW.\nHit: Advantage.',
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 2); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 2); } , liveStatMods(owner, opponent, engine, info) { return info.initiator ? { arm: 2 } : {}; } },
     // `armBonusIfDefending` is the existing defender-side twin of this; the initiator
     // side has no numeric ARM hook, so it rides on the generic set-time bonus below.
-    liveStatMods(owner, opponent, engine, info) { return info.initiator ? { arm: 2 } : {}; },
     boost: { force: 0, continuous: true, statMods: { pow: 2 },
       onHit(ctx) { ctx.engine.grantAdvantage(ctx.player, 'Behemoth Typhoon Smash boost'); } },
   },
@@ -7876,8 +7893,8 @@ const GOLDLEWIS = [
     range: [2, 3], pow: 6, spd: 2, arm: 1, grd: 4,
     text: 'If you initiated, +2 GRD.\nHit: Push or Pull 2, Advantage.',
     boostText: 'Opponents cannot Advance past you.\nAt the start of your turn, add this to your Gauge.',
-    liveStatMods(owner, opponent, engine, info) { return info.initiator ? { grd: 2 } : {}; },
     hooks: {
+      liveStatMods(owner, opponent, engine, info) { return info.initiator ? { grd: 2 } : {}; },
       interactiveHit: 'grasp_move',
       moveMin: 2, moveMax: 2,
       hit(ctx) { ctx.engine.grantAdvantage(ctx.attacker, 'Behemoth Typhoon Spin'); },
@@ -7902,7 +7919,7 @@ const GOLDLEWIS = [
     text: 'Hit: Close 8.',
     boostText: 'Advance or Retreat 1. You may return a Special from your discard pile to your hand.',
     hooks: { hit(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -7985,7 +8002,7 @@ const ZATO = [
         ctx.engine.draw(ctx.attacker, 1);
       },
     },
-    boost: { force: 0, continuous: true, statMods: { spd: 1 }, needsDirectionChoice: true,
+    boost: { force: 0, continuous: true, statMods: { spd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         ctx.engine.placeEddie(ctx.player, ctx.player.pos, 'Leap boost');
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -8003,7 +8020,7 @@ const ZATO = [
       // true when their card was faster — exactly what "if you were hit" means here.
       before(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 3; },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
         else ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
@@ -8012,10 +8029,11 @@ const ZATO = [
   },
   {
     key: 'zato_damned_fang', name: 'Damned Fang', type: 'special', owner: 'zato1',
-    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: Pull 2 (toward Zato-1). Draw 2.',
     boostText: '[+] Attacks at Range 4+ don’t hit you.\nAt the start of your turn, add this to your Gauge.',
     hooks: {
+      ignoreGuard: true,
       // The sheet spells out "(toward Zato-1)" precisely because the attack itself may
       // have come from Eddie — the pull is toward the character, not the source.
       hit(ctx) {
@@ -8042,7 +8060,7 @@ const ZATO = [
       },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsEddieSpaceChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'eddie_space' },
       resolve(ctx) {
         if (ctx.eddieSpace != null) ctx.engine.placeEddie(ctx.player, ctx.eddieSpace, 'Invite Hell boost');
       } },
@@ -8050,10 +8068,9 @@ const ZATO = [
   {
     key: 'zato_amorphous', name: 'Amorphous', type: 'ultra', owner: 'zato1', gaugeCost: 4,
     range: [3, 3], pow: 6, spd: 1, arm: 2, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nAfter: Draw 3.',
     boostText: '[+] Now: Strike.\nHit: If the opponent is between you and Eddie, +3 POW.',
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 3); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 3); } , stunImmune: true },
     boost: { force: 0, continuous: true, triggersStrike: true,
       onHit(ctx) {
         const eddie = ctx.player.eddiePos;
@@ -8145,8 +8162,8 @@ const RAGNA = [
     range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Armor.\nBefore: Advance 1 or 2. If you Advanced past the opponent, this attack does not hit.',
     boostText: '[+] Now: Draw 2.\nHit: Advantage.',
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       before(ctx) {
         // Advancing 2 is what makes the card reach, but it also risks the side swap
         // that switches its own hit off — so this is a genuine gamble the card text
@@ -8201,15 +8218,14 @@ const RAGNA = [
         }
       },
     },
-    boost: { force: 1, continuous: true, statMods: { pow: 1 }, stunImmuneGrant: true },
+    boost: { force: 1, continuous: true, statMods: { pow: 1 }, stunImmune: true },
   },
   {
     key: 'ragna_carnage_scissors', name: 'Carnage Scissors', type: 'ultra', owner: 'ragna', gaugeCost: 2,
     range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 0,
     text: "Attacks at Range 4-5 don't hit you.\nBefore: Close 4.",
     boostText: '[+] +2 POW.\nNow, Range 1: Push 2 and Strike.',
-    rangeImmuneRanges: [4, 5],
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 4); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 4); } , rangeImmuneRanges: [4, 5] },
     boost: { force: 0, continuous: true, statMods: { pow: 2 },
       resolve(ctx) {
         if (ctx.engine.range(ctx.player, ctx.opponent) === 1) ctx.engine.pushAway(ctx.opponent, ctx.player, 2);
@@ -8426,7 +8442,7 @@ const NOEL = [
     range: [3, 4], pow: 6, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor.',
     boostText: "Look at the opponent's hand, then Strike.",
-    ignoreArmor: true,
+    hooks: { ignoreArmor: true },
     boost: { force: 0, continuous: false, triggersStrike: true,
       resolve(ctx) { ctx.engine.recordHandReveal(ctx.opponent); } },
   },
@@ -8444,8 +8460,8 @@ const NOEL = [
     range: [1, 2], pow: 3, spd: 2, arm: 5, grd: 0,
     text: 'Stun Immunity.\nBefore: If you were hit, +4 POW and you may draw 1-4.',
     boostText: 'Draw 2. Seal this and take another action.',
-    stunImmuneBase: true,
     hooks: {
+      stunImmune: true,
       // "If you were hit" reads the same wasHit state Hakumen's cards use — see the
       // ctx.defenderHitMe note in engine.js. Draw auto-resolves to the max of 4.
       before(ctx) {
@@ -8491,7 +8507,7 @@ const TAOKAKA = [
       hit(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); ctx.engine.grantAdvantage(ctx.attacker, 'Kitty Litter Special!'); },
       after(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { force: 0, continuous: false, triggersStrike: true, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, triggersStrike: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
         else ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
@@ -8520,8 +8536,8 @@ const TAOKAKA = [
     range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nBefore: If you are at the edge of the arena, Close 3.',
     boostText: 'If the opponent is at Range 1, Retreat 2 and Strike.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       before(ctx) { if (ctx.engine.isAtEdge(ctx.attacker)) ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); },
     },
     boost: { force: 1, continuous: false, triggersStrike: true,
@@ -8578,8 +8594,7 @@ const TAGER = [
     range: [1, 1], pow: 5, spd: 1, arm: 2, grd: 5,
     text: 'Ignore Armor.\nAfter: Close 1.',
     boostText: '[+] +0~1 RNG.\nNow: Strike.',
-    ignoreArmor: true,
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } , ignoreArmor: true },
     boost: { force: 1, continuous: true, rangeMaxBonus: 1, triggersStrike: true },
   },
   {
@@ -8623,7 +8638,7 @@ const TAGER = [
     },
     // "You cannot be Pushed or Pulled" reuses the existing movement-immunity flag that
     // Focus and Double Lariat already set, granted from a boost instead of a card.
-    boost: { force: 0, continuous: true, statMods: { spd: -2, arm: 4 }, movementImmuneGrant: true },
+    boost: { force: 0, continuous: true, statMods: { spd: -2, arm: 4 }, movementImmune: true },
   },
   {
     key: 'tager_genesic_emerald_tager_buster', name: 'Genesic Emerald Tager Buster', type: 'ultra', owner: 'tager', gaugeCost: 4,
@@ -8701,7 +8716,7 @@ const NU13 = [
       optionalRetreat: 1,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 3);
@@ -8750,8 +8765,8 @@ const NU13 = [
     range: [4, 8], pow: 7, spd: 3, arm: 0, grd: 0,
     text: "Attacks at Range 5+ don't hit you.\nHit: Advantage, then Advance or Retreat up to 8.",
     boostText: 'If the opponent is at Range 1, Push 3 and draw 2.',
-    rangeImmuneRanges: [5, 6, 7, 8],
     hooks: {
+      rangeImmuneRanges: [5, 6, 7, 8],
       hit(ctx) {
         ctx.engine.grantAdvantage(ctx.attacker, 'Legacy Edge');
         // Nu-13 wants range, so the "up to 8" auto-resolves to a full retreat.
@@ -8830,8 +8845,8 @@ const BANG = [
     range: [1, 2], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard a card at random.\nAfter: Draw 1.',
     boostText: '[+] Hit: +1 POW, Advantage. Then, add this card to your Gauge.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
       after(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
@@ -8906,8 +8921,8 @@ const PLATINUM = [
     range: [1, 1], pow: 4, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard.\nBefore: Advance 1-2.\nHit: Advantage. You may sustain one of your Continuous Boosts.',
     boostText: '[+] Hit, Range 2: +2 POW.',
-    ignoreArmor: true, ignoreGuard: true,
     hooks: {
+      ignoreArmor: true, ignoreGuard: true,
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
       // DEFERRED (partial): "you may sustain one of your Continuous Boosts" — boost
       // sustaining exists only as each boost's own sustain clause (sustain_choice),
@@ -9112,15 +9127,15 @@ const HAKUMEN = [
     hooks: {
       hit(ctx) { if (ctx.engine.range(ctx.attacker, ctx.defender) <= 2) ctx.powBonus = (ctx.powBonus || 0) + 4; },
     },
-    boost: { force: 1, continuous: true, stunImmuneGrant: true },
+    boost: { force: 1, continuous: true, stunImmune: true },
   },
   {
     key: 'haku_kokuujin_yukikaze', name: 'Kokuujin: Yukikaze', type: 'ultra', owner: 'hakumen', gaugeCost: 4,
     range: [1, 1], pow: 0, spd: 2, arm: 0, grd: 0,
     text: 'Stun Immunity. Your life cannot be reduced below 1 during this Strike.\nBefore: If you were hit, +6 POW and Close 8.\nHit: Advance 2.',
     boostText: '[+] +0~1 RNG, +2 ARM, +2 GRD.',
-    stunImmuneBase: true,
     hooks: {
+      stunImmune: true,
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -9140,10 +9155,10 @@ const HAKUMEN = [
     range: [1, 1], pow: 10, spd: 0, arm: 0, grd: 0,
     text: 'Opponents cannot move. Attacks at Range 1 cannot hit you.\nCleanup: Seal this.',
     boostText: 'Draw 2. Seal this and take another action.',
-    rangeImmuneRanges: [1],
     // DEFERRED: the attack's own "Opponents cannot move" (the flag exists as a boost
     // grant, not a card one) and "Cleanup: Seal this" (see the Astral seal note on
     // Ragna's Black Onslaught).
+    hooks: { rangeImmuneRanges: [1] },
     boost: { force: 0, continuous: false, bonusAction: true, resolve(ctx) { ctx.engine.draw(ctx.player, 2); } },
   },
 ];
@@ -9881,7 +9896,7 @@ const CHARACTERS = {
     innateText: 'Innate — When you initiate a Strike, you may place your attack face up for +1 SPD.',
     exceedText: 'Exceeded — When you Exceed, draw 2 and Retreat up to 2.\nWhen you initiate a Strike, you may place your attack face up for +1 POW and +1 SPD.',
     blurb: 'Face-up strike mechanic for stat bonuses. Exceeded boosts initiative.',    specials: SAGAT,
-    canGoFaceUp: true,
+    canGoFaceUp() { return true; },
     faceUpStatBonus(player) {
       return player.exceeded ? { pow: 1, spd: 1 } : { spd: 1 };
     },
@@ -9926,8 +9941,8 @@ const CHARACTERS = {
     blurb: 'Balanced zoning. Cancel draw reinforces action economy.',    specials: KY,
     onCancel(engine, player, opponent) {
       // Ky: first-time-per-turn gate on Cancel responses.
-      if (!player.firstCancelThisTurn) return;
-      player.firstCancelThisTurn = false;
+      if (!player.turnState.firstCancelThisTurn) return;
+      player.turnState.firstCancelThisTurn = false;
       if (player.exceeded) {
         engine.draw(player, 1); // Exceed: draw 1 first
       }
@@ -10006,7 +10021,7 @@ const CHARACTERS = {
     // explicitly). `canExceedAction: false` is read by engine.canExceed.
     canExceedAction: false,
     onReshuffle(engine, player) {
-      player.exceedAtEndOfTurn = true;
+      player.turnState.exceedAtEndOfTurn = true;
       engine.logMsg(`${player.name} will Exceed at the end of this turn (Nagoriyuki's Innate).`);
     },
     // "Your Specials have Cleanup: ..." / "Your Normals have Cleanup: ..." — a
@@ -10390,6 +10405,14 @@ function shuffle(arr, rng) {
   return arr;
 }
 
+function cloneCard(c, uid) {
+  return {
+    ...c,
+    range: c.range ? [c.range[0], c.range[1]] : null,
+    ...(uid !== undefined ? { uid } : {}),
+  };
+}
+
 function buildDeck(characterKey, uidFn) {
   const char = CHARACTERS[characterKey];
   const cards = [];
@@ -10398,7 +10421,7 @@ function buildDeck(characterKey, uidFn) {
   // NORMALS (S1-5) set when omitted, so Ryu/Ken/Cammy/Zangief are unaffected by
   // this becoming per-character instead of hardcoded to NORMALS.
   const normalsPool = char.normals || NORMALS;
-  for (const c of normalsPool) { cards.push({ ...c }); cards.push({ ...c }); }
+  for (const c of normalsPool) { cards.push(cloneCard(c)); cards.push(cloneCard(c)); }
   // `copies` on a card definition overrides the default 2-per-deck count (see
   // Axl's Sickle Flash, which the source spreadsheet explicitly calls out as
   // having four copies instead of the usual two) — everything else keeps
@@ -10411,7 +10434,7 @@ function buildDeck(characterKey, uidFn) {
     // `copies: 0` is a real value (Happy Chaos's Deus Ex Machina is never in the deck),
     // so this cannot use `||` — that would silently turn 0 back into the default 2.
     const n = c.copies == null ? 2 : c.copies;
-    for (let i = 0; i < n; i++) cards.push({ ...c });
+    for (let i = 0; i < n; i++) cards.push(cloneCard(c));
   }
   let localUid = 1;
   const next = uidFn || (() => 'c' + (localUid++));
@@ -10445,9 +10468,20 @@ function resetStrikeState(player) {
   s.wasHit = false;
 }
 
-function makePlayer(id, name, characterKey, startPos) {
+function makeTurnState() {
+  return {
+    canceledThisTurn: false,
+    firstCancelThisTurn: true,
+    strikeThisTurn: false,
+    actionStrikeThisTurn: false,
+    exceedAtEndOfTurn: false,
+  };
+}
+
+function makePlayer(id, name, characterKey, startPos, isHuman = id === 'p1') {
   return {
     id, name, characterKey,
+    isHuman: !!isHuman,
     life: 30, maxLife: 30,
     pos: startPos,
     hand: [],
@@ -10461,33 +10495,15 @@ function makePlayer(id, name, characterKey, startPos) {
     sealedTopOfDeckNote: null,
     sealedCards: [], // cards sealed from hand (can't be played, but not discarded/gauged)
     strikeState: makeStrikeState(),
+    turnState: makeTurnState(),
     // Axl's One Vision boost: "Action: Discard this from play and take 3
     // actions." See engine.useBurstAction and ui.js's finishNonStrikeAction/
     // aiFinishNonStrike (which check this instead of passing the turn when
     // it's > 0) and resolveStrikeSteps' end-of-strike reset above.
     extraActionsRemaining: 0,
-    // Sol Badguy's Innate/Exceed: "When you Strike, if you Canceled this
-    // turn, +1/+2POW." Set true the moment this player pays for a Cancel
-    // (see ui.js's resolveCancelChoice/runAITurn's Cancel branch/
-    // aiHandleDeckLook's Cancel branch), reset false at every point the
-    // engine hands turn control TO this player (see every
-    // `this.engine.active = ...` assignment in ui.js) — i.e. it covers the
-    // whole run of actions a player takes before passing the turn (Cancel
-    // chains, Advantage continuations, burst actions all count as "this
-    // turn"), not just a single action.
-    canceledThisTurn: false,
     // Revert support (un-Exceeding): Exceed state that can be toggled mid-turn.
     // See doRevert().
     revertPending: false,
-    // Set by an effect that says "Exceed at end of turn" (Nagoriyuki's Innate); consumed
-    // by endOfTurnDraw.
-    exceedAtEndOfTurn: false,
-    // Per-turn one-shot flags for mechanics like Ky's "first time each turn you Cancel".
-    firstCancelThisTurn: true,
-    // Strike tracking for Leo's Exceed: "When you end a turn without Striking, Revert."
-    strikeThisTurn: false,
-    // Character action that triggered a Strike this turn (for Baiken/I-No Exceed bonus POW)
-    actionStrikeThisTurn: false,
     // Overdrive area (Season 5 / BlazBlue). Empty and unused for every other
     // season's characters. See the Overdrive section further down for the rules.
     overdrive: [],
@@ -10498,22 +10514,23 @@ function makePlayer(id, name, characterKey, startPos) {
     // Zato-1's Eddie (Season 4). A THIRD entity on the board, owned by a player but
     // not a character: `null` means "out of play" (where he starts and where his
     // owner's Specials/Ultras send him back at Cleanup), otherwise a board space.
-    // Every other character leaves this null forever. Eddie is explicitly "not a
-    // character and is ignored when moving" (EXdata.xlsx's Zato-1 sheet), so NO
-    // movement code reads this field — he never blocks, is never passed "through",
-    // and is never pushed; the only things that read him are Zato's own range
-    // calculation and his cards' text.
     eddiePos: null,
+    // Belief / Information Set tracking (declared upfront rather than lazily attached)
+    aiObs: [],
+    revealedHand: null,
+    knownDeckTop: [],
+    knownDeckBottom: [],
   };
 }
 
 class Engine {
   constructor(p1Char, p2Char, opts = {}) {
     this.log = [];
-    // Parallel to `log`: structured events for board badges + paced playback
-    // (see logMsg's optional kind/who/extra args). Never read by game logic —
-    // purely a rendering feed. Drained by ui.js's playFx(), one entry per step.
-    this.fxQueue = [];
+    // Unified typed Match Event stream (ADR-0008): feeds combat log, FX playback,
+    // and Strike breakdown while keeping lastStrikeInfo.timeline snapshots separate (ADR-0006).
+    this.events = [];
+    this._eventSeq = 0;
+    this._fxCursor = 0;
     // Structured record of the most recent Strike, for the UI's step-by-step
     // breakdown (written in resolveStrikeSteps; never read by game logic). Declared
     // here so it is always a defined field — the UI reads it before any Strike has
@@ -10521,13 +10538,18 @@ class Engine {
     this.lastStrikeInfo = null;
     this.rng = opts.rng || Math.random;
     this._nextUid = 1;
-    this.turn = 0;
+    this.turn = 1;
+    this.roundNum = 0;
     this.gameOver = false;
     this.winner = null;
+    this._advantageOrder = null;
+    this._resolvingCards = null;
+    this._reading = null;
+    this.pendingRangeDiscard = null;
 
     this.players = {
-      p1: makePlayer('p1', opts.p1Name || CHARACTERS[p1Char].name, p1Char, 2),
-      p2: makePlayer('p2', opts.p2Name || CHARACTERS[p2Char].name, p2Char, 6),
+      p1: makePlayer('p1', opts.p1Name || CHARACTERS[p1Char].name, p1Char, 2, opts.p1IsHuman !== undefined ? !!opts.p1IsHuman : true),
+      p2: makePlayer('p2', opts.p2Name || CHARACTERS[p2Char].name, p2Char, 6, opts.p2IsHuman !== undefined ? !!opts.p2IsHuman : false),
     };
     this.players.p1.deck = shuffle(buildDeck(p1Char, () => this.nextUid()), this.rng);
     this.players.p2.deck = shuffle(buildDeck(p2Char, () => this.nextUid()), this.rng);
@@ -10535,7 +10557,7 @@ class Engine {
     for (const pid of ['p1', 'p2']) {
       const p = this.players[pid];
       const astral = CHARACTERS[p.characterKey].specials.find(c => c.isAstral);
-      p.astralCard = astral ? { ...astral, uid: 'astral_' + pid } : null;
+      p.astralCard = astral ? cloneCard(astral, 'astral_' + pid) : null;
     }
 
     this.active = 'p1'; // whose turn it is to choose an action
@@ -10547,19 +10569,62 @@ class Engine {
   other(pid) { return pid === 'p1' ? 'p2' : 'p1'; }
   P(pid) { return this.players[pid]; }
 
-  // `kind` (optional) prefixes the matching FX_ICONS glyph onto the log line AND
-  // pushes a parallel fxQueue entry for board-badge/paced-playback rendering.
-  // `who` is the acting player's id ('p1'/'p2'), needed for board badges (they
-  // read the player's CURRENT position at playback time rather than capturing
-  // pos here — see FX section of HANDOFF.md). Omit kind entirely for log-only
-  // lines that should never appear as an fx event (e.g. round headers).
-  logMsg(msg, kind, who, extra) {
-    this.log.push(kind ? `${fxIcon(kind)} ${msg}`.trim() : msg);
-    if (this.log.length > 400) this.log.splice(0, this.log.length - 400);
-    if (kind) {
-      this.fxQueue.push({ kind, who: who || null, ...extra });
-      if (this.fxQueue.length > 200) this.fxQueue.splice(0, this.fxQueue.length - 200);
+  emitMatchEvent({ kind = 'log', playerId = null, payload = null, text = null, isFx = false }) {
+    const entry = {
+      seq: ++this._eventSeq,
+      turn: this.turn,
+      roundNum: this.roundNum,
+      kind,
+      playerId,
+      payload,
+      text,
+      isFx: !!isFx,
+    };
+    this.events.push(entry);
+    if (this.events.length > 400) {
+      const drop = this.events.length - 400;
+      this.events.splice(0, drop);
+      this._fxCursor = Math.max(0, this._fxCursor - drop);
     }
+    if (text != null) {
+      this.log.push(text);
+      if (this.log.length > 400) this.log.splice(0, this.log.length - 400);
+    }
+    return entry;
+  }
+
+  hasPendingFx() {
+    for (let i = this._fxCursor; i < this.events.length; i++) {
+      if (this.events[i].isFx) return true;
+    }
+    return false;
+  }
+
+  shiftPendingFx() {
+    while (this._fxCursor < this.events.length) {
+      const evt = this.events[this._fxCursor++];
+      if (evt.isFx) {
+        return { kind: evt.kind, who: evt.playerId, ...(evt.payload || {}) };
+      }
+    }
+    return null;
+  }
+
+  clearPendingFx() {
+    this._fxCursor = this.events.length;
+  }
+
+  // `kind` (optional) prefixes the matching FX_ICONS glyph onto the log line AND
+  // records an FX Match Event for board-badge/paced-playback rendering.
+  logMsg(msg, kind, who, extra) {
+    const text = kind ? `${fxIcon(kind)} ${msg}`.trim() : msg;
+    this.emitMatchEvent({
+      kind: kind || 'log',
+      playerId: who || null,
+      payload: extra || null,
+      text,
+      isFx: !!kind,
+    });
   }
 
   // Pluralization helper for movement log messages — "1 space" vs "3 spaces" —
@@ -10577,6 +10642,15 @@ class Engine {
     this.roundNum = (this.roundNum || 0) + 1;
     this.logMsg(`\u2014\u2014\u2014 Round ${this.roundNum} \u2014\u2014\u2014`);
     return this.roundNum;
+  }
+
+  cancelRound() {
+    if (this.roundNum > 0) this.roundNum--;
+    this.log.pop();
+    if (this.events.length > 0 && this.events[this.events.length - 1].kind === 'log') {
+      this.events.pop();
+      if (this._fxCursor > this.events.length) this._fxCursor = this.events.length;
+    }
   }
 
   // Axl's Sickle Storm boost: "Look at the top 3 cards of your deck..." — pops N
@@ -10698,12 +10772,13 @@ class Engine {
       player.hand.push(card);
       drawn.push(card);
     }
-    // "Loud draw" (mirrors the "loud discard" invariant): the human ("You") sees
+    // "Loud draw" (mirrors the "loud discard" invariant): the human player sees
     // their own drawn cards' names — this is their own deck, not hidden info, so
     // naming them isn't a no-cheating violation. Deliberately NOT done for the
-    // opponent's draws (player.name !== 'You'), which would leak their hand.
-    if (drawn.length > 0 && player.name === 'You') {
-      this.logMsg(`You draw: ${drawn.map(c => c.name).join(', ')}.`, 'draw', player.id);
+    // opponent's draws (!player.isHuman), which would leak their hand.
+    if (drawn.length > 0 && player.isHuman) {
+      const prefix = player.name === 'You' ? 'You draw' : `${player.name} draws`;
+      this.logMsg(`${prefix}: ${drawn.map(c => c.name).join(', ')}.`, 'draw', player.id);
     }
   }
 
@@ -10778,8 +10853,8 @@ class Engine {
     if (char && char.onEndOfTurnDraw) char.onEndOfTurnDraw(this, player);
     // "Exceed at end of turn" (Nagoriyuki's Reshuffle trigger) — deferred to here so the
     // Reshuffle turn itself plays out un-Exceeded, exactly as the card text reads.
-    if (player.exceedAtEndOfTurn) {
-      player.exceedAtEndOfTurn = false;
+    if (player.turnState.exceedAtEndOfTurn) {
+      player.turnState.exceedAtEndOfTurn = false;
       this.forceExceed(player);
     }
   }
@@ -11009,7 +11084,7 @@ class Engine {
   isPushPullImmune(target) {
     if (target.strikeState.focusActive) return `${target.name}'s Focus prevents them from being moved.`;
     for (const b of target.boostsInPlay) {
-      if (b.card.boost && b.card.boost.movementImmuneGrant) {
+      if (b.card.boost && b.card.boost.movementImmune) {
         return `${target.name} cannot be Pushed or Pulled (${b.card.name}).`;
       }
     }
@@ -11270,11 +11345,7 @@ class Engine {
     player.boostsInPlay.push(entry);
     if (logLine) this.logMsg(logLine, 'boost', player.id);
     if (opts.runImmediate) {
-      const needsUiTarget = card.boost.needsNameChoice || card.boost.needsNormalNameChoice ||
-        card.boost.needsRangeNameChoice || card.boost.needsBoostTargetChoice ||
-        card.boost.needsDiscardBoostChoice || card.boost.needsPushPullChoice ||
-        card.boost.needsDirectionChoice || card.boost.needsMovementChoice ||
-        card.boost.needsAnySpaceChoice || card.boost.optionalForceSpend;
+      const needsUiTarget = !!card.boost.choice || !!card.boost.optionalForceSpend;
       if (card.boost.nowDraw) this.draw(player, card.boost.nowDraw);
       if (card.boost.nowClose) this.closeSelf(player, opts.opponent, card.boost.nowClose);
       if (card.boost.resolve && !needsUiTarget) {
@@ -11634,12 +11705,22 @@ class Engine {
   }
 
   // Reset per-turn one-shot flags (like firstCancelThisTurn) when a player
-  // gains control of a turn. Called when switching active player.
+  // gains control of a turn.
+  resetTurnState(player) {
+    player.turnState.firstCancelThisTurn = true;
+    player.turnState.canceledThisTurn = false; // Sol Badguy: fresh "this turn" starts now
+    player.turnState.strikeThisTurn = false; // Reset for Leo's Exceed "Revert when you end a turn without Striking"
+    player.turnState.actionStrikeThisTurn = false; // Reset for Baiken/I-No Exceed POW bonus
+  }
+
   resetPerTurnFlags(player) {
-    player.firstCancelThisTurn = true;
-    player.canceledThisTurn = false; // Sol Badguy: fresh "this turn" starts now
-    player.strikeThisTurn = false; // Reset for Leo's Exceed "Revert when you end a turn without Striking"
-    player.actionStrikeThisTurn = false; // Reset for Baiken/I-No Exceed POW bonus
+    this.resetTurnState(player);
+  }
+
+  beginTurn(playerId) {
+    this.turn += 1;
+    this.active = playerId;
+    this.resetTurnState(this.P(playerId));
   }
 
   // Trigger card-level cleanup effects (distinct from boost cleanup). Called after
@@ -11950,13 +12031,13 @@ class Engine {
       const sm = (b.card.boost && b.card.boost.statMods) || {};
       mods.pow += sm.pow || 0; mods.spd += sm.spd || 0;
       mods.arm += sm.arm || 0; mods.grd += sm.grd || 0;
-      if (b.card.boost.ignoreArmorGrant) mods.ignoreArmor = true;
+      if (b.card.boost.ignoreArmor) mods.ignoreArmor = true;
       // Mirrors ai.js's boostModsFromKeys (same shape, kept in sync deliberately) —
       // this is the AI's-own-boosts path (full info); that one is the public,
       // opponent-facing path (boost keys only). Cammy's CQC boost / Zangief's
       // Ultimate Atomic Buster boost are the current examples of each.
       if (b.card.boost.rangeImmuneRanges) mods.rangeImmuneRanges = mods.rangeImmuneRanges.concat(b.card.boost.rangeImmuneRanges);
-      if (b.card.boost.stunImmuneGrant) mods.stunImmune = true;
+      if (b.card.boost.stunImmune) mods.stunImmune = true;
       // C. Viper's Burning Dance boost: "[+] Opponent has +3 POW" (see the
       // cross-player oppPowDebuff aggregation in liveStats above for the other
       // half of this field's usage).
@@ -12091,8 +12172,9 @@ class Engine {
         continue;
       }
       if (b.card.boost.drawIfOpponentStunnedThisStrike && opponentWasStunned) {
-        this.draw(player, 1);
-        this.logMsg(`${player.name}'s ${b.card.name} boost draws 1 (opponent was Stunned this Strike).`, 'draw', player.id);
+        const drawN = b.card.boost.drawIfOpponentStunnedThisStrike;
+        this.draw(player, drawN);
+        this.logMsg(`${player.name}'s ${b.card.name} boost draws ${drawN} (opponent was Stunned this Strike).`, 'draw', player.id);
       }
       // Sol Badguy's Gun Flame boost: "After: If your opponent is stunned,
       // Advantage" — same trigger shape as drawIfOpponentStunnedThisStrike
@@ -12296,19 +12378,19 @@ class Engine {
     // see pushAway()/pushToward() above, which check this flag. Generalized off
     // `card.movementImmune` (Focus and Zangief's Double Lariat both set it) rather
     // than hardcoded to Focus's key specifically.
-    A.strikeState.focusActive = !!(aCard && aCard.movementImmune);
-    D.strikeState.focusActive = !!(dCard && dCard.movementImmune);
+    A.strikeState.focusActive = !!(aCard && aCard.hooks && aCard.hooks.movementImmune);
+    D.strikeState.focusActive = !!(dCard && dCard.hooks && dCard.hooks.movementImmune);
 
     // Zangief's Siberian Blizzard: "Opponents can't move past you" — confirmed
     // with the user: scoped to the OPPONENT's own Before-movement during this
     // Strike only (not Zangief's own push/pull effects). See advanceSelf()'s
     // jump-over branch, which checks the TARGET's (not the mover's) flag.
-    A.strikeState.blocksOpponentPassThrough = !!(aCard && aCard.blocksOpponentPassThrough);
-    D.strikeState.blocksOpponentPassThrough = !!(dCard && dCard.blocksOpponentPassThrough);
+    A.strikeState.blocksOpponentPassThrough = !!(aCard && aCard.hooks && aCard.hooks.blocksOpponentPassThrough);
+    D.strikeState.blocksOpponentPassThrough = !!(dCard && dCard.hooks && dCard.hooks.blocksOpponentPassThrough);
 
     // Range immunity (Cammy's Dive Kick/CQC/Gyro Drive Smasher/Razor's Edge
     // Slicer — "Attacks at range X don't hit you"): computed once here from
-    // whatever's SET this Strike (own card's base `rangeImmuneRanges`, the card's
+    // whatever's SET this Strike (own card's base `hooks.rangeImmuneRanges`, the card's
     // `critical.rangeImmuneRanges` if Critical was paid, and any active
     // continuous boost's `rangeImmuneRanges`) — this is the "immune as soon as
     // revealed" family. A card whose immunity is instead worded as an "After:"
@@ -12317,7 +12399,7 @@ class Engine {
     // card's own activation actually completing, unlike the set-time family here.
     const computeRangeImmunity = (owner, card, criticalPaid) => {
       const ranges = [];
-      if (card.rangeImmuneRanges) ranges.push(...card.rangeImmuneRanges);
+      if (card.hooks && card.hooks.rangeImmuneRanges) ranges.push(...card.hooks.rangeImmuneRanges);
       if (criticalPaid && card.critical && card.critical.rangeImmuneRanges) ranges.push(...card.critical.rangeImmuneRanges);
       for (const b of owner.boostsInPlay) {
         if (b.card.boost && b.card.boost.rangeImmuneRanges) ranges.push(...b.card.boost.rangeImmuneRanges);
@@ -12398,10 +12480,10 @@ class Engine {
       // to completion before the eventual Strike/turn-pass), so this is safe
       // in the initial liveStats pass same as every other unconditional
       // modifier here.
-      const cancelBonus = (char.powBonusIfCanceledThisTurn && owner.canceledThisTurn)
+      const cancelBonus = (char.powBonusIfCanceledThisTurn && owner.turnState.canceledThisTurn)
         ? (char.powBonusIfCanceledThisTurn(owner) || 0) : 0;
       // Character action POW bonus: Baiken/I-No Exceed "+1POW when you action Strike"
-      const actionStrikeBonus = (char.actionStrikePowBonus && owner.actionStrikeThisTurn && owner.exceeded)
+      const actionStrikeBonus = (char.actionStrikePowBonus && owner.turnState.actionStrikeThisTurn && owner.exceeded)
         ? (char.actionStrikePowBonus || 0) : 0;
       // C. Viper's Burning Dance boost: "The opponent has +3POW" — a
       // continuous boost that debuffs the OPPONENT's stats (the one
@@ -12440,8 +12522,8 @@ class Engine {
       // clauses, Ky's "Range 2: +2SPD", Faust's "if you have a Boost in play", Goldlewis's
       // "if you initiated"), so the engine keeps exactly one extension point for all of them.
       // Read here, in the same single pass, so it lands before Speed order is decided.
-      const cdm = card.liveStatMods
-        ? (card.liveStatMods(owner, opponent, this, { initiator: owner.id === initiator, fromWildSwing: !!fromWildSwing, dist: this.range(owner, opponent) }) || {})
+      const cdm = (card.hooks && card.hooks.liveStatMods)
+        ? (card.hooks.liveStatMods(owner, opponent, this, { initiator: owner.id === initiator, fromWildSwing: !!fromWildSwing, dist: this.range(owner, opponent) }) || {})
         : {};
       const statTotal = { pow: card.pow, spd: card.spd, arm: card.arm, grd: card.guardEqualsHandSize ? owner.hand.length : card.grd };
       const addStatMods = (m) => {
@@ -12454,7 +12536,7 @@ class Engine {
       for (const m of [cdm, mods, cm, nsm, esm, wsm, rcb, fub, asm, sto]) addStatMods(m);
       statTotal.pow += cancelBonus + actionStrikeBonus + oppPowDebuff;
       statTotal.spd += rangeSpdBonus + gaugeSpdBonus;
-      if (card.selfArmorZero) statTotal.arm = 0;
+      if (card.hooks && card.hooks.selfArmorZero) statTotal.arm = 0;
       return {
         pow: statTotal.pow,
         spd: statTotal.spd,
@@ -12478,8 +12560,8 @@ class Engine {
         grd: statTotal.grd,
         // `fub` is the face-up bonus (Sagat's Innate; Happy Chaos's Steady Aim also
         // grants Ignore Armor there, so this reads a boolean out of it as well as stats).
-        ignoreArmor: !!card.ignoreArmor || mods.ignoreArmor || !!fub.ignoreArmor || !!(criticalPaid && card.critical && card.critical.ignoreArmor),
-        ignoreGuard: !!card.ignoreGuard || !!(criticalPaid && card.critical && card.critical.ignoreGuard),
+        ignoreArmor: !!(card.hooks && card.hooks.ignoreArmor) || mods.ignoreArmor || !!fub.ignoreArmor || !!(criticalPaid && card.critical && card.critical.ignoreArmor),
+        ignoreGuard: !!(card.hooks && card.hooks.ignoreGuard) || !!(criticalPaid && card.critical && card.critical.ignoreGuard),
       };
     };
     let aStats = liveStats(A, D, aCard, !!gp[A.id], attackerSel.fromWildSwing);
@@ -12530,8 +12612,8 @@ class Engine {
     // Reuses the existing per-Strike `_unhittableThisStrike` flag (Dive's side-swap
     // protection) rather than adding a second miss condition to the range check — it is
     // decided here, right after both sides' Speed is final and before anything acts on it.
-    if (aCard.hitImmuneToFasterAttacks && dStats.spd > aStats.spd) A.strikeState.unhittable = true;
-    if (dCard.hitImmuneToFasterAttacks && aStats.spd > dStats.spd) D.strikeState.unhittable = true;
+    if (aCard.hooks && aCard.hooks.hitImmuneToFasterAttacks && dStats.spd > aStats.spd) A.strikeState.unhittable = true;
+    if (dCard.hooks && dCard.hooks.hitImmuneToFasterAttacks && aStats.spd > dStats.spd) D.strikeState.unhittable = true;
 
     let first = 'A', second = 'D';
     if (dStats.spd > aStats.spd) { first = 'D'; second = 'A'; }
@@ -12588,7 +12670,16 @@ class Engine {
       timeline: [],
     };
     const strikeInfo = this.lastStrikeInfo;
-    const recordStrikeEvent = (evt) => { strikeInfo.events.push(evt); };
+    const recordStrikeEvent = (evt) => {
+      strikeInfo.events.push(evt);
+      this.emitMatchEvent({
+        kind: `strike_${evt.type}`,
+        playerId: evt.playerId || evt.attackerId || null,
+        payload: evt,
+        text: null,
+        isFx: false,
+      });
+    };
     const pushTimeline = (step) => {
       strikeInfo.timeline.push({
         p1Pos: this.P('p1').pos,
@@ -12733,7 +12824,7 @@ class Engine {
         // Card-level dynamic max-range bonus (Jack-O's "+0~1RNG per Boost you have in
         // play" / "+0~3RNG if you have a Boost in play") — the per-card sibling of
         // normalsRangeBonus/attackRangeBonus above, computed live rather than declared.
-        if (attCard.dynamicRangeMaxBonus) maxR += attCard.dynamicRangeMaxBonus(attacker, defender, engine, attacker.id === initiator) || 0;
+        if (attCard.hooks && attCard.hooks.dynamicRangeMaxBonus) maxR += attCard.hooks.dynamicRangeMaxBonus(attacker, defender, engine, attacker.id === initiator) || 0;
       }
       // Range immunity (see engine.computeRangeImmunity — Cammy's Dive Kick/CQC/
       // Gyro Drive Smasher/Razor's Edge Slicer): if the DEFENDER is immune to
@@ -12862,7 +12953,7 @@ class Engine {
         // card, not just Normals) — gated on the same `actionStrikeThisTurn` flag
         // `liveStats`'s `actionStrikePowBonus` (Baiken/I-No/Giovanna's Exceed +POW)
         // already uses. Data-driven off CHARACTERS[key].actionStrikeHitHook.
-        if (attacker.actionStrikeThisTurn && attChar.actionStrikeHitHook) attChar.actionStrikeHitHook(ctx);
+        if (attacker.turnState.actionStrikeThisTurn && attChar.actionStrikeHitHook) attChar.actionStrikeHitHook(ctx);
         // C. Viper's Temple Massage ("Hit: Spend up to {4}. For each Force
         // spent, +1POW.") and Thunder Knuckle's boost (identical shape, but
         // from a continuous boost active on a LATER Strike rather than the
@@ -13056,8 +13147,8 @@ class Engine {
           const grd = ctx._effGrd;
           const secondCritPaid = !!gp[defender.id];
           const stunImmune = !!(defCard && defCard.critical && defCard.critical.stunImmune && secondCritPaid) ||
-            !!(defCard && defCard.stunImmuneBase) ||
-            defender.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmuneGrant);
+            !!(defCard && defCard.hooks && defCard.hooks.stunImmune) ||
+            defender.boostsInPlay.some(b => b.card.boost && b.card.boost.stunImmune);
           if (dmg > grd && !stunImmune) {
             secondHappens = false;
             stunnedPlayerId = defender.id;
@@ -13362,6 +13453,51 @@ class Engine {
     return 'in_hand';
   }
 
+  static buildPublicPlayer(p, isActor, engineInstance = null) {
+    const mapZoneKeys = (arr) => (arr || []).map(c => (typeof c === 'string' ? c : c.key));
+    const astralState = p.astralState !== undefined
+      ? p.astralState
+      : (Array.isArray(p.discard)
+          ? (engineInstance ? engineInstance.astralStateOf(p) : Engine.prototype.astralStateOf(p))
+          : 'none');
+    const activeBoostMods = p.activeBoostMods !== undefined
+      ? p.activeBoostMods
+      : (Array.isArray(p.boostsInPlay)
+          ? (engineInstance ? engineInstance.activeBoostMods(p) : Engine.prototype.activeBoostMods(p))
+          : undefined);
+    const base = {
+      id: p.id,
+      characterKey: p.characterKey,
+      life: p.life,
+      maxLife: p.maxLife || 30,
+      pos: p.pos,
+      handCount: p.hand ? p.hand.length : (p.handCount || 0),
+      deckCount: p.deck ? p.deck.length : (p.deckCount || 0),
+      gaugeKeys: mapZoneKeys(p.gauge || p.gaugeKeys),
+      discardKeys: mapZoneKeys(p.discard || p.discardKeys),
+      boostKeys: p.boostKeys ? p.boostKeys.slice() : (p.boostsInPlay || []).map(b => (typeof b === 'string' ? b : b.card.key)),
+      overdriveKeys: mapZoneKeys(p.overdrive || p.overdriveKeys),
+      sealedKeys: mapZoneKeys(p.sealedCards || p.sealedKeys),
+      exceeded: !!p.exceeded,
+      reshuffleUsed: !!p.reshuffleUsed,
+      advantage: !!p.advantage,
+      astralState: p.astralState || astralState,
+      eddiePos: p.eddiePos != null ? p.eddiePos : null,
+      activeBoostMods: p.activeBoostMods || activeBoostMods,
+    };
+    if (isActor) {
+      base.handKeys = p.handKeys ? p.handKeys.slice() : mapZoneKeys(p.hand);
+      base.knownDeckTop = Array.isArray(p.knownDeckTop) ? p.knownDeckTop.slice() : [];
+      base.knownDeckBottom = Array.isArray(p.knownDeckBottom) ? p.knownDeckBottom.slice() : [];
+      base.canceledThisTurn = !!(p.turnState ? p.turnState.canceledThisTurn : p.canceledThisTurn);
+      base.actionStrikeThisTurn = !!(p.turnState ? p.turnState.actionStrikeThisTurn : p.actionStrikeThisTurn);
+    } else {
+      base.revealedHand = p.revealedHand ? { ...p.revealedHand, keys: p.revealedHand.keys.slice() } : null;
+      base.observations = p.aiObs ? p.aiObs.slice() : (p.observations ? p.observations.slice() : null);
+    }
+    return base;
+  }
+
   /**
    * Canonical Information Set for a player: public board/zone state for both players
    * plus the acting player's own private hand and known deck order, excluding all
@@ -13370,45 +13506,11 @@ class Engine {
   getInformationSet(playerId) {
     const me = this.P(playerId);
     const opp = this.P(this.other(playerId));
-    const mapZoneKeys = (arr) => (arr || []).map(c => (typeof c === 'string' ? c : c.key));
-    const mapPublic = (p, isActor) => {
-      const base = {
-        id: p.id,
-        characterKey: p.characterKey,
-        life: p.life,
-        maxLife: p.maxLife,
-        pos: p.pos,
-        handCount: p.hand.length,
-        deckCount: p.deck.length,
-        gaugeKeys: mapZoneKeys(p.gauge),
-        discardKeys: mapZoneKeys(p.discard),
-        boostKeys: (p.boostsInPlay || []).map(b => (typeof b === 'string' ? b : b.card.key)),
-        overdriveKeys: mapZoneKeys(p.overdrive),
-        sealedKeys: mapZoneKeys(p.sealedCards),
-        exceeded: !!p.exceeded,
-        reshuffleUsed: !!p.reshuffleUsed,
-        advantage: !!p.advantage,
-        astralState: this.astralStateOf(p),
-        eddiePos: p.eddiePos != null ? p.eddiePos : null,
-        activeBoostMods: this.activeBoostMods(p),
-      };
-      if (isActor) {
-        base.handKeys = mapZoneKeys(p.hand);
-        base.knownDeckTop = Array.isArray(p.knownDeckTop) ? p.knownDeckTop.slice() : [];
-        base.knownDeckBottom = Array.isArray(p.knownDeckBottom) ? p.knownDeckBottom.slice() : [];
-        base.canceledThisTurn = !!p.canceledThisTurn;
-        base.actionStrikeThisTurn = !!p.actionStrikeThisTurn;
-      } else {
-        base.revealedHand = p.revealedHand ? { ...p.revealedHand, keys: p.revealedHand.keys.slice() } : null;
-        base.observations = p.aiObs ? p.aiObs.slice() : null;
-      }
-      return base;
-    };
     return {
       turnNumber: this.turn || 0,
       activePlayer: this.active === playerId ? 'actor' : 'opponent',
-      actor: mapPublic(me, true),
-      opponent: mapPublic(opp, false),
+      actor: Engine.buildPublicPlayer(me, true, this),
+      opponent: Engine.buildPublicPlayer(opp, false, this),
       canExceed: this.canExceed(me),
     };
   }
@@ -13592,8 +13694,8 @@ const SimulateStrikePreview = (() => {
     if (simMe.strikeState && simMe.strikeState.setOptionRangeBonus) {
       maxR += simMe.strikeState.setOptionRangeBonus;
     }
-    if (card.dynamicRangeMaxBonus) {
-      maxR += readNumericBonus(card.dynamicRangeMaxBonus(simMe, simOpp, fakeEngine, isInitiator));
+    if (card.hooks && card.hooks.dynamicRangeMaxBonus) {
+      maxR += readNumericBonus(card.hooks.dynamicRangeMaxBonus(simMe, simOpp, fakeEngine, isInitiator));
     }
 
     return {
@@ -13660,8 +13762,8 @@ const SimulateStrikePreview = (() => {
     const asm = char.attackStatMods
       ? (char.attackStatMods(simMe, card, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
       : {};
-    const cdm = card.liveStatMods
-      ? (card.liveStatMods(simMe, simOpp, fakeEngine, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
+    const cdm = (card.hooks && card.hooks.liveStatMods)
+      ? (card.hooks.liveStatMods(simMe, simOpp, fakeEngine, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
       : {};
 
     const printedPow = card.pow || 0;
@@ -13692,7 +13794,7 @@ const SimulateStrikePreview = (() => {
       if (card.hooks.powBonusIfInitiating && initiator) statTotal.pow += card.hooks.powBonusIfInitiating;
       if (card.hooks.armBonusIfDefending && !initiator) statTotal.arm += card.hooks.armBonusIfDefending;
     }
-    if (card.selfArmorZero) statTotal.arm = 0;
+    if (card.hooks && card.hooks.selfArmorZero) statTotal.arm = 0;
 
     const rangeInfo = computeEffectiveRange(simMe, simOpp, card, fakeEngine, initiator);
     const oppRangeImmune = computeOppVisibleRangeImmunity(simOpp);
@@ -13710,8 +13812,8 @@ const SimulateStrikePreview = (() => {
       maxRange: rangeInfo.maxRange,
       printedMinRange: rangeInfo.printedMinRange,
       printedMaxRange: rangeInfo.printedMaxRange,
-      ignoreArmor: !!card.ignoreArmor || !!mods.ignoreArmor || !!(criticalActive && card.critical && card.critical.ignoreArmor),
-      ignoreGuard: !!card.ignoreGuard || !!(criticalActive && card.critical && card.critical.ignoreGuard),
+      ignoreArmor: !!(card.hooks && card.hooks.ignoreArmor) || !!mods.ignoreArmor || !!(criticalActive && card.critical && card.critical.ignoreArmor),
+      ignoreGuard: !!(card.hooks && card.hooks.ignoreGuard) || !!(criticalActive && card.critical && card.critical.ignoreGuard),
       oppVisibleArm: oppMods.arm || 0,
       oppVisibleGrd: oppMods.grd || 0,
       oppStunImmune: !!oppMods.stunImmune,
@@ -13941,7 +14043,7 @@ const SimulateStrikePreview = (() => {
 
     const isPushPullImmune = (target) => {
       if (target.strikeState && target.strikeState.focusActive) return true;
-      return (target.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.movementImmuneGrant);
+      return (target.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.movementImmune);
     };
 
     const cappedSelfMove = (mover, opponent, amount, forced) => {
@@ -14768,6 +14870,9 @@ const NativeCpuAI = (() => {
   }
 
   function mapPublicPlayer(p, isActor) {
+    if (typeof Engine !== 'undefined' && typeof Engine.buildPublicPlayer === 'function') {
+      return Engine.buildPublicPlayer(p, isActor, null);
+    }
     const mapKeys = (arr) => Array.isArray(arr) ? arr.map(c => (typeof c === 'string' ? c : c.key)) : [];
     const overdrive = mapKeys(p.overdriveKeys || p.overdrive);
     const sealed = mapKeys(p.sealedKeys || p.sealedCards || p.sealed);
@@ -14797,14 +14902,36 @@ const NativeCpuAI = (() => {
     return base;
   }
 
-  function decisionSnapshot(me, opp, canExceed, opts) {
+  function deepFreeze(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    Object.freeze(obj);
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v && typeof v === 'object' && !Object.isFrozen(v)) deepFreeze(v);
+    }
+    return obj;
+  }
+
+  function decisionSnapshot(meOrInfoSet, opp, canExceed, opts) {
+    if (meOrInfoSet && meOrInfoSet.actor && meOrInfoSet.opponent) {
+      const extra = opp || {};
+      return deepFreeze({
+        protocolVersion: PROTOCOL_VERSION,
+        seed: Number.isInteger(extra.seed) ? extra.seed : 0,
+        turnNumber: Number.isInteger(extra.turnNumber) ? extra.turnNumber : (meOrInfoSet.turnNumber || 0),
+        activePlayer: meOrInfoSet.activePlayer === 'opponent' ? 'opponent' : 'actor',
+        actor: { ...meOrInfoSet.actor },
+        opponent: { ...meOrInfoSet.opponent },
+        canExceed: !!meOrInfoSet.canExceed,
+      });
+    }
     const extra = opts || {};
-    return Object.freeze({
+    return deepFreeze({
       protocolVersion: PROTOCOL_VERSION,
       seed: Number.isInteger(extra.seed) ? extra.seed : 0,
       turnNumber: Number.isInteger(extra.turnNumber) ? extra.turnNumber : 0,
       activePlayer: extra.activePlayer === 'opponent' ? 'opponent' : 'actor',
-      actor: mapPublicPlayer(me, true),
+      actor: mapPublicPlayer(meOrInfoSet, true),
       opponent: mapPublicPlayer(opp, false),
       canExceed: !!canExceed,
     });
@@ -14880,52 +15007,8 @@ const NativeCpuAI = (() => {
 // rulebook). This mirrors what a competent human opponent could infer.
 
 
-function publicInfoOf(player) {
-  const astralDef = CHARACTERS[player.characterKey] && CHARACTERS[player.characterKey].specials
-    ? CHARACTERS[player.characterKey].specials.find(c => c.isAstral) : null;
-  let astralState = 'none';
-  if (astralDef) {
-    if (player._astralPending) astralState = 'pending';
-    else if (player.astralCard) astralState = 'out_of_play';
-    else {
-      const ak = astralDef.key;
-      const inPub = player.discard.some(c => c.key === ak) || player.gauge.some(c => c.key === ak) ||
-        player.boostsInPlay.some(b => b.card && b.card.key === ak) ||
-        (player.overdrive || []).some(c => c.key === ak) || (player.sealedCards || []).some(c => c.key === ak);
-      astralState = inPub ? 'public' : 'in_hand';
-    }
-  }
-  return {
-    id: player.id,
-    characterKey: player.characterKey,
-    handCount: player.hand.length,
-    deckCount: player.deck.length,
-    discard: player.discard.map(c => c.key),
-    gauge: player.gauge.map(c => c.key),
-    boostsInPlay: player.boostsInPlay.map(b => b.card.key),
-    overdrive: (player.overdrive || []).map(c => c.key),
-    sealedCards: (player.sealedCards || []).map(c => c.key),
-    astralCard: player.astralCard ? player.astralCard.key : null,
-    _astralPending: !!player._astralPending,
-    astralState,
-    life: player.life,
-    maxLife: player.maxLife,
-    pos: player.pos,
-    // Eddie (Zato-1) stands on the board in front of everyone — as public as either
-    // fighter's own position, and the number that decides whether his Specials reach.
-    eddiePos: player.eddiePos != null ? player.eddiePos : null,
-    exceeded: player.exceeded,
-    reshuffleUsed: player.reshuffleUsed,
-    advantage: player.advantage,
-    // Legitimately public once set: a genuine 0-match Reading/Block/Name-a-Range
-    // check forces a REAL hand reveal by the rules themselves — see
-    // engine.recordHandReveal and this same field's use in sampleOpponentHand below.
-    revealedHand: player.revealedHand || null,
-    // The publicly visible actions this player has chosen recently (engine.
-    // recordObservation). Nothing hidden: it is what anyone at the table would have
-    // watched them do. Consumed by handLikelihood below.
-    observations: player.aiObs ? player.aiObs.slice() : null,
-  };
+function publicInfoOf(player, engine = null) {
+  return Engine.buildPublicPlayer(player, false, engine);
 }
 
 // How consistent is a candidate hand with what this player has actually been DOING?
@@ -15018,11 +15101,11 @@ function unseenPoolForOpponent(oppPublic) {
       counts.set(k, (counts.get(k) || 0) + 1);
     }
   };
-  addRemoved(oppPublic.discard);
-  addRemoved(oppPublic.gauge);
-  addRemoved(oppPublic.boostsInPlay);
-  addRemoved(oppPublic.overdrive);
-  addRemoved(oppPublic.sealedCards);
+  addRemoved(oppPublic.discardKeys);
+  addRemoved(oppPublic.gaugeKeys);
+  addRemoved(oppPublic.boostKeys);
+  addRemoved(oppPublic.overdriveKeys);
+  addRemoved(oppPublic.sealedKeys);
   if (counts.size === 0) return fullDeckKeys.slice();
   const pool = [];
   for (let i = 0; i < fullDeckKeys.length; i++) {
@@ -15044,11 +15127,11 @@ function cardByKey(characterKey, key) {
 
 function sampleOpponentHand(oppPublic, rng, precomputedPool = null) {
   const rev = oppPublic.revealedHand;
-  const odLen = (oppPublic.overdrive || []).length;
-  const sealedLen = (oppPublic.sealedCards || []).length;
+  const odLen = (oppPublic.overdriveKeys || []).length;
+  const sealedLen = (oppPublic.sealedKeys || []).length;
   if (rev && rev.handCount === oppPublic.handCount && rev.deckCount === oppPublic.deckCount &&
-      rev.discardCount === oppPublic.discard.length && rev.gaugeCount === oppPublic.gauge.length &&
-      rev.boostsCount === oppPublic.boostsInPlay.length &&
+      rev.discardCount === oppPublic.discardKeys.length && rev.gaugeCount === oppPublic.gaugeKeys.length &&
+      rev.boostsCount === oppPublic.boostKeys.length &&
       (rev.overdriveCount == null || rev.overdriveCount === odLen) &&
       (rev.sealedCount == null || rev.sealedCount === sealedLen)) {
     return rev.keys.map(k => cardByKey(oppPublic.characterKey, k));
@@ -15085,13 +15168,13 @@ function boostModsFromKeys(keys) {
     if (!c || !c.boost) continue;
     const sm = c.boost.statMods || {};
     mods.pow += sm.pow || 0; mods.spd += sm.spd || 0; mods.arm += sm.arm || 0; mods.grd += sm.grd || 0;
-    if (c.boost.ignoreArmorGrant) mods.ignoreArmor = true;
+    if (c.boost.ignoreArmor) mods.ignoreArmor = true;
     // Cammy's CQC boost ("Attacks at range 1 don't hit you") — a continuous boost
     // can grant the same range-immunity a base card can print; public info (the
-    // boost key is visible), so legitimate to use the same way ignoreArmorGrant is.
+    // boost key is visible), so legitimate to use the same way ignoreArmor is.
     if (c.boost.rangeImmuneRanges) mods.rangeImmuneRanges = mods.rangeImmuneRanges.concat(c.boost.rangeImmuneRanges);
     // Zangief's Ultimate Atomic Buster boost ("Stun Immunity").
-    if (c.boost.stunImmuneGrant) mods.stunImmune = true;
+    if (c.boost.stunImmune) mods.stunImmune = true;
     // Cammy's Dive Kick boost: "Your Normals have 'Before: Advance 3.'"
     if (c.boost.grantsNormalsBeforeAdvance) mods.grantsNormalsBeforeAdvance = Math.max(mods.grantsNormalsBeforeAdvance, c.boost.grantsNormalsBeforeAdvance);
     // Sol Badguy's Tyrant Rave boost: "[+] Before: Close 1; if you Closed fewer than 1 space, +2POW"
@@ -15344,8 +15427,8 @@ function evalMatchupDetail({
     + (mb.opponentPowMod || 0);
   const myArm = myCard.arm + mb.arm, oppArm = oppCard.arm + ob.arm;
   const myGrd = myCard.grd + mb.grd, oppGrd = oppCard.grd + ob.grd;
-  const myIgnoreArmor = !!myCard.ignoreArmor || mb.ignoreArmor;
-  const oppIgnoreArmor = !!oppCard.ignoreArmor || ob.ignoreArmor;
+  const myIgnoreArmor = !!(myCard.hooks && myCard.hooks.ignoreArmor) || mb.ignoreArmor;
+  const oppIgnoreArmor = !!(oppCard.hooks && oppCard.hooks.ignoreArmor) || ob.ignoreArmor;
 
   // Critical, evaluated at the ACTUAL pre-strike distance ("when you set your
   // attack"), not the post-movement effective distance computed below.
@@ -15381,8 +15464,8 @@ function evalMatchupDetail({
   // Range immunity: a card (or a continuous boost, or — new — a paid Critical) can
   // grant "attacks at range X don't hit you". boostsInPlay is public info either
   // way; the Critical branch uses the "likely paid" gate above.
-  const oppRangeImmune = [...((oppCard.rangeImmuneRanges) || []), ...(ob.rangeImmuneRanges || []), ...(oppCritLikely ? oppCrit.rangeImmuneRanges : [])];
-  const myRangeImmune = [...((myCard.rangeImmuneRanges) || []), ...(mb.rangeImmuneRanges || []), ...(myCritLikely ? myCrit.rangeImmuneRanges : [])];
+  const oppRangeImmune = [...((oppCard.hooks && oppCard.hooks.rangeImmuneRanges) || []), ...(ob.rangeImmuneRanges || []), ...(oppCritLikely ? oppCrit.rangeImmuneRanges : [])];
+  const myRangeImmune = [...((myCard.hooks && myCard.hooks.rangeImmuneRanges) || []), ...(mb.rangeImmuneRanges || []), ...(myCritLikely ? myCrit.rangeImmuneRanges : [])];
 
   // The ONE place a side's attack is not measured from where that side is standing:
   // a Zato-1 Special/Ultra reaches from Eddie's space. Everything else in this
@@ -15436,13 +15519,13 @@ function evalMatchupDetail({
   // "always bypasses" and "never bypasses" rather than snapping to one extreme.
   const effOppArmForMyHit = myIgnoreArmor ? 0 : oppArmFull * (1 - (myCrit.ignoreArmor ? myCritProb : 0));
   const effMyArmForOppHit = oppIgnoreArmor ? 0 : myArmFull * (1 - (oppCrit.ignoreArmor ? oppCritProb : 0));
-  const effOppGrdForMyHit = myCard.ignoreGuard ? 0 : oppGrdFull * (1 - (myCrit.ignoreGuard ? myCritProb : 0));
-  const effMyGrdForOppHit = oppCard.ignoreGuard ? 0 : myGrdFull * (1 - (oppCrit.ignoreGuard ? oppCritProb : 0));
-  // stunImmuneBase (C. Viper's Burst Time: innate "Stun Immunity" printed on the
+  const effOppGrdForMyHit = (myCard.hooks && myCard.hooks.ignoreGuard) ? 0 : oppGrdFull * (1 - (myCrit.ignoreGuard ? myCritProb : 0));
+  const effMyGrdForOppHit = (oppCard.hooks && oppCard.hooks.ignoreGuard) ? 0 : myGrdFull * (1 - (oppCrit.ignoreGuard ? oppCritProb : 0));
+  // hooks.stunImmune (C. Viper's Burst Time: innate "Stun Immunity" printed on the
   // card itself, not granted by a boost or a paid Critical) feeds the same flags
   // boost/Critical-granted immunity already feed.
-  const myStunImmune = !!mb.stunImmune || (myCritLikely && myCrit.stunImmune) || !!myCard.stunImmuneBase;
-  const oppStunImmune = !!ob.stunImmune || (oppCritLikely && oppCrit.stunImmune) || !!oppCard.stunImmuneBase;
+  const myStunImmune = !!mb.stunImmune || (myCritLikely && myCrit.stunImmune) || !!(myCard.hooks && myCard.hooks.stunImmune);
+  const oppStunImmune = !!ob.stunImmune || (oppCritLikely && oppCrit.stunImmune) || !!(oppCard.hooks && oppCard.hooks.stunImmune);
 
   let myDmg = 0, oppDmg = 0, oppStunned = false, iStunned = false;
   if (iGoFirst) {
@@ -15472,7 +15555,7 @@ function evalMatchupDetail({
   // Movement immunity (e.g. Zangief's Double Lariat, "Opponents can't move you") denies
   // the opponent's own repositioning/tempo tools — small flat nudge rather than a full
   // simulation of whatever push/pull the opponent's card would otherwise have done.
-  if (myCard.movementImmune) value += 0.3;
+  if (myCard.hooks && myCard.hooks.movementImmune) value += 0.3;
   // ---- resource cost (see GAUGE_POINT_VALUE) ----
   // Setting an Ultra spends its Gauge cost whether or not it connects, and paying a
   // Critical spends one more. Neither was ever charged. Both sides are priced the same
@@ -15572,7 +15655,7 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
   // visible behaviour (handLikelihood). Weighting the samples rather than re-sampling
   // costs nothing extra — the draws already happened — and turns a fixed prior into a
   // belief that actually updates during the game.
-  const oppMods = boostModsFromKeys(oppPublic.boostsInPlay);
+  const oppMods = boostModsFromKeys(oppPublic.boostKeys);
   const oppPool = unseenPoolForOpponent(oppPublic);
   for (let s = 0; s < samples; s++) {
     const h = sampleOpponentHand(oppPublic, rng, oppPool);
@@ -15587,7 +15670,7 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
     }
   }
   if (!hands) return [];
-  const oppGauge = (oppPublic.gauge || []).length;
+  const oppGauge = (oppPublic.gaugeKeys || []).length;
   const entries = [];
   for (const [key, n] of counts) {
     const card = cardByKey(oppPublic.characterKey, key);
@@ -15726,7 +15809,7 @@ function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, op
         oppCard: answers[j].card, oppPos: oppPublic.pos, oppBoostMods: ob,
         iInitiated: iAmInitiator, myExceeded, oppExceeded,
         myCharacterKey, oppCharacterKey: oppPublic.characterKey,
-        myGaugeCount, oppGaugeCount: (oppPublic.gauge || []).length,
+        myGaugeCount, oppGaugeCount: (oppPublic.gaugeKeys || []).length,
         eddiePositions,
       });
     }
@@ -15783,10 +15866,10 @@ function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samp
   }
 
   const mb = myBoostMods || boostModsFromKeys([]);
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
   const oppExceeded = !!oppPublic.exceeded;
   const oppCharacterKey = oppPublic.characterKey;
-  const oppGaugeCount = (oppPublic.gauge || []).length;
+  const oppGaugeCount = (oppPublic.gaugeKeys || []).length;
 
   const answers = buildOpponentAnswerSet(oppPublic, rng, Math.max(16, Math.min(64, samples)));
   if (!answers.length) {
@@ -16338,11 +16421,12 @@ function bestMoveTarget(hand, currentDist, boostMods, myCharacterKey, myPos, opp
 function scoreBoostCard(card) {
   const b = card.boost || {};
   const sm = b.statMods || {};
+  const choiceKind = b.choice && b.choice.kind;
   let score = (sm.pow || 0) * 1.2 + (sm.spd || 0) * 0.8 + (sm.arm || 0) * 1.0 + (sm.grd || 0) * 0.8;
-  if (b.ignoreArmorGrant) score += 2;
+  if (b.ignoreArmor) score += 2;
   if (b.nowDraw) score += b.nowDraw * 0.7;
-  if (b.needsNormalNameChoice) score += 2.2; // Focus's Reading: forces a defense, strong tempo swing
-  if (b.needsNameChoice) score += 1.6; // Block's naming: denies/reveals a card
+  if (choiceKind === 'normal_name') score += 2.2; // Focus's Reading: forces a defense, strong tempo swing
+  if (choiceKind === 'card_name') score += 1.6; // Block's naming: denies/reveals a card
   return score;
 }
 
@@ -16551,7 +16635,7 @@ function pickRandomLegalAction({ mePublicFull, canExceed, rng }) {
 function quickBestStrikeValue({ hand, myPos, oppPublic, rng, myBoostMods, myExceeded, myCharacterKey, samples }) {
   const validHand = hand.filter(c => isCardValidForStrike(myCharacterKey, myExceeded, c));
   if (!validHand.length) return 0;
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
   const oppExceeded = !!oppPublic.exceeded;
   const totals = validHand.map(() => 0);
   let n = 0;
@@ -16630,9 +16714,9 @@ function estimateBoostTimingValue({ card, hand, myPos, oppPublic, rng, myBoostMo
   const boostedMods = {
     pow: baseMods.pow + (sm.pow || 0), spd: baseMods.spd + (sm.spd || 0),
     arm: baseMods.arm + (sm.arm || 0), grd: baseMods.grd + (sm.grd || 0),
-    ignoreArmor: baseMods.ignoreArmor || !!boost.ignoreArmorGrant,
+    ignoreArmor: baseMods.ignoreArmor || !!boost.ignoreArmor,
     rangeImmuneRanges: [...(baseMods.rangeImmuneRanges || []), ...(boost.rangeImmuneRanges || [])],
-    stunImmune: baseMods.stunImmune || !!boost.stunImmuneGrant,
+    stunImmune: baseMods.stunImmune || !!boost.stunImmune,
     opponentPowMod: (baseMods.opponentPowMod || 0) + (boost.opponentPowMod || 0),
     // Playing THIS continuous boost now means the hypothetical post-boost state has
     // at least one Continuous Boost in play, regardless of what was already active —
@@ -16741,9 +16825,9 @@ function planApplyBoostMods(base, boost) {
   return {
     pow: (base.pow || 0) + (sm.pow || 0), spd: (base.spd || 0) + (sm.spd || 0),
     arm: (base.arm || 0) + (sm.arm || 0), grd: (base.grd || 0) + (sm.grd || 0),
-    ignoreArmor: !!base.ignoreArmor || !!(boost && boost.ignoreArmorGrant),
+    ignoreArmor: !!base.ignoreArmor || !!(boost && boost.ignoreArmor),
     rangeImmuneRanges: [...(base.rangeImmuneRanges || []), ...((boost && boost.rangeImmuneRanges) || [])],
-    stunImmune: !!base.stunImmune || !!(boost && boost.stunImmuneGrant),
+    stunImmune: !!base.stunImmune || !!(boost && boost.stunImmune),
     opponentPowMod: (base.opponentPowMod || 0) + ((boost && boost.opponentPowMod) || 0),
     hasOwnContinuousBoost: true,
   };
@@ -16753,7 +16837,7 @@ function planApplyBoostMods(base, boost) {
 // exchange-value table every node in the tree reads from.
 function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
   const cfg = PLAN_CONFIG;
-  const oppMods = boostModsFromKeys(oppPublic.boostsInPlay);
+  const oppMods = boostModsFromKeys(oppPublic.boostKeys);
   const oppHands = [];
   const oppHandWeights = [];
   let oppWeightTotal = 0;
@@ -16781,7 +16865,7 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
   // evalMatchup's header for why: a 6-for-5 trade nets +1 and used to be booked as
   // "opponent loses 1, I lose nothing", which made every race look like a clean win).
   const myGaugeCount = (mePublicFull.gauge || []).length;
-  const oppGaugeCount = (oppPublic.gauge || []).length;
+  const oppGaugeCount = (oppPublic.gaugeKeys || []).length;
   function exchangeDetail(dist, mods, myExceeded, iInitiate) {
     const zero = { value: 0, myDmg: 0, oppDmg: 0 };
     if (!oppHands.length || !myHand.length) return zero;
@@ -16917,7 +17001,7 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
     }
   }
 
-  const oppCannotMove = (oppPublic.boostsInPlay || []).some(k => {
+  const oppCannotMove = (oppPublic.boostKeys || []).some(k => {
     const c = typeof CARD_BY_KEY !== 'undefined' && CARD_BY_KEY[k];
     return c && c.boost && c.boost.opponentCannotMove;
   });
@@ -17462,8 +17546,8 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
     if (upper > maxUpperPow) maxUpperPow = upper;
   }
   if (maxUpperPow < oppPublic.life) return false;
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
-  const oppGauge = (oppPublic.gauge || []).length;
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
+  const oppGauge = (oppPublic.gaugeKeys || []).length;
   const answers = buildOpponentAnswerSet(oppPublic, rng, 16);
   if (!answers.length) return false;
   for (const card of mePublicFull.hand) {
@@ -17493,7 +17577,7 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
 //                   defence, Block's naming, Tech's denial), which has no state effect
 //                   for the planner to simulate and would otherwise score as zero.
 function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) {
-  const ctx = { hand, dist, oppBoostsInPlay: oppPublic.boostsInPlay, boostMods: myBoostMods };
+  const ctx = { hand, dist, oppBoostsInPlay: oppPublic.boostKeys, boostMods: myBoostMods };
   const pool = [...hand, ...(mePublicFull.gauge || [])];
   const out = [];
   for (const card of hand) {
@@ -17676,8 +17760,7 @@ function rosterKeys() { return Object.keys(CHARACTERS); }
 // one card in the GG set whose own text grants it, so the character field may be a
 // predicate instead of a boolean.
 function canGoFaceUpWith(char, card) {
-  if (!char || !char.canGoFaceUp) return false;
-  return typeof char.canGoFaceUp === 'function' ? !!char.canGoFaceUp(card) : true;
+  return !!(char && typeof char.canGoFaceUp === 'function' && char.canGoFaceUp(card));
 }
 
 // ---------------- Coach tips: per-decision help, shown once ----------------
@@ -17717,21 +17800,44 @@ function markCoachSeen(key) {
 // Painting is not reading: several modes repaint many times while the player is still
 // deciding (selecting cards, stepping a stepper), and collapsing the explanation
 // underneath them mid-decision is exactly the wrong moment.
+function isCoachExpanded(key) {
+  if (Object.prototype.hasOwnProperty.call(_coachOverride, key)) return _coachOverride[key];
+  if (G && G.beginner) return true;
+  return !coachSeen(key);
+}
 function coachExpanded(key) {
   if (_coachActiveKey !== key) {
     markCoachSeen(_coachActiveKey);
     _coachActiveKey = key;
   }
-  if (Object.prototype.hasOwnProperty.call(_coachOverride, key)) return _coachOverride[key];
-  if (G && G.beginner) return true;
-  return !coachSeen(key);
+  return isCoachExpanded(key);
 }
 function toggleCoach(key) {
-  const wasExpanded = coachExpanded(key);
+  const wasExpanded = isCoachExpanded(key);
   _coachOverride[key] = !wasExpanded;
   if (wasExpanded) markCoachSeen(key);
   if (typeof render === 'function') render();
 }
+
+const INTERACTION_MODES = new Set([
+  'action_force_select', 'action_gauge_select', 'awaiting_action',
+  'block_force_choice', 'boost', 'boost_bonus_force_select',
+  'boost_force_select', 'boost_select', 'boost_target_choice',
+  'cancel_choice', 'changecards_select', 'changecards_setup',
+  'char_exceed_action_choice', 'char_exceed_strike_choice',
+  'critical_choice', 'decklook_choice', 'defend_select',
+  'discard_to_seven', 'eddie_space_choice', 'face_up_choice',
+  'game_over', 'grasp_choice', 'hadoken_recycle_choice',
+  'may_exceed_choice', 'may_strike_choice', 'move_direction_choice',
+  'move_force_select', 'move_setup', 'mulligan_select',
+  'name_choice', 'name_range_choice', 'named_choice_effect',
+  'optional_force_spend_pow_choice', 'optional_gauge_spend_choice',
+  'optional_retreat_choice', 'overdrive_choice', 'place_eddie_choice',
+  'push_pull_choice', 'range_discard_choice', 'retreat_after_boost_choice',
+  'set_time_option_choice', 'special_move1', 'strike',
+  'strike_result', 'strike_select', 'sustain_choice',
+  'sustain_choice_paid',
+]);
 
 class GameController {
   // aiChar: explicit opponent character key. If omitted, picks randomly from the rest
@@ -17848,13 +17954,9 @@ class GameController {
   suggestMove(opts = {}) {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
+    const infoSet = this.engine.getInformationSet(p.id);
     const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
-      ? NativeCpuAI.advise('neutral', NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
-          turnNumber: this.engine.turn,
-          activePlayer: 'actor',
-          myBoostMods: this.engine.activeBoostMods(p),
-          oppBoostMods: this.engine.activeBoostMods(opp),
-        }))
+      ? NativeCpuAI.advise('neutral', NativeCpuAI.decisionSnapshot(infoSet))
       : null;
     let action = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeActionToEngineAction)
       ? NativeCpuAI.resolveNativeActionToEngineAction(nativeAdvice.action, p)
@@ -17889,12 +17991,11 @@ class GameController {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
     const kind = isDefense ? 'defense' : 'strike';
+    const infoSet = this.engine.getInformationSet(p.id);
     const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
-      ? NativeCpuAI.advise(kind, NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
-          turnNumber: this.engine.turn,
+      ? NativeCpuAI.advise(kind, NativeCpuAI.decisionSnapshot({
+          ...infoSet,
           activePlayer: isDefense ? 'opponent' : 'actor',
-          myBoostMods: this.engine.activeBoostMods(p),
-          oppBoostMods: this.engine.activeBoostMods(opp),
         }))
       : null;
     let selection = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeStrikeToEngineSelection)
@@ -17981,6 +18082,50 @@ class GameController {
     }
   }
 
+  setMode(mode, payload) {
+    if (!INTERACTION_MODES.has(mode)) {
+      throw new Error(`Unknown interaction mode: ${mode}`);
+    }
+    if (this.mode && this.mode !== mode) {
+      markCoachSeen(this.mode);
+      _coachActiveKey = mode;
+    }
+    this.mode = mode;
+    if (payload !== undefined) this.sel = payload;
+    if (mode === 'awaiting_action' || mode === 'game_over') {
+      this._graspAmount = null;
+      this._graspDir = null;
+      this._forcePowSpend = null;
+      this._namedRange = null;
+    }
+  }
+
+  consumeShakeOnRender() {
+    const val = !!this.shakeOnRender;
+    this.shakeOnRender = false;
+    return val;
+  }
+
+  setNamedRange(r) {
+    this._namedRange = Math.max(1, Math.min(8, r | 0));
+    render();
+  }
+
+  setGraspAmount(n) {
+    this._graspAmount = n;
+    render();
+  }
+
+  setGraspDir(dir) {
+    this._graspDir = dir;
+    render();
+  }
+
+  setForcePowSpend(n) {
+    this._forcePowSpend = Math.max(0, n | 0);
+    render();
+  }
+
   human() { return this.engine.P(this.humanId); }
   ai() { return this.engine.P(this.aiId); }
   log(msg, kind, who, extra) { this.engine.logMsg(msg, kind, who, extra); }
@@ -18006,9 +18151,8 @@ class GameController {
   // Strike would make the suite unusably slow, and the stub can't render the
   // animation anyway (see render.js's captureFlipPositions guard).
   playFx() {
-    const q = this.engine.fxQueue;
     if (typeof document === 'undefined' || !document.querySelectorAll) {
-      q.length = 0;
+      this.engine.clearPendingFx();
       this.currentFx = null;
       render();
       return;
@@ -18016,7 +18160,8 @@ class GameController {
     if (this.fxPlaying) return; // a step is already in flight; it will pick up the rest
     this.fxPlaying = true;
     const step = () => {
-      if (q.length === 0) {
+      const nextFx = this.engine.shiftPendingFx();
+      if (!nextFx) {
         this.fxPlaying = false;
         this.currentFx = null;
         this._fxTimer = null;
@@ -18028,7 +18173,7 @@ class GameController {
         }
         return;
       }
-      this.currentFx = q.shift();
+      this.currentFx = nextFx;
       render();
       const deferToStrikeTimeline = this.mode === 'strike_result' &&
         typeof StrikePlaybackController !== 'undefined' &&
@@ -18052,7 +18197,7 @@ class GameController {
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
     }
-    this.engine.fxQueue.length = 0;
+    this.engine.clearPendingFx();
     this.fxPlaying = false;
     this.currentFx = null;
     render();
@@ -18116,7 +18261,7 @@ class GameController {
   // Gated strictly on CHARACTERS[key].revertOnNonStrikeTurn so other fighters never revert on non-Strike turns.
   maybeRevertOnNonStrikeEnd(player, isHuman) {
     const char = CHARACTERS[player.characterKey];
-    if (char && char.revertOnNonStrikeTurn && player.exceeded && !player.strikeThisTurn) {
+    if (char && char.revertOnNonStrikeTurn && player.exceeded && !player.turnState.strikeThisTurn) {
       this.engine.doRevert(player);
       this.log(isHuman
         ? 'You Revert to Innate mode (ended turn without Striking).'
@@ -18163,8 +18308,7 @@ class GameController {
       render();
     } else {
       this.engine.clearAdvantage();
-      this.engine.resetPerTurnFlags(this.ai());
-      this.engine.active = this.aiId;
+      this.engine.beginTurn(this.aiId);
       this.engine.checkStartOfTurnExpiry(this.ai());
       this.startTurnFor(this.aiId, () => {
         this.mode = 'awaiting_action';
@@ -18191,8 +18335,7 @@ class GameController {
 
   continueAfterStrikeDiscard(nextActive) {
     const player = this.engine.P(nextActive);
-    this.engine.resetPerTurnFlags(player); // Reset per-turn one-shot flags (Ky's firstCancelThisTurn, Sol's canceledThisTurn, Leo's strikeThisTurn)
-    this.engine.active = nextActive;
+    this.engine.beginTurn(nextActive);
     this.startTurnFor(nextActive, () => {
       this.mode = 'awaiting_action';
       render();
@@ -18417,7 +18560,7 @@ class GameController {
       return;
     }
     if (res.triggersStrike) {
-      player.actionStrikeThisTurn = true; // Mark that this Strike came from a character action
+      player.turnState.actionStrikeThisTurn = true; // Mark that this Strike came from a character action
       this.startStrike();
       this.emitActionCallout(player.id, 'special', actionLbl, 'TRIGGERS STRIKE');
       return;
@@ -18599,13 +18742,14 @@ class GameController {
   afterBoostForcePaid() {
     const player = this.human();
     const card = player.hand.find(c => c.uid === this.sel.cardUid);
-    if (card.boost.needsNameChoice) {
+    const choiceKind = card.boost.choice && card.boost.choice.kind;
+    if (choiceKind === 'card_name') {
       const pool = this.opponentUniqueKeys(this.ai().characterKey);
       this.mode = 'name_choice';
       this.sel = { ...this.sel, namePool: pool, promptText: `Name a card (Block): if ${this.ai().name} has it, it's discarded.` };
       return render();
     }
-    if (card.boost.needsNormalNameChoice) {
+    if (choiceKind === 'normal_name') {
       // Named card must come from the DEFENDER's (the opponent, who'll be forced
       // to Strike with it) own Normals pool — not always the base NORMAL_KEYS;
       // see the opponentUniqueKeys comment above for why (Axl's is a completely
@@ -18615,13 +18759,13 @@ class GameController {
       this.sel = { ...this.sel, namePool: pool, promptText: 'Name a Normal (Focus Reading): your opponent must defend with it, or reveal their hand.' };
       return render();
     }
-    if (card.boost.needsRangeNameChoice) {
+    if (choiceKind === 'range_name') {
       this._namedRange = 1;
       this.mode = 'name_range_choice';
       this.sel = { ...this.sel, promptText: 'Name a Range (Flying Power Bomb): opponent must discard a card that includes it, or reveal their hand.' };
       return render();
     }
-    if (card.boost.needsBoostTargetChoice) {
+    if (choiceKind === 'boost_target') {
       // Only actually prompt when there's a real choice — 0 targets means Dive does
       // nothing (doBoost proceeds, engine.discardOpponentContinuousBoost no-ops on an
       // empty array), 1 target means there's nothing to choose between, matching the
@@ -18638,20 +18782,20 @@ class GameController {
     // most Push/Pull-2 effects elsewhere in this codebase, which are Hit-time and
     // already yield-based; this is a Boost-time choice, resolved up front via
     // `extra` the same way namedCardKey/namedRange/targetBoostUid above are).
-    if (card.boost.needsPushPullChoice) {
+    if (choiceKind === 'push_pull') {
       this.mode = 'push_pull_choice';
       this.sel = { ...this.sel, promptText: `Push or Pull 2 (${card.name})?` };
       return render();
     }
     // Zato-1's Invite Hell boost: "Place Eddie in any space." — same up-front-choice
     // shape again, answered with a board space instead of a direction.
-    if (card.boost.needsEddieSpaceChoice) {
+    if (choiceKind === 'eddie_space') {
       this.mode = 'eddie_space_choice';
       this.sel = { ...this.sel, spaces: this.engine.eddiePlacementSpaces(player, card, true), promptText: `Place Eddie (${card.name}).` };
       return render();
     }
     // Rainwater's boost: "Now: Advance or Retreat 1." — same up-front-choice shape.
-    if (card.boost.needsDirectionChoice) {
+    if (choiceKind === 'direction') {
       this.mode = 'move_direction_choice';
       this.sel = { ...this.sel, promptText: `Advance or Retreat 1 (${card.name})?` };
       return render();
@@ -18662,7 +18806,7 @@ class GameController {
     // GG_NORMALS/AXL's header comments on the GGST set's {0}-cost boosts). Only
     // actually prompts if the player has any spendable Force at all; 0 available
     // just skips straight through with nothing spent, same "don't prompt for a
-    // degenerate choice" precedent as needsBoostTargetChoice above.
+    // degenerate choice" precedent as boost_target above.
     if (card.boost.optionalForceSpend) {
       const maxAllowed = card.boost.optionalForceSpend.max;
       const pool = [...player.hand, ...player.gauge];
@@ -18678,7 +18822,7 @@ class GameController {
     // pattern the others above use, since it needs to peek cards from the deck
     // BEFORE presenting any choice at all, and its resolution can lead to either
     // a Boost OR a Strike rather than always finishing the same way.
-    if (card.boost.needsDeckLookChoice) {
+    if (choiceKind === 'deck_look') {
       return this.startDeckLookChoice(card.boost.peekCount || 3);
     }
     this.doBoost(this.sel.cardUid, this.sel.chosen, null);
@@ -18723,8 +18867,7 @@ class GameController {
     const res = this.engine.playBoost(player, opp, uid, forceUids, extra);
     if (!res.ok) {
       // nothing actually happened — drop the empty round header we just logged.
-      this.engine.log.pop();
-      this.engine.roundNum--;
+      this.engine.cancelRound();
       this.mode = 'awaiting_action'; render(); return;
     }
     const boostCardName = res.card ? res.card.name.toUpperCase() : '';
@@ -18832,7 +18975,7 @@ class GameController {
       const opponent = this.ai();
       const spent = this.engine.spendGauge(player, 1);
       player.discard.push(...spent);
-      player.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
+      player.turnState.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
       const hookResult = this.engine.triggerOnCancelHooks(player, opponent); // Chipp, Ky: respond to Cancel
       this.log('You spend 1 Gauge to Cancel \u2014 take another action.');
       // Ky's Cancel may offer a movement choice
@@ -18897,8 +19040,7 @@ class GameController {
     const player = this.human(), opp = this.ai();
     const res = this.engine.playBoost(player, opp, this.sel.cardUid, this.sel.chosen, null);
     if (!res.ok) {
-      this.engine.log.pop();
-      this.engine.roundNum--;
+      this.engine.cancelRound();
       this.mode = 'awaiting_action'; render(); return;
     }
     const peeked = this.engine.peekTopN(player, n);
@@ -18956,7 +19098,7 @@ class GameController {
         const dSel = this.aiChooseDefense(ai, human);
         if (!dSel) { this.mode = 'game_over'; render(); return; }
         const gaugePay = { [this.humanId]: !!aSel.criticalPaid, [this.aiId]: !!dSel.criticalPaid };
-        human.strikeThisTurn = true; // Leo's Exceed: track that player struck this turn (for "Revert when you end a turn without Striking")
+        human.turnState.strikeThisTurn = true; // Leo's Exceed: track that player struck this turn (for "Revert when you end a turn without Striking")
         const gen = this.engine.resolveStrikeSteps({ initiator: this.humanId, attackerSel: aSel, defenderSel: dSel, gaugePay });
         this.driveStrikeGen(gen, undefined);
       });
@@ -19435,7 +19577,7 @@ class GameController {
       // mirrors human executeCharacterAction so CPU actually executes the Strike and gets
       // actionStrikePowBonus / actionStrikeHitHook.
       if (res && res.triggersStrike) {
-        player.actionStrikeThisTurn = true;
+        player.turnState.actionStrikeThisTurn = true;
         this.emitActionCallout(player.id, 'special', aiActionLbl, 'TRIGGERS STRIKE');
         this.aiInitiateStrike();
         return;
@@ -19548,30 +19690,31 @@ class GameController {
       const uids = need > 0 ? this.pickForceUidsForTarget(player, need, card.uid) : [];
       if (uids) {
         let namedKey = null, namedRange = null, targetBoostUid = null, pushPullDirection = null, moveDirection = null, bonusForceUids = null, eddieSpace = null;
-        if (card.boost.needsNameChoice) namedKey = chooseNamedCardKey({ oppPublic, pool: this.opponentUniqueKeys(opp.characterKey), rng: Math.random, randomness: this.randomness });
-        else if (card.boost.needsNormalNameChoice) namedKey = chooseNamedCardKey({ oppPublic, pool: (CHARACTERS[opp.characterKey].normals || NORMALS).map(c => c.key), rng: Math.random, randomness: this.randomness });
-        else if (card.boost.needsRangeNameChoice) namedRange = chooseRangeToName({ rng: Math.random, randomness: this.randomness, oppPublic: publicInfoOf(opp) });
-        else if (card.boost.needsBoostTargetChoice) {
-          const bestKey = chooseBoostTargetToDiscard({ oppBoostsInPlayKeys: oppPublic.boostsInPlay, rng: Math.random, randomness: this.randomness });
+        const choiceKind = card.boost.choice && card.boost.choice.kind;
+        if (choiceKind === 'card_name') namedKey = chooseNamedCardKey({ oppPublic, pool: this.opponentUniqueKeys(opp.characterKey), rng: Math.random, randomness: this.randomness });
+        else if (choiceKind === 'normal_name') namedKey = chooseNamedCardKey({ oppPublic, pool: (CHARACTERS[opp.characterKey].normals || NORMALS).map(c => c.key), rng: Math.random, randomness: this.randomness });
+        else if (choiceKind === 'range_name') namedRange = chooseRangeToName({ rng: Math.random, randomness: this.randomness, oppPublic: publicInfoOf(opp) });
+        else if (choiceKind === 'boost_target') {
+          const bestKey = chooseBoostTargetToDiscard({ oppBoostsInPlayKeys: oppPublic.boostKeys, rng: Math.random, randomness: this.randomness });
           const entry = bestKey ? opp.boostsInPlay.find(b => b.card.key === bestKey) : null;
           if (entry) targetBoostUid = entry.card.uid;
-        } else if (card.boost.needsPushPullChoice) {
+        } else if (choiceKind === 'push_pull') {
           // Simple heuristic: pull the opponent closer if this player is a
           // "get in range" character (favors low current range), otherwise
           // push away for tempo/breathing room. No deeper lookahead — same
           // simplification level as this file's other direction-choice defaults.
           pushPullDirection = this.engine.range(player, opp) > 3 ? 'pull' : 'push';
-        } else if (card.boost.needsDirectionChoice) {
+        } else if (choiceKind === 'direction') {
           const dist = this.engine.range(player, opp);
           moveDirection = dist <= 2 ? 'retreat' : 'advance';
-        } else if (card.boost.needsEddieSpaceChoice) {
+        } else if (choiceKind === 'eddie_space') {
           eddieSpace = chooseEddieSpace({
             spaces: this.engine.eddiePlacementSpaces(player, card, true),
             opponentPos: opp.pos, selfPos: player.pos,
             handRanges: player.hand.filter(c => c.range).map(c => ({ min: c.range[0], max: c.range[1] })),
             rng: Math.random, randomness: this.randomness,
           });
-        } else if (card.boost.needsDeckLookChoice) {
+        } else if (choiceKind === 'deck_look') {
           this.aiHandleDeckLook(card, uids);
           return;
         }
@@ -19590,7 +19733,7 @@ class GameController {
         this.engine.startRound();
         const extra = { namedCardKey: namedKey, namedRange, targetBoostUid, pushPullDirection, moveDirection, bonusForceUids, eddieSpace };
         const res = this.engine.playBoost(player, opp, card.uid, uids, extra);
-        if (!res.ok) { this.engine.log.pop(); this.engine.roundNum--; this.aiFinishNonStrike(); return; }
+        if (!res.ok) { this.engine.cancelRound(); this.aiFinishNonStrike(); return; }
         if (namedKey) this.log(`CPU's ${card.name} names ${cardNameForKey(namedKey)}.`);
         if (namedRange != null) this.log(`CPU's ${card.name} names Range ${namedRange}.`);
         // Chun-Li's Innate: "After you resolve a Boost, you may Retreat 1" — no real
@@ -19622,7 +19765,7 @@ class GameController {
           if (card.boost.cancelable && this.engine.gaugeCount(player) >= 1 && this.aiShouldCancel(player)) {
             const spent = this.engine.spendGauge(player, 1);
             player.discard.push(...spent);
-            player.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
+            player.turnState.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
             const hookResult = this.engine.triggerOnCancelHooks(player, opp); // Chipp, Ky: respond to Cancel
             this.log(`CPU spends 1 Gauge to Cancel (${card.name}) \u2014 takes another action.`);
             if (hookResult && hookResult.needsMovementChoice) {
@@ -19674,7 +19817,7 @@ class GameController {
     const player = this.ai(), opp = this.human();
     this.engine.startRound();
     const res = this.engine.playBoost(player, opp, card.uid, uids, null);
-    if (!res.ok) { this.engine.log.pop(); this.engine.roundNum--; this.aiFinishNonStrike(); return; }
+    if (!res.ok) { this.engine.cancelRound(); this.aiFinishNonStrike(); return; }
     const peeked = this.engine.peekTopN(player, card.boost.peekCount || 3);
     const dist = this.engine.range(player, opp);
     const boostMods = this.engine.activeBoostMods(player);
@@ -19722,7 +19865,7 @@ class GameController {
         if (bRes.card.boost.cancelable && this.engine.gaugeCount(player) >= 1 && this.aiShouldCancel(player)) {
           const spent = this.engine.spendGauge(player, 1);
           player.discard.push(...spent);
-          player.canceledThisTurn = true;
+          player.turnState.canceledThisTurn = true;
           const hookResult = this.engine.triggerOnCancelHooks(player, opp);
           this.log(`CPU spends 1 Gauge to Cancel (${bRes.card.name}) \u2014 takes another action.`);
           if (hookResult && hookResult.needsMovementChoice) {
@@ -19767,8 +19910,7 @@ class GameController {
       this.scheduleAITurn(500);
     } else {
       this.engine.clearAdvantage();
-      this.engine.resetPerTurnFlags(this.human());
-      this.engine.active = this.humanId;
+      this.engine.beginTurn(this.humanId);
       this.engine.checkStartOfTurnExpiry(this.human());
       // A suggestion is only valid for the position it was asked about, so it is
       // dropped at the start of each of the player's turns rather than lingering as
@@ -19860,7 +20002,7 @@ class GameController {
     this.maybeAskCritical(human, dSel.card, hideCardName, (paid) => {
       dSel.criticalPaid = paid;
       const gaugePay = { [this.aiId]: !!this.pendingAiAttack.criticalPaid, [this.humanId]: !!dSel.criticalPaid };
-      this.ai().strikeThisTurn = true; // Leo's Exceed: track that AI struck this turn
+      this.ai().turnState.strikeThisTurn = true; // Leo's Exceed: track that AI struck this turn
       const gen = this.engine.resolveStrikeSteps({ initiator: this.aiId, attackerSel: this.pendingAiAttack, defenderSel: dSel, gaugePay });
       this.driveStrikeGen(gen, undefined);
     });
@@ -21001,9 +21143,10 @@ const StrikePlaybackController = (() => {
         });
         if (step.phase === 'reveal') {
           EventBus.emit('OnStrikeReveal', { strikeInfo: activeStrikeInfo });
-          EventBus.emit('OnSpeedResolved', { winnerId: step.speedWinner, tie: !!step.speedTie });
+          EventBus.emit('OnSpeedResolved', { playerId: step.speedWinner, winnerId: step.speedWinner, tie: !!step.speedTie });
         } else if (step.phase === 'hit') {
           EventBus.emit('OnStrikeHit', {
+            playerId: step.actor,
             actor: step.actor,
             defenderId: step.defenderId,
             damage: step.damageDealt || 0,
@@ -21018,11 +21161,12 @@ const StrikePlaybackController = (() => {
             criticalPaid: !!step.criticalPaid,
           });
           if (step.confirmedLethal) {
-            EventBus.emit('OnLethalDetected', { winnerId: step.actor });
+            EventBus.emit('OnLethalDetected', { playerId: step.actor, winnerId: step.actor });
             showConfirmedLethalCallout('CHECKMATE');
           }
         } else if (step.phase === 'stunned') {
           EventBus.emit('OnGuardBreak', {
+            playerId: step.actor,
             stunnedPlayerId: step.actor,
             damageDealt: step.damageDealt || 0,
             effectiveGuard: step.effectiveGuard || 0,
@@ -21064,15 +21208,16 @@ const StrikePlaybackController = (() => {
 
   function skip() {
     if (!activeStrikeInfo || !activeStrikeInfo.timeline) return;
+    const info = activeStrikeInfo;
     const cb = onCompleteCb;
     onCompleteCb = null;
     stop();
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
     }
-    activeStepIdx = activeStrikeInfo.timeline.length - 1;
+    activeStepIdx = info.timeline.length - 1;
     const slot = typeof document !== 'undefined' ? document.getElementById('trigger-timeline-slot') : null;
-    if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
+    if (slot) slot.innerHTML = timelineBarHTML(info, activeStepIdx);
     if (typeof cb === 'function') cb();
   }
 
@@ -22573,11 +22718,12 @@ const HitParticleEngine = (() => {
     });
     EventBus.on('OnStrikeHit', (payload) => {
       if (!payload) return;
+      const attId = payload.playerId || payload.actor;
       triggerHit({
         kind: 'hit',
-        actor: payload.actor,
-        attackerId: payload.actor,
-        defenderId: payload.defenderId || (payload.actor === 'p1' ? 'p2' : 'p1'),
+        actor: attId,
+        attackerId: attId,
+        defenderId: payload.defenderId || (attId === 'p1' ? 'p2' : 'p1'),
         damage: payload.damage != null ? payload.damage : 0,
         effectivePower: payload.effectivePower,
         effectiveArmor: payload.effectiveArmor,
@@ -23296,8 +23442,8 @@ const HowToPlayLogic = (() => {
       ex,
       crit,
       hasCritOption: !!card.criticalText,
-      ignoreArmor: !!card.ignoreArmor,
-      ignoreGuard: !!card.ignoreGuard,
+      ignoreArmor: !!(card.hooks && card.hooks.ignoreArmor) || !!card.ignoreArmor,
+      ignoreGuard: !!(card.hooks && card.hooks.ignoreGuard) || !!card.ignoreGuard,
       alwaysMiss: !!card.alwaysMiss,
       goesToGaugeEvenOnMiss: !!(card.hooks && card.hooks.goesToGaugeEvenOnMiss),
       beforeClose,
@@ -29208,7 +29354,7 @@ const StandeeStage = (() => {
 
     EventBus.on('OnStrikeHit', (payload) => {
       if (!payload) return;
-      const attId = payload.actor;
+      const attId = payload.playerId || payload.actor;
       const defId = payload.defenderId || (attId === 'p1' ? 'p2' : 'p1');
       const att = fighters[attId];
       const def = fighters[defId];
@@ -29251,7 +29397,7 @@ const StandeeStage = (() => {
     });
 
     EventBus.on('OnGuardBreak', (payload) => {
-      const pid = payload && payload.stunnedPlayerId;
+      const pid = payload && (payload.playerId || payload.stunnedPlayerId);
       const f = fighters[pid];
       if (!f || !f.active) return;
       const choreo = resolveStandeeChoreography(f.charKey, null, 'stunned', {
@@ -31455,7 +31601,7 @@ const TERM_HELP = {
 function coachPanelHTML(modeKey) {
   const help = MODE_HELP[modeKey];
   if (!help) return '';
-  const expanded = coachExpanded(modeKey);
+  const expanded = typeof isCoachExpanded === 'function' ? isCoachExpanded(modeKey) : coachExpanded(modeKey);
   return `<div class="coach-panel${expanded ? '' : ' collapsed'}">
     <div class="coach-head" onclick="toggleCoach('${modeKey}')">
       <span class="coach-title">${esc(help.title)}</span>
@@ -32321,8 +32467,7 @@ function infoModalHTML(g) {
 // fires exactly once per strike, not on every re-render while the result is showing.
 let _shakeTimer = null;
 function applyPendingShake(app) {
-  if (!G || !G.shakeOnRender) return;
-  G.shakeOnRender = false;
+  if (!G || !G.consumeShakeOnRender()) return;
   if (!app || !app.classList) return; // headless/test DOM stub without real classList support
   if (_shakeTimer) { clearTimeout(_shakeTimer); _shakeTimer = null; }
   app.classList.remove('screen-shake'); // restart the animation even if it's still mid-play
@@ -32345,7 +32490,7 @@ function render() {
   // playFx() to step through it one event at a time. While already draining
   // (G.fxPlaying), fall through to paint — playFx's own loop calls render()
   // once per step, after shifting that step's entry off the queue.
-  if (!G.fxPlaying && G.engine.fxQueue.length > 0) { G.playFx(); return; }
+  if (!G.fxPlaying && G.engine.hasPendingFx()) { G.playFx(); return; }
   paintWithFlip();
 }
 
@@ -33127,7 +33272,7 @@ function stagePromptBarHTML(g) {
         </div>
         <button type="button" class="big-btn" onclick="G.confirmMove()">Confirm Move</button>
       ` : ''}
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'changecards_setup') {
     content = `<div class="stage-prompt-inline">
@@ -33138,7 +33283,7 @@ function stagePromptBarHTML(g) {
         <button type="button" onclick="G.adjustChangeCards(1)">+</button>
       </div>
       <button type="button" class="big-btn" onclick="G.confirmChangeCards()">Choose cards\u2026</button>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'set_time_option_choice') {
     const card = g.sel && g.sel.card;
@@ -33167,26 +33312,26 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a card')}</span>
       <div class="btn-row name-choice-inline">${(g.sel.namePool || []).map(key => `<button type="button" onclick="G.pickNamedKey('${key}')">${esc(cardNameForKey(key))}</button>`).join('')}</div>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'name_range_choice') {
     const namedRange = g._namedRange == null ? 1 : Math.max(1, Math.min(8, g._namedRange));
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a Range')}</span>
       <div class="stepper-row">
-        <button type="button" onclick="G._namedRange=Math.max(1,${namedRange}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setNamedRange(${namedRange}-1);">\u2212</button>
         <span class="stepper-val">Range ${namedRange}</span>
-        <button type="button" onclick="G._namedRange=Math.min(8,${namedRange}+1); render();">+</button>
+        <button type="button" onclick="G.setNamedRange(${namedRange}+1);">+</button>
       </div>
-      <button type="button" class="big-btn" onclick="G.pickNamedRange(${namedRange}); G._namedRange=null;">Confirm</button>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; G._namedRange=null; render();">Cancel</button>
+      <button type="button" class="big-btn" onclick="G.pickNamedRange(${namedRange});">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'boost_target_choice') {
     const targets = g.sel.boostTargets || [];
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">Discard opponent boost:</span>
       <div class="btn-row">${targets.map(t => `<button type="button" onclick="G.pickBoostTarget('${t.uid}')">${esc(t.name)}</button>`).join('')}</div>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'face_up_choice') {
     const card = g.sel.card;
@@ -33220,15 +33365,15 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${min === max ? `Grasp (${min})` : 'Move opponent'}</span>
       ${min === max ? '' : `<div class="stepper-row">
-        <button type="button" onclick="G._graspAmount=Math.max(${min},${graspAmount}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setGraspAmount(Math.max(${min},${graspAmount}-1));">\u2212</button>
         <span class="stepper-val">${graspAmount} space(s)</span>
-        <button type="button" onclick="G._graspAmount=Math.min(${max},${graspAmount}+1); render();">+</button>
+        <button type="button" onclick="G.setGraspAmount(Math.min(${max},${graspAmount}+1));">+</button>
       </div>`}
       ${req.forceDirection ? '' : `<div class="btn-row">
-        <button type="button" class="${graspDir === 'advance' ? 'active' : ''}" onclick="G._graspDir='advance'; render();">Pull</button>
-        <button type="button" class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G._graspDir='retreat'; render();">Push</button>
+        <button type="button" class="${graspDir === 'advance' ? 'active' : ''}" onclick="G.setGraspDir('advance');">Pull</button>
+        <button type="button" class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G.setGraspDir('retreat');">Push</button>
       </div>`}
-      <button type="button" class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}'); G._graspAmount=null; G._graspDir=null;">Confirm</button>
+      <button type="button" class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}');">Confirm</button>
     </div>`;
   } else if (g.mode === 'named_choice_effect') {
     const req = g.sel.request;
@@ -33280,11 +33425,11 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(req.cardName)}: spend Force for +POW?</span>
       <div class="stepper-row">
-        <button type="button" onclick="G._forcePowSpend=Math.max(0,${forcePowSpend}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setForcePowSpend(${forcePowSpend}-1);">\u2212</button>
         <span class="stepper-val">${forcePowSpend}F (+${forcePowSpend} POW)</span>
-        <button type="button" onclick="G._forcePowSpend=Math.min(${req.max},${forcePowSpend}+1); render();">+</button>
+        <button type="button" onclick="G.setForcePowSpend(Math.min(${req.max},${forcePowSpend}+1));">+</button>
       </div>
-      <button type="button" class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend}); G._forcePowSpend=null;">Confirm</button>
+      <button type="button" class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend});">Confirm</button>
     </div>`;
   } else if (g.mode === 'cancel_choice') {
     const gauge = g.human().gauge.length;

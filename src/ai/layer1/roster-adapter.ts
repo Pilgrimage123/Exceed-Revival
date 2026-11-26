@@ -48,11 +48,11 @@ export interface EnginePublicSnapshot {
   readonly characterKey: string;
   readonly handCount: number;
   readonly deckCount: number;
-  readonly discard: readonly string[];
-  readonly gauge: readonly string[];
-  readonly boostsInPlay: readonly string[];
-  readonly sealedCards?: readonly string[];
-  readonly overdrive?: readonly string[];
+  readonly discardKeys: readonly string[];
+  readonly gaugeKeys: readonly string[];
+  readonly boostKeys: readonly string[];
+  readonly sealedKeys?: readonly string[];
+  readonly overdriveKeys?: readonly string[];
   readonly revealedStrike?: readonly string[];
   readonly reshuffleUsed?: boolean;
   readonly astralInPlayOrHand?: boolean;
@@ -167,11 +167,11 @@ export function createBeliefStateFromPublicSnapshot(
     }
   };
 
-  addKeys(state.discard, snapshot.discard);
-  addKeys(state.gauge, snapshot.gauge);
-  addKeys(state.boostsInPlay, snapshot.boostsInPlay);
-  addKeys(state.sealed, snapshot.sealedCards);
-  addKeys(state.overdrive, snapshot.overdrive);
+  addKeys(state.discard, snapshot.discardKeys);
+  addKeys(state.gauge, snapshot.gaugeKeys);
+  addKeys(state.boostsInPlay, snapshot.boostKeys);
+  addKeys(state.sealed, snapshot.sealedKeys);
+  addKeys(state.overdrive, snapshot.overdriveKeys);
   addKeys(state.revealedStrike, snapshot.revealedStrike);
 
   const astralInHandOrPlay = !!snapshot.astralInPlayOrHand || snapshot.astralState === 'in_hand' || snapshot.astralState === 'public';
@@ -208,15 +208,15 @@ export function createBeliefStateFromPublicSnapshot(
 
   // Honor valid exact hand reveals (same public-count freshness rule as game/ai.js)
   const rev = snapshot.revealedHand;
-  const odLen = (snapshot.overdrive || []).length;
-  const sealedLen = (snapshot.sealedCards || []).length;
+  const odLen = (snapshot.overdriveKeys || []).length;
+  const sealedLen = (snapshot.sealedKeys || []).length;
   if (
     rev &&
     rev.handCount === snapshot.handCount &&
     rev.deckCount === snapshot.deckCount &&
-    rev.discardCount === snapshot.discard.length &&
-    rev.gaugeCount === snapshot.gauge.length &&
-    rev.boostsCount === snapshot.boostsInPlay.length &&
+    rev.discardCount === snapshot.discardKeys.length &&
+    rev.gaugeCount === snapshot.gaugeKeys.length &&
+    rev.boostsCount === snapshot.boostKeys.length &&
     (rev.overdriveCount == null || rev.overdriveCount === odLen) &&
     (rev.sealedCount == null || rev.sealedCount === sealedLen)
   ) {

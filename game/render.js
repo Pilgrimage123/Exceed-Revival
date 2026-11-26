@@ -147,7 +147,7 @@ const TERM_HELP = {
 function coachPanelHTML(modeKey) {
   const help = MODE_HELP[modeKey];
   if (!help) return '';
-  const expanded = coachExpanded(modeKey);
+  const expanded = typeof isCoachExpanded === 'function' ? isCoachExpanded(modeKey) : coachExpanded(modeKey);
   return `<div class="coach-panel${expanded ? '' : ' collapsed'}">
     <div class="coach-head" onclick="toggleCoach('${modeKey}')">
       <span class="coach-title">${esc(help.title)}</span>
@@ -1013,8 +1013,7 @@ function infoModalHTML(g) {
 // fires exactly once per strike, not on every re-render while the result is showing.
 let _shakeTimer = null;
 function applyPendingShake(app) {
-  if (!G || !G.shakeOnRender) return;
-  G.shakeOnRender = false;
+  if (!G || !G.consumeShakeOnRender()) return;
   if (!app || !app.classList) return; // headless/test DOM stub without real classList support
   if (_shakeTimer) { clearTimeout(_shakeTimer); _shakeTimer = null; }
   app.classList.remove('screen-shake'); // restart the animation even if it's still mid-play
@@ -1037,7 +1036,7 @@ function render() {
   // playFx() to step through it one event at a time. While already draining
   // (G.fxPlaying), fall through to paint — playFx's own loop calls render()
   // once per step, after shifting that step's entry off the queue.
-  if (!G.fxPlaying && G.engine.fxQueue.length > 0) { G.playFx(); return; }
+  if (!G.fxPlaying && G.engine.hasPendingFx()) { G.playFx(); return; }
   paintWithFlip();
 }
 
@@ -1819,7 +1818,7 @@ function stagePromptBarHTML(g) {
         </div>
         <button type="button" class="big-btn" onclick="G.confirmMove()">Confirm Move</button>
       ` : ''}
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'changecards_setup') {
     content = `<div class="stage-prompt-inline">
@@ -1830,7 +1829,7 @@ function stagePromptBarHTML(g) {
         <button type="button" onclick="G.adjustChangeCards(1)">+</button>
       </div>
       <button type="button" class="big-btn" onclick="G.confirmChangeCards()">Choose cards\u2026</button>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'set_time_option_choice') {
     const card = g.sel && g.sel.card;
@@ -1859,26 +1858,26 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a card')}</span>
       <div class="btn-row name-choice-inline">${(g.sel.namePool || []).map(key => `<button type="button" onclick="G.pickNamedKey('${key}')">${esc(cardNameForKey(key))}</button>`).join('')}</div>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'name_range_choice') {
     const namedRange = g._namedRange == null ? 1 : Math.max(1, Math.min(8, g._namedRange));
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(g.sel.promptText || 'Name a Range')}</span>
       <div class="stepper-row">
-        <button type="button" onclick="G._namedRange=Math.max(1,${namedRange}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setNamedRange(${namedRange}-1);">\u2212</button>
         <span class="stepper-val">Range ${namedRange}</span>
-        <button type="button" onclick="G._namedRange=Math.min(8,${namedRange}+1); render();">+</button>
+        <button type="button" onclick="G.setNamedRange(${namedRange}+1);">+</button>
       </div>
-      <button type="button" class="big-btn" onclick="G.pickNamedRange(${namedRange}); G._namedRange=null;">Confirm</button>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; G._namedRange=null; render();">Cancel</button>
+      <button type="button" class="big-btn" onclick="G.pickNamedRange(${namedRange});">Confirm</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'boost_target_choice') {
     const targets = g.sel.boostTargets || [];
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">Discard opponent boost:</span>
       <div class="btn-row">${targets.map(t => `<button type="button" onclick="G.pickBoostTarget('${t.uid}')">${esc(t.name)}</button>`).join('')}</div>
-      <button type="button" class="cancel-btn" onclick="G.mode='awaiting_action'; render();">Cancel</button>
+      <button type="button" class="cancel-btn" onclick="G.setMode('awaiting_action', {}); render();">Cancel</button>
     </div>`;
   } else if (g.mode === 'face_up_choice') {
     const card = g.sel.card;
@@ -1912,15 +1911,15 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${min === max ? `Grasp (${min})` : 'Move opponent'}</span>
       ${min === max ? '' : `<div class="stepper-row">
-        <button type="button" onclick="G._graspAmount=Math.max(${min},${graspAmount}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setGraspAmount(Math.max(${min},${graspAmount}-1));">\u2212</button>
         <span class="stepper-val">${graspAmount} space(s)</span>
-        <button type="button" onclick="G._graspAmount=Math.min(${max},${graspAmount}+1); render();">+</button>
+        <button type="button" onclick="G.setGraspAmount(Math.min(${max},${graspAmount}+1));">+</button>
       </div>`}
       ${req.forceDirection ? '' : `<div class="btn-row">
-        <button type="button" class="${graspDir === 'advance' ? 'active' : ''}" onclick="G._graspDir='advance'; render();">Pull</button>
-        <button type="button" class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G._graspDir='retreat'; render();">Push</button>
+        <button type="button" class="${graspDir === 'advance' ? 'active' : ''}" onclick="G.setGraspDir('advance');">Pull</button>
+        <button type="button" class="${graspDir === 'retreat' ? 'active' : ''}" onclick="G.setGraspDir('retreat');">Push</button>
       </div>`}
-      <button type="button" class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}'); G._graspAmount=null; G._graspDir=null;">Confirm</button>
+      <button type="button" class="big-btn" onclick="G.resolveGraspChoice(${graspAmount}, '${graspDir}');">Confirm</button>
     </div>`;
   } else if (g.mode === 'named_choice_effect') {
     const req = g.sel.request;
@@ -1972,11 +1971,11 @@ function stagePromptBarHTML(g) {
     content = `<div class="stage-prompt-inline">
       <span class="stage-prompt-title">${esc(req.cardName)}: spend Force for +POW?</span>
       <div class="stepper-row">
-        <button type="button" onclick="G._forcePowSpend=Math.max(0,${forcePowSpend}-1); render();">\u2212</button>
+        <button type="button" onclick="G.setForcePowSpend(${forcePowSpend}-1);">\u2212</button>
         <span class="stepper-val">${forcePowSpend}F (+${forcePowSpend} POW)</span>
-        <button type="button" onclick="G._forcePowSpend=Math.min(${req.max},${forcePowSpend}+1); render();">+</button>
+        <button type="button" onclick="G.setForcePowSpend(Math.min(${req.max},${forcePowSpend}+1));">+</button>
       </div>
-      <button type="button" class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend}); G._forcePowSpend=null;">Confirm</button>
+      <button type="button" class="big-btn" onclick="G.resolveOptionalForceSpendPow(${forcePowSpend});">Confirm</button>
     </div>`;
   } else if (g.mode === 'cancel_choice') {
     const gauge = g.human().gauge.length;

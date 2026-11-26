@@ -11,52 +11,8 @@
 // rulebook). This mirrors what a competent human opponent could infer.
 
 
-function publicInfoOf(player) {
-  const astralDef = CHARACTERS[player.characterKey] && CHARACTERS[player.characterKey].specials
-    ? CHARACTERS[player.characterKey].specials.find(c => c.isAstral) : null;
-  let astralState = 'none';
-  if (astralDef) {
-    if (player._astralPending) astralState = 'pending';
-    else if (player.astralCard) astralState = 'out_of_play';
-    else {
-      const ak = astralDef.key;
-      const inPub = player.discard.some(c => c.key === ak) || player.gauge.some(c => c.key === ak) ||
-        player.boostsInPlay.some(b => b.card && b.card.key === ak) ||
-        (player.overdrive || []).some(c => c.key === ak) || (player.sealedCards || []).some(c => c.key === ak);
-      astralState = inPub ? 'public' : 'in_hand';
-    }
-  }
-  return {
-    id: player.id,
-    characterKey: player.characterKey,
-    handCount: player.hand.length,
-    deckCount: player.deck.length,
-    discard: player.discard.map(c => c.key),
-    gauge: player.gauge.map(c => c.key),
-    boostsInPlay: player.boostsInPlay.map(b => b.card.key),
-    overdrive: (player.overdrive || []).map(c => c.key),
-    sealedCards: (player.sealedCards || []).map(c => c.key),
-    astralCard: player.astralCard ? player.astralCard.key : null,
-    _astralPending: !!player._astralPending,
-    astralState,
-    life: player.life,
-    maxLife: player.maxLife,
-    pos: player.pos,
-    // Eddie (Zato-1) stands on the board in front of everyone — as public as either
-    // fighter's own position, and the number that decides whether his Specials reach.
-    eddiePos: player.eddiePos != null ? player.eddiePos : null,
-    exceeded: player.exceeded,
-    reshuffleUsed: player.reshuffleUsed,
-    advantage: player.advantage,
-    // Legitimately public once set: a genuine 0-match Reading/Block/Name-a-Range
-    // check forces a REAL hand reveal by the rules themselves — see
-    // engine.recordHandReveal and this same field's use in sampleOpponentHand below.
-    revealedHand: player.revealedHand || null,
-    // The publicly visible actions this player has chosen recently (engine.
-    // recordObservation). Nothing hidden: it is what anyone at the table would have
-    // watched them do. Consumed by handLikelihood below.
-    observations: player.aiObs ? player.aiObs.slice() : null,
-  };
+function publicInfoOf(player, engine = null) {
+  return Engine.buildPublicPlayer(player, false, engine);
 }
 
 // How consistent is a candidate hand with what this player has actually been DOING?
@@ -149,11 +105,11 @@ function unseenPoolForOpponent(oppPublic) {
       counts.set(k, (counts.get(k) || 0) + 1);
     }
   };
-  addRemoved(oppPublic.discard);
-  addRemoved(oppPublic.gauge);
-  addRemoved(oppPublic.boostsInPlay);
-  addRemoved(oppPublic.overdrive);
-  addRemoved(oppPublic.sealedCards);
+  addRemoved(oppPublic.discardKeys);
+  addRemoved(oppPublic.gaugeKeys);
+  addRemoved(oppPublic.boostKeys);
+  addRemoved(oppPublic.overdriveKeys);
+  addRemoved(oppPublic.sealedKeys);
   if (counts.size === 0) return fullDeckKeys.slice();
   const pool = [];
   for (let i = 0; i < fullDeckKeys.length; i++) {
@@ -175,11 +131,11 @@ function cardByKey(characterKey, key) {
 
 function sampleOpponentHand(oppPublic, rng, precomputedPool = null) {
   const rev = oppPublic.revealedHand;
-  const odLen = (oppPublic.overdrive || []).length;
-  const sealedLen = (oppPublic.sealedCards || []).length;
+  const odLen = (oppPublic.overdriveKeys || []).length;
+  const sealedLen = (oppPublic.sealedKeys || []).length;
   if (rev && rev.handCount === oppPublic.handCount && rev.deckCount === oppPublic.deckCount &&
-      rev.discardCount === oppPublic.discard.length && rev.gaugeCount === oppPublic.gauge.length &&
-      rev.boostsCount === oppPublic.boostsInPlay.length &&
+      rev.discardCount === oppPublic.discardKeys.length && rev.gaugeCount === oppPublic.gaugeKeys.length &&
+      rev.boostsCount === oppPublic.boostKeys.length &&
       (rev.overdriveCount == null || rev.overdriveCount === odLen) &&
       (rev.sealedCount == null || rev.sealedCount === sealedLen)) {
     return rev.keys.map(k => cardByKey(oppPublic.characterKey, k));
@@ -216,13 +172,13 @@ function boostModsFromKeys(keys) {
     if (!c || !c.boost) continue;
     const sm = c.boost.statMods || {};
     mods.pow += sm.pow || 0; mods.spd += sm.spd || 0; mods.arm += sm.arm || 0; mods.grd += sm.grd || 0;
-    if (c.boost.ignoreArmorGrant) mods.ignoreArmor = true;
+    if (c.boost.ignoreArmor) mods.ignoreArmor = true;
     // Cammy's CQC boost ("Attacks at range 1 don't hit you") — a continuous boost
     // can grant the same range-immunity a base card can print; public info (the
-    // boost key is visible), so legitimate to use the same way ignoreArmorGrant is.
+    // boost key is visible), so legitimate to use the same way ignoreArmor is.
     if (c.boost.rangeImmuneRanges) mods.rangeImmuneRanges = mods.rangeImmuneRanges.concat(c.boost.rangeImmuneRanges);
     // Zangief's Ultimate Atomic Buster boost ("Stun Immunity").
-    if (c.boost.stunImmuneGrant) mods.stunImmune = true;
+    if (c.boost.stunImmune) mods.stunImmune = true;
     // Cammy's Dive Kick boost: "Your Normals have 'Before: Advance 3.'"
     if (c.boost.grantsNormalsBeforeAdvance) mods.grantsNormalsBeforeAdvance = Math.max(mods.grantsNormalsBeforeAdvance, c.boost.grantsNormalsBeforeAdvance);
     // Sol Badguy's Tyrant Rave boost: "[+] Before: Close 1; if you Closed fewer than 1 space, +2POW"
@@ -475,8 +431,8 @@ function evalMatchupDetail({
     + (mb.opponentPowMod || 0);
   const myArm = myCard.arm + mb.arm, oppArm = oppCard.arm + ob.arm;
   const myGrd = myCard.grd + mb.grd, oppGrd = oppCard.grd + ob.grd;
-  const myIgnoreArmor = !!myCard.ignoreArmor || mb.ignoreArmor;
-  const oppIgnoreArmor = !!oppCard.ignoreArmor || ob.ignoreArmor;
+  const myIgnoreArmor = !!(myCard.hooks && myCard.hooks.ignoreArmor) || mb.ignoreArmor;
+  const oppIgnoreArmor = !!(oppCard.hooks && oppCard.hooks.ignoreArmor) || ob.ignoreArmor;
 
   // Critical, evaluated at the ACTUAL pre-strike distance ("when you set your
   // attack"), not the post-movement effective distance computed below.
@@ -512,8 +468,8 @@ function evalMatchupDetail({
   // Range immunity: a card (or a continuous boost, or — new — a paid Critical) can
   // grant "attacks at range X don't hit you". boostsInPlay is public info either
   // way; the Critical branch uses the "likely paid" gate above.
-  const oppRangeImmune = [...((oppCard.rangeImmuneRanges) || []), ...(ob.rangeImmuneRanges || []), ...(oppCritLikely ? oppCrit.rangeImmuneRanges : [])];
-  const myRangeImmune = [...((myCard.rangeImmuneRanges) || []), ...(mb.rangeImmuneRanges || []), ...(myCritLikely ? myCrit.rangeImmuneRanges : [])];
+  const oppRangeImmune = [...((oppCard.hooks && oppCard.hooks.rangeImmuneRanges) || []), ...(ob.rangeImmuneRanges || []), ...(oppCritLikely ? oppCrit.rangeImmuneRanges : [])];
+  const myRangeImmune = [...((myCard.hooks && myCard.hooks.rangeImmuneRanges) || []), ...(mb.rangeImmuneRanges || []), ...(myCritLikely ? myCrit.rangeImmuneRanges : [])];
 
   // The ONE place a side's attack is not measured from where that side is standing:
   // a Zato-1 Special/Ultra reaches from Eddie's space. Everything else in this
@@ -567,13 +523,13 @@ function evalMatchupDetail({
   // "always bypasses" and "never bypasses" rather than snapping to one extreme.
   const effOppArmForMyHit = myIgnoreArmor ? 0 : oppArmFull * (1 - (myCrit.ignoreArmor ? myCritProb : 0));
   const effMyArmForOppHit = oppIgnoreArmor ? 0 : myArmFull * (1 - (oppCrit.ignoreArmor ? oppCritProb : 0));
-  const effOppGrdForMyHit = myCard.ignoreGuard ? 0 : oppGrdFull * (1 - (myCrit.ignoreGuard ? myCritProb : 0));
-  const effMyGrdForOppHit = oppCard.ignoreGuard ? 0 : myGrdFull * (1 - (oppCrit.ignoreGuard ? oppCritProb : 0));
-  // stunImmuneBase (C. Viper's Burst Time: innate "Stun Immunity" printed on the
+  const effOppGrdForMyHit = (myCard.hooks && myCard.hooks.ignoreGuard) ? 0 : oppGrdFull * (1 - (myCrit.ignoreGuard ? myCritProb : 0));
+  const effMyGrdForOppHit = (oppCard.hooks && oppCard.hooks.ignoreGuard) ? 0 : myGrdFull * (1 - (oppCrit.ignoreGuard ? oppCritProb : 0));
+  // hooks.stunImmune (C. Viper's Burst Time: innate "Stun Immunity" printed on the
   // card itself, not granted by a boost or a paid Critical) feeds the same flags
   // boost/Critical-granted immunity already feed.
-  const myStunImmune = !!mb.stunImmune || (myCritLikely && myCrit.stunImmune) || !!myCard.stunImmuneBase;
-  const oppStunImmune = !!ob.stunImmune || (oppCritLikely && oppCrit.stunImmune) || !!oppCard.stunImmuneBase;
+  const myStunImmune = !!mb.stunImmune || (myCritLikely && myCrit.stunImmune) || !!(myCard.hooks && myCard.hooks.stunImmune);
+  const oppStunImmune = !!ob.stunImmune || (oppCritLikely && oppCrit.stunImmune) || !!(oppCard.hooks && oppCard.hooks.stunImmune);
 
   let myDmg = 0, oppDmg = 0, oppStunned = false, iStunned = false;
   if (iGoFirst) {
@@ -603,7 +559,7 @@ function evalMatchupDetail({
   // Movement immunity (e.g. Zangief's Double Lariat, "Opponents can't move you") denies
   // the opponent's own repositioning/tempo tools — small flat nudge rather than a full
   // simulation of whatever push/pull the opponent's card would otherwise have done.
-  if (myCard.movementImmune) value += 0.3;
+  if (myCard.hooks && myCard.hooks.movementImmune) value += 0.3;
   // ---- resource cost (see GAUGE_POINT_VALUE) ----
   // Setting an Ultra spends its Gauge cost whether or not it connects, and paying a
   // Critical spends one more. Neither was ever charged. Both sides are priced the same
@@ -703,7 +659,7 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
   // visible behaviour (handLikelihood). Weighting the samples rather than re-sampling
   // costs nothing extra — the draws already happened — and turns a fixed prior into a
   // belief that actually updates during the game.
-  const oppMods = boostModsFromKeys(oppPublic.boostsInPlay);
+  const oppMods = boostModsFromKeys(oppPublic.boostKeys);
   const oppPool = unseenPoolForOpponent(oppPublic);
   for (let s = 0; s < samples; s++) {
     const h = sampleOpponentHand(oppPublic, rng, oppPool);
@@ -718,7 +674,7 @@ function buildOpponentAnswerSet(oppPublic, rng, samples = 48, maxCards = 12) {
     }
   }
   if (!hands) return [];
-  const oppGauge = (oppPublic.gauge || []).length;
+  const oppGauge = (oppPublic.gaugeKeys || []).length;
   const entries = [];
   for (const [key, n] of counts) {
     const card = cardByKey(oppPublic.characterKey, key);
@@ -857,7 +813,7 @@ function wildSwingExpectedValue({ myCharacterKey, myPos, mb, answers, oppMix, op
         oppCard: answers[j].card, oppPos: oppPublic.pos, oppBoostMods: ob,
         iInitiated: iAmInitiator, myExceeded, oppExceeded,
         myCharacterKey, oppCharacterKey: oppPublic.characterKey,
-        myGaugeCount, oppGaugeCount: (oppPublic.gauge || []).length,
+        myGaugeCount, oppGaugeCount: (oppPublic.gaugeKeys || []).length,
         eddiePositions,
       });
     }
@@ -914,10 +870,10 @@ function chooseStrikeSelection({ hand, myPos, oppPublic, iAmInitiator, rng, samp
   }
 
   const mb = myBoostMods || boostModsFromKeys([]);
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
   const oppExceeded = !!oppPublic.exceeded;
   const oppCharacterKey = oppPublic.characterKey;
-  const oppGaugeCount = (oppPublic.gauge || []).length;
+  const oppGaugeCount = (oppPublic.gaugeKeys || []).length;
 
   const answers = buildOpponentAnswerSet(oppPublic, rng, Math.max(16, Math.min(64, samples)));
   if (!answers.length) {
@@ -1469,11 +1425,12 @@ function bestMoveTarget(hand, currentDist, boostMods, myCharacterKey, myPos, opp
 function scoreBoostCard(card) {
   const b = card.boost || {};
   const sm = b.statMods || {};
+  const choiceKind = b.choice && b.choice.kind;
   let score = (sm.pow || 0) * 1.2 + (sm.spd || 0) * 0.8 + (sm.arm || 0) * 1.0 + (sm.grd || 0) * 0.8;
-  if (b.ignoreArmorGrant) score += 2;
+  if (b.ignoreArmor) score += 2;
   if (b.nowDraw) score += b.nowDraw * 0.7;
-  if (b.needsNormalNameChoice) score += 2.2; // Focus's Reading: forces a defense, strong tempo swing
-  if (b.needsNameChoice) score += 1.6; // Block's naming: denies/reveals a card
+  if (choiceKind === 'normal_name') score += 2.2; // Focus's Reading: forces a defense, strong tempo swing
+  if (choiceKind === 'card_name') score += 1.6; // Block's naming: denies/reveals a card
   return score;
 }
 
@@ -1682,7 +1639,7 @@ function pickRandomLegalAction({ mePublicFull, canExceed, rng }) {
 function quickBestStrikeValue({ hand, myPos, oppPublic, rng, myBoostMods, myExceeded, myCharacterKey, samples }) {
   const validHand = hand.filter(c => isCardValidForStrike(myCharacterKey, myExceeded, c));
   if (!validHand.length) return 0;
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
   const oppExceeded = !!oppPublic.exceeded;
   const totals = validHand.map(() => 0);
   let n = 0;
@@ -1761,9 +1718,9 @@ function estimateBoostTimingValue({ card, hand, myPos, oppPublic, rng, myBoostMo
   const boostedMods = {
     pow: baseMods.pow + (sm.pow || 0), spd: baseMods.spd + (sm.spd || 0),
     arm: baseMods.arm + (sm.arm || 0), grd: baseMods.grd + (sm.grd || 0),
-    ignoreArmor: baseMods.ignoreArmor || !!boost.ignoreArmorGrant,
+    ignoreArmor: baseMods.ignoreArmor || !!boost.ignoreArmor,
     rangeImmuneRanges: [...(baseMods.rangeImmuneRanges || []), ...(boost.rangeImmuneRanges || [])],
-    stunImmune: baseMods.stunImmune || !!boost.stunImmuneGrant,
+    stunImmune: baseMods.stunImmune || !!boost.stunImmune,
     opponentPowMod: (baseMods.opponentPowMod || 0) + (boost.opponentPowMod || 0),
     // Playing THIS continuous boost now means the hypothetical post-boost state has
     // at least one Continuous Boost in play, regardless of what was already active —
@@ -1872,9 +1829,9 @@ function planApplyBoostMods(base, boost) {
   return {
     pow: (base.pow || 0) + (sm.pow || 0), spd: (base.spd || 0) + (sm.spd || 0),
     arm: (base.arm || 0) + (sm.arm || 0), grd: (base.grd || 0) + (sm.grd || 0),
-    ignoreArmor: !!base.ignoreArmor || !!(boost && boost.ignoreArmorGrant),
+    ignoreArmor: !!base.ignoreArmor || !!(boost && boost.ignoreArmor),
     rangeImmuneRanges: [...(base.rangeImmuneRanges || []), ...((boost && boost.rangeImmuneRanges) || [])],
-    stunImmune: !!base.stunImmune || !!(boost && boost.stunImmuneGrant),
+    stunImmune: !!base.stunImmune || !!(boost && boost.stunImmune),
     opponentPowMod: (base.opponentPowMod || 0) + ((boost && boost.opponentPowMod) || 0),
     hasOwnContinuousBoost: true,
   };
@@ -1884,7 +1841,7 @@ function planApplyBoostMods(base, boost) {
 // exchange-value table every node in the tree reads from.
 function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
   const cfg = PLAN_CONFIG;
-  const oppMods = boostModsFromKeys(oppPublic.boostsInPlay);
+  const oppMods = boostModsFromKeys(oppPublic.boostKeys);
   const oppHands = [];
   const oppHandWeights = [];
   let oppWeightTotal = 0;
@@ -1912,7 +1869,7 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
   // evalMatchup's header for why: a 6-for-5 trade nets +1 and used to be booked as
   // "opponent loses 1, I lose nothing", which made every race look like a clean win).
   const myGaugeCount = (mePublicFull.gauge || []).length;
-  const oppGaugeCount = (oppPublic.gauge || []).length;
+  const oppGaugeCount = (oppPublic.gaugeKeys || []).length;
   function exchangeDetail(dist, mods, myExceeded, iInitiate) {
     const zero = { value: 0, myDmg: 0, oppDmg: 0 };
     if (!oppHands.length || !myHand.length) return zero;
@@ -2048,7 +2005,7 @@ function buildPlanContext({ mePublicFull, oppPublic, myBoostMods, rng }) {
     }
   }
 
-  const oppCannotMove = (oppPublic.boostsInPlay || []).some(k => {
+  const oppCannotMove = (oppPublic.boostKeys || []).some(k => {
     const c = typeof CARD_BY_KEY !== 'undefined' && CARD_BY_KEY[k];
     return c && c.boost && c.boost.opponentCannotMove;
   });
@@ -2593,8 +2550,8 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
     if (upper > maxUpperPow) maxUpperPow = upper;
   }
   if (maxUpperPow < oppPublic.life) return false;
-  const ob = boostModsFromKeys(oppPublic.boostsInPlay);
-  const oppGauge = (oppPublic.gauge || []).length;
+  const ob = boostModsFromKeys(oppPublic.boostKeys);
+  const oppGauge = (oppPublic.gaugeKeys || []).length;
   const answers = buildOpponentAnswerSet(oppPublic, rng, 16);
   if (!answers.length) return false;
   for (const card of mePublicFull.hand) {
@@ -2624,7 +2581,7 @@ function certainLethal({ mePublicFull, oppPublic, dist, myBoostMods, rng }) {
 //                   defence, Block's naming, Tech's denial), which has no state effect
 //                   for the planner to simulate and would otherwise score as zero.
 function buildBoostCandidates(mePublicFull, dist, oppPublic, myBoostMods, hand) {
-  const ctx = { hand, dist, oppBoostsInPlay: oppPublic.boostsInPlay, boostMods: myBoostMods };
+  const ctx = { hand, dist, oppBoostsInPlay: oppPublic.boostKeys, boostMods: myBoostMods };
   const pool = [...hand, ...(mePublicFull.gauge || [])];
   const out = [];
   for (const card of hand) {

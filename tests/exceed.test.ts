@@ -188,12 +188,12 @@ test('Exceed persists across non-Strike turns for standard and Overdrive fighter
       const leoH = gLeo.human();
       const leoA = gLeo.ai();
       gLeo.engine.forceExceed(leoH);
-      leoH.strikeThisTurn = false;
+      leoH.turnState.strikeThisTurn = false;
       gLeo.finishNonStrikeAction();
       const leoRevertsHuman = leoH.exceeded === false;
 
       gLeo.engine.forceExceed(leoA);
-      leoA.strikeThisTurn = false;
+      leoA.turnState.strikeThisTurn = false;
       gLeo.aiFinishNonStrike();
       const leoRevertsAi = leoA.exceeded === false;
 
@@ -284,7 +284,7 @@ test('CPU character actions with triggersStrike actually initiate a Strike (Baik
       }
       return {
         mode: g.mode,
-        actionStrikeThisTurn: g.ai().actionStrikeThisTurn,
+        actionStrikeThisTurn: g.ai().turnState.actionStrikeThisTurn,
         hasPendingAttack: !!g.pendingAiAttack,
       };
     })()
@@ -614,7 +614,7 @@ test('Core engine & card-rule regression fixes (Anji ARM/GRD, playForcedBoost, E
       eKo.runStrikeAuto({
         initiator: 'p1',
         attackerSel: { card: { ...NORMALS[0], pow: 5, spd: 8, uid: 'koA' }, fromWildSwing: false },
-        defenderSel: { card: { ...NORMALS[0], pow: 5, spd: 1, stunImmuneBase: true, uid: 'koD' }, fromWildSwing: false },
+        defenderSel: { card: { ...NORMALS[0], pow: 5, spd: 1, hooks: { ...(NORMALS[0].hooks || {}), stunImmune: true }, uid: 'koD' }, fromWildSwing: false },
         gaugePay: {},
       }, () => ({}));
       const koStoppedDefender = eKo.gameOver === true && eKo.winner === 'p1' && koA.life === 1;
@@ -661,7 +661,7 @@ test('Core engine & card-rule regression fixes (Anji ARM/GRD, playForcedBoost, E
         vegaFreeCrit, vegaRangeBonus, vegaSplendidPow, vegaSplendidArm,
         ryuShoryuToGauge,
         solGunFlameContinuous: !!solGunFlame.boost.continuous && !!solGunFlame.boost.advantageIfOpponentStunnedThisStrike,
-        solBanditIgnoreGuard: !!solBandit.ignoreGuard,
+        solBanditIgnoreGuard: !!(solBandit.hooks && solBandit.hooks.ignoreGuard),
         hcSingleDemCopy,
       };
     })()
@@ -689,6 +689,7 @@ test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Ke
     poolExcludesOverdrive: boolean;
     poolExcludesSealed: boolean;
     infoSetHasNoOppHand: boolean;
+    snapPreservesFields: boolean;
     nativeEnvelopeAction: string;
     nativeBoostUid: string;
     nativeStrikeUid: string;
@@ -715,6 +716,12 @@ test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Ke
       const info = e1.getInformationSet('p1');
       const infoSetHasNoOppHand = info.opponent.handKeys === undefined && Array.isArray(info.actor.handKeys) &&
         info.opponent.sealedKeys.includes(sealCard.key);
+      const frozenSnap = NativeCpuAI.decisionSnapshot(info, { seed: 7 });
+      const snapPreservesFields = frozenSnap.actor.astralState === info.actor.astralState &&
+        !!frozenSnap.actor.activeBoostMods &&
+        Object.isFrozen(frozenSnap) &&
+        Object.isFrozen(frozenSnap.actor) &&
+        Object.isFrozen(frozenSnap.opponent);
 
       // 2. NativeCpuAI Card-Key + NativeDecisionResponse + tightened legality
       NativeCpuAI.setMode('modern');
@@ -749,6 +756,7 @@ test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Ke
         poolExcludesOverdrive,
         poolExcludesSealed,
         infoSetHasNoOppHand,
+        snapPreservesFields,
         nativeEnvelopeAction: chosen.type,
         nativeBoostUid: chosen.uid,
         nativeStrikeUid: strikeSel.selection.uid,
@@ -760,11 +768,84 @@ test('Information Set, publicInfoOf overdrive/sealedCards exclusion, and Card-Ke
   assert.equal(res.poolExcludesOverdrive, true);
   assert.equal(res.poolExcludesSealed, true);
   assert.equal(res.infoSetHasNoOppHand, true);
+  assert.equal(res.snapPreservesFields, true);
   assert.equal(res.nativeEnvelopeAction, 'boost');
   assert.equal(res.nativeBoostUid, 'b_uid_1');
   assert.equal(res.nativeStrikeUid, 's_uid_1');
   assert.equal(res.nativeExUidsOk, true);
   assert.equal(res.illegalMoveRejected, false);
+});
+
+test('Unified Match Event stream, EventBus registry, and StrikePlaybackController.skip() safety', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    knownHit: boolean;
+    unknownBad: boolean;
+    hasFxAfterDraw: boolean;
+    hasFxAfterClear: boolean;
+    eventsLogged: boolean;
+    skipThrew: boolean;
+  }>(`
+    (() => {
+      const e = new Engine('ryu', 'ken');
+      e.draw(e.P('p1'), 2);
+      const hasFxAfterDraw = e.hasPendingFx();
+      e.clearPendingFx();
+      const hasFxAfterClear = e.hasPendingFx();
+      let skipThrew = false;
+      try {
+        StrikePlaybackController.start({
+          firstId: 'p1',
+          secondId: 'p2',
+          timeline: [
+            { phase: 'reveal', speedWinner: 'p1', speedTie: false },
+            { phase: 'cleanup' },
+          ],
+        });
+        StrikePlaybackController.skip();
+      } catch (_err) {
+        skipThrew = true;
+      }
+      return {
+        knownHit: EventBus.isKnownEvent('OnStrikeHit'),
+        unknownBad: EventBus.isKnownEvent('OnNonExistentEvent'),
+        hasFxAfterDraw,
+        hasFxAfterClear,
+        eventsLogged: e.events.length > 0 && e.log.length > 0,
+        skipThrew,
+      };
+    })()
+  `);
+  assert.equal(res.knownHit, true);
+  assert.equal(res.unknownBad, false);
+  assert.equal(res.hasFxAfterDraw, true);
+  assert.equal(res.hasFxAfterClear, false);
+  assert.equal(res.eventsLogged, true);
+  assert.equal(res.skipThrew, false);
+});
+
+test('INTERACTION_MODES covers all MODE_HELP keys, setMode rejects unknown modes, and isCoachExpanded is pure', () => {
+  const { evalExpr } = loadGameSandbox();
+  const res = evalExpr<{
+    missingHelpModes: string[];
+    invalidThrew: boolean;
+    coachPure: boolean;
+  }>(`
+    (() => {
+      const missingHelpModes = Object.keys(MODE_HELP).filter(k => !INTERACTION_MODES.has(k));
+      const g = new GameController('ryu', 'ken', 'champion');
+      G = g;
+      let invalidThrew = false;
+      try { g.setMode('invalid_mode_xyz'); } catch (_e) { invalidThrew = true; }
+      const beforeKey = _coachActiveKey;
+      isCoachExpanded('awaiting_action');
+      const coachPure = _coachActiveKey === beforeKey;
+      return { missingHelpModes, invalidThrew, coachPure };
+    })()
+  `);
+  assert.deepEqual(res.missingHelpModes, []);
+  assert.equal(res.invalidThrew, true);
+  assert.equal(res.coachPure, true);
 });
 
 test('Trainer & Study Mode degrade cleanly on partial matchups and render NativeDiagnostics when advised', () => {
@@ -1213,13 +1294,13 @@ test('Global Exceed rules consistency: overpayment, paid move caps, Gauge Block/
       const aiCanOverpay = canPayExactForce([{ ...card('metsu_shoryuken'), uid: 'u1' }], 1);
       const aiPaidBoostCands = buildBoostCandidates(
         { hand: [{ ...card('metsu_hadoken'), uid: 'mh' }, { ...card('cross'), uid: 'cr' }], gauge: [] },
-        3, { boostsInPlay: [] }, boostModsFromKeys([]),
+        3, { boostKeys: [] }, boostModsFromKeys([]),
         [{ ...card('metsu_hadoken'), uid: 'mh' }, { ...card('cross'), uid: 'cr' }]
       );
       const deadCounter = evalMatchupDetail({
         myCard: { ...card('sweep'), spd: 8, pow: 6, range: [1, 3], arm: 0, grd: 0 },
         myPos: 3, myBoostMods: boostModsFromKeys([]),
-        oppCard: { ...card('focus'), spd: 1, pow: 4, range: [1, 2], arm: 0, grd: 0, stunImmuneBase: true },
+        oppCard: { ...card('focus'), spd: 1, pow: 4, range: [1, 2], arm: 0, grd: 0, hooks: { ...(card('focus').hooks || {}), stunImmune: true } },
         oppPos: 4, oppBoostMods: boostModsFromKeys([]),
         iInitiated: true, myExceeded: false, oppExceeded: false,
         myCharacterKey: 'ryu', oppCharacterKey: 'zangief',

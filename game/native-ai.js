@@ -149,6 +149,9 @@ const NativeCpuAI = (() => {
   }
 
   function mapPublicPlayer(p, isActor) {
+    if (typeof Engine !== 'undefined' && typeof Engine.buildPublicPlayer === 'function') {
+      return Engine.buildPublicPlayer(p, isActor, null);
+    }
     const mapKeys = (arr) => Array.isArray(arr) ? arr.map(c => (typeof c === 'string' ? c : c.key)) : [];
     const overdrive = mapKeys(p.overdriveKeys || p.overdrive);
     const sealed = mapKeys(p.sealedKeys || p.sealedCards || p.sealed);
@@ -178,14 +181,36 @@ const NativeCpuAI = (() => {
     return base;
   }
 
-  function decisionSnapshot(me, opp, canExceed, opts) {
+  function deepFreeze(obj) {
+    if (!obj || typeof obj !== 'object') return obj;
+    Object.freeze(obj);
+    for (const k of Object.keys(obj)) {
+      const v = obj[k];
+      if (v && typeof v === 'object' && !Object.isFrozen(v)) deepFreeze(v);
+    }
+    return obj;
+  }
+
+  function decisionSnapshot(meOrInfoSet, opp, canExceed, opts) {
+    if (meOrInfoSet && meOrInfoSet.actor && meOrInfoSet.opponent) {
+      const extra = opp || {};
+      return deepFreeze({
+        protocolVersion: PROTOCOL_VERSION,
+        seed: Number.isInteger(extra.seed) ? extra.seed : 0,
+        turnNumber: Number.isInteger(extra.turnNumber) ? extra.turnNumber : (meOrInfoSet.turnNumber || 0),
+        activePlayer: meOrInfoSet.activePlayer === 'opponent' ? 'opponent' : 'actor',
+        actor: { ...meOrInfoSet.actor },
+        opponent: { ...meOrInfoSet.opponent },
+        canExceed: !!meOrInfoSet.canExceed,
+      });
+    }
     const extra = opts || {};
-    return Object.freeze({
+    return deepFreeze({
       protocolVersion: PROTOCOL_VERSION,
       seed: Number.isInteger(extra.seed) ? extra.seed : 0,
       turnNumber: Number.isInteger(extra.turnNumber) ? extra.turnNumber : 0,
       activePlayer: extra.activePlayer === 'opponent' ? 'opponent' : 'actor',
-      actor: mapPublicPlayer(me, true),
+      actor: mapPublicPlayer(meOrInfoSet, true),
       opponent: mapPublicPlayer(opp, false),
       canExceed: !!canExceed,
     });

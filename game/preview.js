@@ -157,8 +157,8 @@ const SimulateStrikePreview = (() => {
     if (simMe.strikeState && simMe.strikeState.setOptionRangeBonus) {
       maxR += simMe.strikeState.setOptionRangeBonus;
     }
-    if (card.dynamicRangeMaxBonus) {
-      maxR += readNumericBonus(card.dynamicRangeMaxBonus(simMe, simOpp, fakeEngine, isInitiator));
+    if (card.hooks && card.hooks.dynamicRangeMaxBonus) {
+      maxR += readNumericBonus(card.hooks.dynamicRangeMaxBonus(simMe, simOpp, fakeEngine, isInitiator));
     }
 
     return {
@@ -225,8 +225,8 @@ const SimulateStrikePreview = (() => {
     const asm = char.attackStatMods
       ? (char.attackStatMods(simMe, card, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
       : {};
-    const cdm = card.liveStatMods
-      ? (card.liveStatMods(simMe, simOpp, fakeEngine, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
+    const cdm = (card.hooks && card.hooks.liveStatMods)
+      ? (card.hooks.liveStatMods(simMe, simOpp, fakeEngine, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
       : {};
 
     const printedPow = card.pow || 0;
@@ -257,7 +257,7 @@ const SimulateStrikePreview = (() => {
       if (card.hooks.powBonusIfInitiating && initiator) statTotal.pow += card.hooks.powBonusIfInitiating;
       if (card.hooks.armBonusIfDefending && !initiator) statTotal.arm += card.hooks.armBonusIfDefending;
     }
-    if (card.selfArmorZero) statTotal.arm = 0;
+    if (card.hooks && card.hooks.selfArmorZero) statTotal.arm = 0;
 
     const rangeInfo = computeEffectiveRange(simMe, simOpp, card, fakeEngine, initiator);
     const oppRangeImmune = computeOppVisibleRangeImmunity(simOpp);
@@ -275,8 +275,8 @@ const SimulateStrikePreview = (() => {
       maxRange: rangeInfo.maxRange,
       printedMinRange: rangeInfo.printedMinRange,
       printedMaxRange: rangeInfo.printedMaxRange,
-      ignoreArmor: !!card.ignoreArmor || !!mods.ignoreArmor || !!(criticalActive && card.critical && card.critical.ignoreArmor),
-      ignoreGuard: !!card.ignoreGuard || !!(criticalActive && card.critical && card.critical.ignoreGuard),
+      ignoreArmor: !!(card.hooks && card.hooks.ignoreArmor) || !!mods.ignoreArmor || !!(criticalActive && card.critical && card.critical.ignoreArmor),
+      ignoreGuard: !!(card.hooks && card.hooks.ignoreGuard) || !!(criticalActive && card.critical && card.critical.ignoreGuard),
       oppVisibleArm: oppMods.arm || 0,
       oppVisibleGrd: oppMods.grd || 0,
       oppStunImmune: !!oppMods.stunImmune,
@@ -506,7 +506,7 @@ const SimulateStrikePreview = (() => {
 
     const isPushPullImmune = (target) => {
       if (target.strikeState && target.strikeState.focusActive) return true;
-      return (target.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.movementImmuneGrant);
+      return (target.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.movementImmune);
     };
 
     const cappedSelfMove = (mover, opponent, amount, forced) => {

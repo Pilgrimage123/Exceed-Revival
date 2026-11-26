@@ -101,7 +101,7 @@ const NORMALS = [
     // Block's reactive Force-for-Armor is handled centrally in engine.activateStep
     // (keyed off defCard.key === 'block'), not here — it happens on the OPPONENT's
     // activation, not this card's own before/hit/after.
-    boost: { force: 0, continuous: false, needsNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' },
       resolve(ctx) {
         const name = ctx.namedCardKey;
         const idx = ctx.opponent.hand.findIndex(c => c.key === name);
@@ -141,7 +141,7 @@ const NORMALS = [
         ctx.engine.logMsg(`${ctx.attacker.name}'s Dive advances ${ctx.engine.spaceWord(3)}.${ctx.sideSwapped ? ' [Side swap detected — cannot be hit this Strike]' : ''}`);
       },
     },
-    boost: { force: 0, continuous: false, needsBoostTargetChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'boost_target' },
       resolve(ctx) { ctx.engine.discardOpponentContinuousBoost(ctx.opponent, ctx.targetBoostUid); } }
   },
   {
@@ -155,9 +155,8 @@ const NORMALS = [
     // documentation gap, now fixed alongside the generalization.
     text: "Opponents can't move you. After: Draw 1.",
     boostText: 'Name a Normal and Strike. Opponent must Strike with that card or reveal their hand without it.',
-    movementImmune: true,
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } },
-    boost: { force: 0, continuous: false, needsNormalNameChoice: true, triggersStrike: true,
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } , movementImmune: true },
+    boost: { force: 0, continuous: false, choice: { kind: 'normal_name' }, triggersStrike: true,
       resolve(ctx) { ctx.engine.setReading(ctx.player, ctx.namedCardKey); } }
   },
   {
@@ -170,10 +169,10 @@ const NORMALS = [
   },
   {
     key: 'spike', name: 'Spike', type: 'normal', owner: 'shared',
-    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4, ignoreGuard: true, ignoreArmor: true,
+    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard, Armor.',
     boostText: '+1 Armor, +3 Guard.',
-    hooks: {},
+    hooks: { ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 1, grd: 3 } }
   },
   {
@@ -243,7 +242,7 @@ const GG_NORMALS = [
     text: 'When hit, spend any amount of Force for +2 Armor for each Force.\nAfter: Add to Gauge at end of Strike.',
     boostText: 'Name a card. The opponent must discard a copy of that card or reveal a hand with none.',
     hooks: { goesToGaugeEvenOnMiss: true },
-    boost: { force: 0, continuous: false, needsNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' },
       resolve(ctx) {
         const name = ctx.namedCardKey;
         const idx = ctx.opponent.hand.findIndex(c => c.key === name);
@@ -263,7 +262,7 @@ const GG_NORMALS = [
     text: 'After: Retreat 3.',
     boostText: 'Push or Pull 2. If the opponent was Pulled past you, add this card to your Gauge.',
     hooks: { after(ctx) { ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 3); ctx.engine.logMsg(`${ctx.attacker.name} retreats ${ctx.engine.spaceWord(3)} (Cross).`); } },
-    boost: { force: 0, continuous: false, needsPushPullChoice: true, cancelable: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'push_pull' }, cancelable: true,
       resolve(ctx) {
         const opp = ctx.opponent, player = ctx.player;
         if (ctx.pushPullDirection === 'pull') {
@@ -294,15 +293,15 @@ const GG_NORMALS = [
         if (before !== after) { ctx.sideSwapped = true; ctx.attacker.strikeState.unhittable = true; }
       },
     },
-    boost: { force: 0, continuous: false, needsBoostTargetChoice: true, cancelable: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'boost_target' }, cancelable: true,
       resolve(ctx) { ctx.engine.discardOpponentContinuousBoost(ctx.opponent, ctx.targetBoostUid); } }
   },
   {
     key: 'gg_dust', name: 'Dust', type: 'normal', owner: 'shared',
-    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4, ignoreGuard: true, ignoreArmor: true,
+    range: [2, 3], pow: 5, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard, Armor.',
     boostText: '+4 Guard. At the start of your turn, add this card to your Gauge.',
-    hooks: {},
+    hooks: { ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { grd: 4 }, expireToGaugeAtStartOfNextTurn: true, cancelable: true }
   },
   {
@@ -310,8 +309,7 @@ const GG_NORMALS = [
     range: [1, 2], pow: 4, spd: 1, arm: 2, grd: 5,
     text: "Opponents can't Push or Pull you. After: Draw 1.",
     boostText: 'When you initiate a Strike, the opponent must respond with a Wild Swing.',
-    movementImmune: true,
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.logMsg(`${ctx.attacker.name} draws 1 (Focus).`); } , movementImmune: true },
     boost: { force: 0, continuous: true, forcesOpponentWildSwingOnInitiate: true, cancelable: true }
   },
   {
@@ -374,11 +372,11 @@ const RYU = [
   },
   {
     key: 'one_inch_punch', name: 'One Inch Punch', type: 'special', owner: 'ryu',
-    range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 6, ignoreArmor: true,
+    range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 6,
     text: 'Ignore Armor. Hit: Push 3.',
     boostText: 'Move 1, then take another action.',
     criticalText: 'Critical: +2 Armor.',
-    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); ctx.engine.logMsg(`${ctx.defender.name} is pushed ${ctx.engine.spaceWord(3)} (One Inch Punch).`); } },
+    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); ctx.engine.logMsg(`${ctx.defender.name} is pushed ${ctx.engine.spaceWord(3)} (One Inch Punch).`); } , ignoreArmor: true },
     critical: { statMods: { arm: 2 } },
     boost: { force: 0, continuous: false, bonusAction: true,
       resolve(ctx) { ctx.engine.moveChoice(ctx.player, 1); } }
@@ -393,7 +391,7 @@ const RYU = [
       spdBonusIfDefending: 2,
     },
     critical: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } },
-    boost: { force: 0, continuous: true, statMods: {}, ignoreArmorGrant: true,
+    boost: { force: 0, continuous: true, statMods: {}, ignoreArmor: true,
       triggersStrike: true, toGaugeIfHitThisStrike: true }
   },
   {
@@ -434,7 +432,7 @@ const RYU = [
 const KEN = [
   {
     key: 'axe_kick', name: 'Axe Kick', type: 'special', owner: 'ken',
-    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true,
+    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     // Fix (this session, cross-checked against the frame-data spreadsheet): base
     // text is "Ignore Armor" AND "Before: Close 1" as two SEPARATE, always-on
     // effects (un-joined lines in the source — same pattern as Hadoken's separate
@@ -443,7 +441,7 @@ const KEN = [
     text: 'Ignore Armor. Before: Close 1.',
     boostText: 'Add this card to your Gauge.',
     criticalText: 'Critical: +2 Speed.',
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Axe Kick closes 1 space.`); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Axe Kick closes 1 space.`); } , ignoreArmor: true },
     critical: { statMods: { spd: 2 } },
     boost: { force: 0, continuous: false, toGaugeInstead: true, resolve() {} }
   },
@@ -616,8 +614,7 @@ const CAMMY = [
     range: [1, 1], pow: 6, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 1 don't hit you. Hit: Push or Pull any number of spaces.",
     boostText: "Attacks at range 1 don't hit you. At the end of your next turn, add this card to your Gauge.",
-    rangeImmuneRanges: [1],
-    hooks: { interactiveHit: 'grasp_move', moveMin: 0, moveMax: 8 },
+    hooks: { interactiveHit: 'grasp_move', moveMin: 0, moveMax: 8 , rangeImmuneRanges: [1] },
     boost: { force: 0, continuous: true, rangeImmuneRanges: [1], expireToGaugeAfterTurns: 1 }
   },
   {
@@ -625,8 +622,8 @@ const CAMMY = [
     range: [1, 1], pow: 5, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 4 or 5 don't hit you. Before: Advance as far as possible. Hit: Pull any number of spaces; +1 Power for each space pulled this way.",
     boostText: 'Retreat up to 3, then Strike.',
-    rangeImmuneRanges: [4, 5],
     hooks: {
+      rangeImmuneRanges: [4, 5],
       before(ctx) {
         const before = ctx.attacker.pos < ctx.defender.pos;
         ctx.engine.advanceAsFarAsPossible(ctx.attacker, ctx.defender);
@@ -676,8 +673,8 @@ const ZANGIEF = [
     // Auto-resolved to the max (2), toward the opponent, per the "up to X" rule —
     // again an implementation note, kept out of the player-facing criticalText.
     criticalText: 'Critical, After: Move 1 or 2.',
-    movementImmune: true,
     critical: { after(ctx) { ctx.engine.moveChoice(ctx.attacker, 2); } },
+    hooks: { movementImmune: true },
     boost: { force: 0, continuous: false, toGaugeInstead: true, resolve() {} }
   },
   {
@@ -691,7 +688,7 @@ const ZANGIEF = [
     criticalText: 'Critical: Stun Immunity.',
     hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); ctx.engine.logMsg(`${ctx.attacker.name}'s Flying Power Bomb closes ${ctx.engine.spaceWord(2)}.`); } },
     critical: { stunImmune: true },
-    boost: { force: 0, continuous: false, needsRangeNameChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'range_name' },
       resolve(ctx) {
         const N = ctx.namedRange;
         const matches = ctx.opponent.hand.filter(c => c.range && N >= c.range[0] && N <= c.range[1]);
@@ -712,10 +709,10 @@ const ZANGIEF = [
   },
   {
     key: 'spinning_piledriver', name: 'Spinning Piledriver', type: 'special', owner: 'zangief',
-    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true, ignoreGuard: true,
+    range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard. Hit: The opponent must discard a card at random.',
     boostText: '+2 Armor. After: If you were hit this Strike, add this card to your Gauge.',
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } , ignoreArmor: true, ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 2 }, toGaugeIfHitThisStrike: true }
   },
   {
@@ -723,8 +720,8 @@ const ZANGIEF = [
     range: [1, 1], pow: 8, spd: 2, arm: 0, grd: 6,
     text: "Opponents can't move past you. Before: Close 1. Hit: Draw 2.",
     boostText: 'Advance 1 and draw 3.',
-    blocksOpponentPassThrough: true,
     hooks: {
+      blocksOpponentPassThrough: true,
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); ctx.engine.logMsg(`${ctx.attacker.name}'s Siberian Blizzard closes 1 space.`); },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 2); ctx.engine.logMsg(`${ctx.attacker.name} draws 2 (Siberian Blizzard).`); },
     },
@@ -737,7 +734,7 @@ const ZANGIEF = [
     text: 'Hit: You and the opponent discard all cards.',
     boostText: '+1 Power, Stun Immunity. After: If you were hit this Strike, add this card to your Gauge.',
     hooks: { hit(ctx) { ctx.engine.discardAllHand(ctx.attacker); ctx.engine.discardAllHand(ctx.defender); ctx.engine.logMsg(`${ctx.attacker.name} and ${ctx.defender.name} discard all cards.`); } },
-    boost: { force: 0, continuous: true, statMods: { pow: 1 }, stunImmuneGrant: true, toGaugeIfHitThisStrike: true }
+    boost: { force: 0, continuous: true, statMods: { pow: 1 }, stunImmune: true, toGaugeIfHitThisStrike: true }
   },
 ];
 
@@ -748,8 +745,8 @@ const SOL_BADGUY = [
     range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Guard.\nBefore: Advance 2.',
     boostText: '[+] Advance or Retreat up to 2.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
     },
     // DEFERRED: interactive "Advance or Retreat up to 2" boost movement
@@ -830,14 +827,14 @@ const SOL_BADGUY = [
     text: 'Ignore Armor.\nYou cannot be Pushed or Pulled.\nHit: Pull 1, Advantage.',
     boostText: '[+] Hit: +1 POW.\nAdd this to your Gauge.',
     hooks: {
+      ignoreArmor: true,
+      movementImmune: true,
       hit(ctx) { 
         ctx.engine.pushToward(ctx.defender, ctx.attacker, 1);
         ctx.engine.logMsg(`${ctx.defender.name} is pulled 1 space (Wild Throw).`);
         ctx.engine.grantAdvantage(ctx.attacker, 'Wild Throw');
       }
     },
-    ignoreArmor: true,
-    movementImmune: true,
     boost: { force: 0, continuous: false, cancelable: true, toGaugeInstead: true }
     // NOTE: source text says "[+] Hit: +1 POW" on the boost, but toGaugeInstead
     // boosts resolve at boost-PLAY time (no Strike/hit occurs then) — there is
@@ -955,7 +952,7 @@ const CVIPER = [
       optionalForceSpendForPow: { max: 4, powPerForce: 1 }
     },
     critical: {},
-    boost: { force: 0, continuous: false, needsDiscardBoostChoice: true }
+    boost: { force: 0, continuous: false, choice: { kind: 'discard_boost' } }
   },
   {
     key: 'thunder_knuckle', name: 'Thunder Knuckle', type: 'special', owner: 'cviper',
@@ -976,10 +973,10 @@ const CVIPER = [
     text: 'Ignore Armor.\nHit: Push 8.\nAfter: Close 8.',
     boostText: '[+] Opponent has +3 POW.\nNow: Draw 3.\nTake another action.',
     hooks: {
+      ignoreArmor: true,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 8); },
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); }
     },
-    ignoreArmor: true,
     boost: { force: 0, continuous: true, bonusAction: true, nowDraw: 3,
       opponentPowMod: 3 // Debuffs opponent; checked in liveStats for opponent
     }
@@ -989,8 +986,8 @@ const CVIPER = [
     range: [1, 2], pow: 10, spd: 2, arm: 0, grd: 0,
     text: 'Stun Immunity.\nIf you do not have any Continuous Boosts in play,\nyour attack does not hit.',
     boostText: '[+] +3 ARM, +1 GRD.\nCleanup: If you weren\'t stunned,\nspend {1} to sustain.',
-    stunImmuneBase: true,
     noHitWithoutContinuousBoost: true, // Checked in engine.js's inRange gate
+    hooks: { stunImmune: true },
     boost: { force: 0, continuous: true, sustainIfNotStunnedCost: 1 }
   },
 ];
@@ -1042,7 +1039,7 @@ const VEGA = [
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); }
     },
     critical: { statMods: { arm: 2 } },
-    boost: { force: 1, continuous: false, needsDirectionChoice: true, triggersStrike: true }
+    boost: { force: 1, continuous: false, choice: { kind: 'direction' }, triggersStrike: true }
   },
   {
     key: 'rolling_crystal_flash', name: 'Rolling Crystal Flash', type: 'special', owner: 'vega',
@@ -1054,7 +1051,7 @@ const VEGA = [
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 5); },
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 3); },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         const before = ctx.player.pos < ctx.opponent.pos;
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
@@ -1075,7 +1072,7 @@ const VEGA = [
     critical: { statMods: { spd: 2 } },
     boost: { force: 2, continuous: false,
       // DEFERRED: needsAnySpaceChoice + edge innate bonus tracking
-      needsAnySpaceChoice: true, triggersStrike: true
+      choice: { kind: 'any_space' }, triggersStrike: true
     }
   },
   {
@@ -1089,7 +1086,7 @@ const VEGA = [
     critical: { statMods: { pow: 2 } },
     // `force: 1` is this card's printed FRC cost on the Vega sheet; it was 0 here
     // (card-data audit, 2026-08-17).
-    boost: { force: 1, continuous: false, needsDirectionChoice: true,
+    boost: { force: 1, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         const before = ctx.player.pos < ctx.opponent.pos;
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
@@ -1239,8 +1236,8 @@ const AKUMA = [
     text: 'Ignore Armor.\nBefore: Close 2.',
     boostText: '[+] If you have 3 or more bonus POW, +3 SPD.',
     notes: "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); },
     },
     // HARD PART: "if you have 3+ bonus POW" needs to inspect the live
@@ -1284,8 +1281,8 @@ const GUILE = [
     range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nCritical, Hit: The opponent must discard 2 cards at random.',
     boostText: '[+] +1 ARM, +3 GRD.\nAt the end of your next turn, add this card to your Gauge.',
-    ignoreGuard: true,
     critical: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } },
+    hooks: { ignoreGuard: true },
     boost: { force: 0, continuous: true, statMods: { arm: 1, grd: 3 }, expireToGaugeAtStartOfNextTurn: true }
   },
   {
@@ -1409,7 +1406,7 @@ const CHUNLI = [
     // documented ordering hazard at this exact point) plus a direction for
     // the unqualified "Move"
     // Workaround: none — fully deferred
-    boost: { force: 0, continuous: true, ignoreArmorGrant: true, triggersStrike: true }
+    boost: { force: 0, continuous: true, ignoreArmor: true, triggersStrike: true }
   },
   {
     key: 'lightning_legs', name: 'Lightning Legs', type: 'special', owner: 'chunli',
@@ -1470,13 +1467,13 @@ const CHUNLI = [
     range: [1, 3], pow: 7, spd: 2, arm: 0, grd: 0,
     text: "Attacks at range 4+ don't hit you.\nAfter: If this attack did not hit the opponent, draw a card and add the top 2 cards of your discard pile to Gauge.",
     boostText: '[+] Stun Immunity\nNow: Strike.\nHit: Add this card to your Gauge.',
-    rangeImmuneRanges: [4, 5, 6, 7, 8],
     // DEFERRED: "if this attack did NOT hit" After-clause
     // Requires: a verified-safe way to branch on hit/miss inside a card's
     // own after() hook at this stage
     // Workaround: none — rangeImmuneRanges above is implemented and
     // independently valuable regardless of this clause
-    boost: { force: 1, continuous: true, stunImmuneGrant: true, triggersStrike: true }
+    hooks: { rangeImmuneRanges: [4, 5, 6, 7, 8] },
+    boost: { force: 1, continuous: true, stunImmune: true, triggersStrike: true }
   },
 ];
 
@@ -1580,7 +1577,6 @@ const DAN = [
     text: "If you have no cards in hand, ignore this card's Gauge cost.\nAttacks at range 2~5 don't hit you.",
     boostText: '[+] Hit: If you have no cards in hand, +4 POW.',
     notes: "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-    rangeImmuneRanges: [2, 3, 4, 5],
     // DEFERRED: "ignore Gauge cost if hand is empty" (a conditional
     // cost-waiver at Special/Ultra play time) and "Hit: if hand is empty,
     // +4POW" (no existing hook reads hand-size at hit-resolution time for a
@@ -1588,6 +1584,7 @@ const DAN = [
     // Requires: cost-waiver hook + hand-size-aware onHit
     // Workaround: still costs Gauge as normal; rangeImmuneRanges above is
     // implemented and independently valuable
+    hooks: { rangeImmuneRanges: [2, 3, 4, 5] },
     boost: { force: 0, continuous: true }
   },
   {
@@ -1638,7 +1635,7 @@ const MBISON = [
       // "if the opponent is stunned, Push or Pull up to 2" is a real
       // conditional choice deferred — the unconditional Close 2 above is real.
     },
-    boost: { force: 1, continuous: true, stunImmuneGrant: true, forcesFreeCritical: true }
+    boost: { force: 1, continuous: true, stunImmune: true, forcesFreeCritical: true }
   },
   {
     key: 'psycho_crusher', name: 'Psycho Crusher', type: 'special', owner: 'mbison',
@@ -1876,12 +1873,12 @@ const AXL = [
     text: 'If you initiated, +2 POW.\nHit: Advance 2. You may spend [1]. If you do, Advantage.',
     boostText: '[+] +1 POW\nAfter: If the opponent is stunned, draw 1.',
     notes: 'Opponents can still be stunned if you go second.',
-    powBonusIfInitiating: 2,
     hooks: {
+      powBonusIfInitiating: 2,
       hit(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
       optionalGaugeSpend: { amount: 1, grantsAdvantage: true },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, drawIfOpponentStunnedThisStrike: true }
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, drawIfOpponentStunnedThisStrike: 1 }
   },
   {
     key: 'rainwater', name: 'Rainwater', type: 'special', owner: 'axl',
@@ -1892,7 +1889,7 @@ const AXL = [
       optionalRetreat: 1,
       hit(ctx) { ctx.engine.retreatSelf(ctx.attacker, ctx.defender, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -1934,8 +1931,8 @@ const AXL = [
     range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Guard, Armor.\nBefore: Pull 8 without pulling past yourself.\nHit: Advance 2.',
     boostText: 'Spend up to {2}. For each spent, Push 1 and draw 2.',
-    ignoreGuard: true, ignoreArmor: true,
     hooks: {
+      ignoreGuard: true, ignoreArmor: true,
       before(ctx) { ctx.engine.pullTowardWithoutPassing(ctx.defender, ctx.attacker, 8); },
       hit(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
     },
@@ -2034,7 +2031,7 @@ const TESTAMENT = [
       // Requires: selfBoostAndSustainAfterHit mechanic (Axl's One Vision is only verified example)
       // Workaround: checked engine.js, selfBoostAndSustainAfterHit exists but only tested on Axl
     },
-    boost: { force: 0, continuous: true, needsDirectionChoice: true,
+    boost: { force: 0, continuous: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -2047,8 +2044,8 @@ const TESTAMENT = [
     range: [3, 6], pow: 5, spd: 3, arm: 0, grd: 3,
     text: 'Ignore Armor.\nHit: The opponent must discard a random card.',
     boostText: '[+] +1 SPD.\nNow: Look at the top card of your opponent\'s deck. You may discard it.',
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
     },
     // DEFERRED: "Look at the top card of opponent's deck, may discard it"
@@ -2169,15 +2166,15 @@ const POTEMKIN = [
       // "Advance 1 or 2" (amount choice) simplified to 2 per this codebase's convention.
       hit(ctx) { ctx.engine.draw(ctx.attacker, 2); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, ignoreArmorGrant: true }
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, ignoreArmor: true }
   },
   {
     key: 'potemkin_buster', name: 'Potemkin Buster', type: 'special', owner: 'potemkin',
     range: [1, 2], pow: 6, spd: 3, arm: 0, grd: 3,
     text: 'You cannot be Pushed or Pulled.\nHit: The opponent must discard a random card.',
     boostText: '[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, add this to your Gauge.',
-    movementImmune: true,
     hooks: {
+      movementImmune: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
     },
     boost: { cancelable: true, force: 0, continuous: true, rangeImmuneRanges: [4, 5, 6, 7, 8], expireToGaugeAtStartOfNextTurn: true }
@@ -2203,8 +2200,8 @@ const POTEMKIN = [
     range: [2, 4], pow: 4, spd: 1, arm: 3, grd: 4,
     text: 'Attacks at Range 4+ do not hit you.\nAfter: Close 3, Advantage.',
     boostText: '[+] +4 ARM.\nNow: Close 1.',
-    rangeImmuneRanges: [4, 5, 6, 7, 8],
     hooks: {
+      rangeImmuneRanges: [4, 5, 6, 7, 8],
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); ctx.engine.grantAdvantage(ctx.attacker, 'Giganter Kai'); },
     },
     boost: { force: 0, continuous: true, statMods: { arm: 4 },
@@ -2253,7 +2250,7 @@ const LEO = [
       hit(ctx) { ctx.engine.grantAdvantage(ctx.attacker, 'Blitzschlag'); },
     },
     // "Advance or Retreat 1 or 2" — direction and amount choice. Simplified to Advance 2.
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -2301,7 +2298,7 @@ const LEO = [
         ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2);
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, stunImmuneGrant: true, nowDraw: 2 }
+    boost: { cancelable: true, force: 0, continuous: true, stunImmune: true, nowDraw: 2 }
   },
   {
     key: 'zweites_kaltes_gestöber', name: 'Zweites Kaltes Gestöber', type: 'special', owner: 'leo',
@@ -2331,9 +2328,9 @@ const LEO = [
     range: [1, 2], pow: 6, spd: 0, arm: 0, grd: 0,
     text: 'Attacks at Range 2 do not hit you.',
     boostText: '[+] Your Wild Swings have +2 POW.\nNow: Strike.',
-    rangeImmuneRanges: [2],
     // DEFERRED: "Your Wild Swings have +2POW" — needs Wild Swing detection
     // (same as Blitzschlag's issue)
+    hooks: { rangeImmuneRanges: [2] },
     boost: { force: 0, continuous: true, triggersStrike: true }
   },
   {
@@ -2392,7 +2389,7 @@ const MILLIA = [
         if (opponentWasStunned) ctx.engine.randomDiscardFromHand(ctx.defender, 1);
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -2443,7 +2440,7 @@ const MILLIA = [
     },
     // DEFERRED: "If you Advanced past, return this to your hand"
     // Requires: hand-returning mechanic + boost self-reference
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -2563,10 +2560,10 @@ const CHIPP = [
   },
   {
     key: 'chipp_genrouzan', name: 'Genrouzan', type: 'special', owner: 'chipp',
-    range: [1, 1], pow: 3, spd: 2, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 3, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Guard.\nBefore: Close 2.',
     boostText: '[+] Attacks at Range 1 do not hit you.\nAfter: Add this to your Gauge.',
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } , ignoreGuard: true },
     // `expireToGaugeAtStartOfNextTurn` is the closest supported timing to "After: add
     // this to your Gauge" (the sheet's own note is that it stops protecting you once
     // it leaves play); the exact within-Strike handoff has no extension point.
@@ -2679,8 +2676,7 @@ const KY = [
     // "Range 2: +2SPD" is measured at set time like every other liveStats bonus —
     // `spdBonusPerRangeAtSetTime` is Vega's per-space version; this one is a flat
     // bonus at exactly Range 2, so it uses the generic conditional field below.
-    liveStatMods(owner, opponent, engine) { return engine.range(owner, opponent) === 2 ? { spd: 2 } : {}; },
-    hooks: { after(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } },
+    hooks: { after(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } , liveStatMods(owner, opponent, engine) { return engine.range(owner, opponent) === 2 ? { spd: 2 } : {}; } },
     boost: { cancelable: true, force: 0, continuous: true, statMods: { spd: 1 }, advantageIfOpponentStunnedThisStrike: false,
       onHit() {} },
   },
@@ -2720,7 +2716,7 @@ const ANJI = [
       },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 1); ctx.engine.grantAdvantage(ctx.attacker, 'Fuujin'); },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, needsPushPullChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, choice: { kind: 'push_pull' },
       resolve(ctx) {
         if (ctx.pushPullDirection === 'pull') ctx.engine.pushToward(ctx.opponent, ctx.player, 1);
         else ctx.engine.pushAway(ctx.opponent, ctx.player, 1);
@@ -2757,11 +2753,11 @@ const ANJI = [
   },
   {
     key: 'anji_rin', name: 'Rin', type: 'special', owner: 'anji',
-    range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3, ignoreGuard: true, ignoreArmor: true,
+    range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3,
     text: 'Ignore Guard, Armor.\nHit: Push 1.',
     boostText: '[+] +1 ARM, +1 GRD.\nNow: Advance or Retreat 1.',
-    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); } },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { arm: 1, grd: 1 }, needsDirectionChoice: true,
+    hooks: { hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); } , ignoreArmor: true, ignoreGuard: true },
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { arm: 1, grd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -2801,10 +2797,10 @@ const ANJI = [
   {
     key: 'anji_kachofuugetsu_kai', name: 'Kachofuugetsu Kai', type: 'ultra', owner: 'anji', gaugeCost: 2,
     range: [1, 2], pow: 0, spd: 3, arm: 0, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nBefore: If you were hit, +6 POW and Close 3.',
     boostText: 'Name a Normal. Strike; the opponent must set that Normal or reveal a hand without it.',
     hooks: {
+      stunImmune: true,
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -2814,7 +2810,7 @@ const ANJI = [
     },
     // Same mechanic as Focus's Reading (engine.setReading/mustWildSwing), reused here
     // rather than reimplemented — see the Focus entry in NORMALS/GG_NORMALS.
-    boost: { force: 0, continuous: false, needsNameChoice: true, triggersStrike: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'card_name' }, triggersStrike: true,
       resolve(ctx) { ctx.engine.setReading(ctx.player, ctx.namedCardKey); } },
   },
 ];
@@ -2832,7 +2828,7 @@ const MAY = [
         if (top) { ctx.attacker.gauge.push(top); ctx.engine.logMsg(`${ctx.attacker.name} adds ${top.name} to Gauge (Anchor Swing).`); }
       },
     },
-    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: true, statMods: { pow: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -2864,10 +2860,12 @@ const MAY = [
   },
   {
     key: 'may_overhead_kiss', name: 'Overhead Kiss', type: 'special', owner: 'may',
-    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0, ignoreArmor: true, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard.\nHit: Push 2. Advantage.',
     boostText: '[+] Now: Draw 2.\nHit: Advantage.',
     hooks: {
+      ignoreArmor: true,
+      ignoreGuard: true,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 2); ctx.engine.grantAdvantage(ctx.attacker, 'Overhead Kiss'); },
     },
     boost: { force: 0, continuous: true, nowDraw: 2,
@@ -2887,10 +2885,9 @@ const MAY = [
   {
     key: 'may_great_yamada_attack', name: 'Great Yamada Attack', type: 'ultra', owner: 'may', gaugeCost: 3,
     range: [2, 4], pow: 6, spd: 1, arm: 0, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nAfter: Close 3.',
     boostText: 'Close 3. You may spend {1}. If you do, Strike.',
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); } , stunImmune: true },
     // The paid Strike follow-up uses the existing `optionalForceSpend` boost flag
     // (Winter Mantis's shape) — spend {1}, then Strike.
     boost: { force: 0, continuous: false, triggersStrike: true, optionalForceSpend: { max: 1 },
@@ -3034,10 +3031,11 @@ const RAMLETHAL = [
 const NAGORIYUKI = [
   {
     key: 'nago_bloodsucking_universe', name: 'Bloodsucking Universe', type: 'special', owner: 'nagoriyuki',
-    range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: Shuffle 2 cards from your discard pile into your deck.',
     boostText: '[+] +1 SPD.\nNow: You may spend {1}. If you do, discard another boost from play.',
     hooks: {
+      ignoreGuard: true,
       hit(ctx) {
         const moved = ctx.attacker.discard.splice(0, 2);
         if (moved.length) {
@@ -3086,7 +3084,7 @@ const NAGORIYUKI = [
       // draw rider: `optionalForceSpendForPow` only models "+1POW per Force".
       // DEFERRED: the fixed-price spend.
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -3154,8 +3152,8 @@ const BAIKEN = [
     range: [1, 2], pow: 1, spd: 3, arm: 0, grd: 6,
     text: 'If you have 3 or fewer cards in hand, +2 ARM.\nBefore: If you were hit, +6 POW and Close 2.',
     boostText: 'Retreat up to 2. Draw 1.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { arm: 2 } : {}; },
     hooks: {
+      liveStatMods(owner) { return owner.hand.length <= 3 ? { arm: 2 } : {}; },
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -3219,11 +3217,10 @@ const BAIKEN = [
   },
   {
     key: 'baiken_youzansen', name: 'Youzansen', type: 'special', owner: 'baiken',
-    range: [1, 2], pow: 5, spd: 4, arm: 0, grd: 0, ignoreArmor: true,
+    range: [1, 2], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor.\nIf you have 3 or fewer cards in hand, +2 SPD.',
     boostText: '[+] +3 POW.\nNow: Draw 1. Take 3 non-lethal damage.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 2 } : {}; },
-    hooks: {},
+    hooks: { ignoreArmor: true, liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 2 } : {}; } },
     boost: { force: 0, continuous: true, statMods: { pow: 3 },
       resolve(ctx) { ctx.engine.draw(ctx.player, 1); ctx.engine.takeDamageNonLethal(ctx.player, 3); } },
   },
@@ -3232,11 +3229,10 @@ const BAIKEN = [
     range: [1, 1], pow: 5, spd: 5, arm: 0, grd: 0,
     text: 'If you have 3 or fewer cards in hand, +3 SPD.',
     boostText: '[+] Stun Immunity.\nBefore: For each point of damage taken this Strike, +1 POW.',
-    liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 3 } : {}; },
-    hooks: {},
+    hooks: { liveStatMods(owner) { return owner.hand.length <= 3 ? { spd: 3 } : {}; } },
     // DEFERRED: the boost's "+1POW per damage taken this Strike" — damage taken is not
     // tracked as a number anywhere (only the boolean `_wasHitThisStrike`).
-    boost: { force: 0, continuous: true, stunImmuneGrant: true },
+    boost: { force: 0, continuous: true, stunImmune: true },
   },
   {
     key: 'baiken_kenjyu', name: 'Kenjyu', type: 'ultra', owner: 'baiken', gaugeCost: 2,
@@ -3281,7 +3277,7 @@ const INO = [
     hooks: {
       hit(ctx) { ctx.engine.pushToward(ctx.defender, ctx.attacker, 1); ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -3404,8 +3400,7 @@ const FAUST = [
     range: [1, 1], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'If you have a Boost in play, +2 POW and -2 SPD.\nBefore: Close 8.',
     boostText: '[+] Now: Push 1. Retreat 1. Draw 1.\nHit: Add this to your Gauge.',
-    liveStatMods(owner) { return owner.boostsInPlay.length > 0 ? { pow: 2, spd: -2 } : {}; },
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } , liveStatMods(owner) { return owner.boostsInPlay.length > 0 ? { pow: 2, spd: -2 } : {}; } },
     boost: { force: 0, continuous: true, toGaugeIfHitThisStrike: true,
       resolve(ctx) {
         ctx.engine.pushAway(ctx.opponent, ctx.player, 1);
@@ -3415,10 +3410,11 @@ const FAUST = [
   },
   {
     key: 'faust_snip_snip_snip', name: 'Snip Snip Snip', type: 'special', owner: 'faust',
-    range: [1, 1], pow: 3, spd: 6, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 3, spd: 6, arm: 0, grd: 0,
     text: 'Ignore Guard.\nAfter: If you hit, add this to the opponent’s Boost area, ignoring Now effects, and sustain it.',
     boostText: '[+] -6 GRD.\nNow: Draw 2.',
     hooks: {
+      ignoreGuard: true,
       // DEFERRED: handing your own used attack card to the OPPONENT's boost area — the
       // engine only ever plays boosts from a player's own hand/Gauge/deck.
     },
@@ -3445,9 +3441,8 @@ const FAUST = [
     key: 'faust_bone_crushing_excitement', name: 'Bone-crushing Excitement', type: 'ultra', owner: 'faust', gaugeCost: 4,
     range: [1, 1], pow: 7, spd: 3, arm: 0, grd: 0,
     text: 'Attacks with higher Speed do not hit you.\nBefore: Advance 3.',
-    hitImmuneToFasterAttacks: true,
     boostText: '[+] +0~1 RNG.\nBoth players have "Before: +1 POW".',
-    hooks: { before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } },
+    hooks: { before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 3, true); } , hitImmuneToFasterAttacks: true },
     boost: { force: 0, continuous: true, rangeMaxBonus: 1, statMods: { pow: 1 }, opponentPowMod: 1 },
   },
   {
@@ -3463,7 +3458,7 @@ const FAUST = [
         }
       },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 2, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -3482,7 +3477,7 @@ const GIOVANNA = [
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
       after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -3578,8 +3573,8 @@ const JACKO = [
     range: [0, 0], pow: 1, spd: 2, arm: 3, grd: 4,
     text: 'Before: For each Boost you have in play, +0~1 RNG and +1 POW.',
     boostText: 'Add a card from your discard pile to your Gauge.',
-    dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length; },
     hooks: {
+      dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length; },
       before(ctx) { ctx.powBonus = (ctx.powBonus || 0) + ctx.attacker.boostsInPlay.length; },
     },
     boost: { cancelable: true, force: 0, continuous: false,
@@ -3601,8 +3596,7 @@ const JACKO = [
     range: [1, 1], pow: 5, spd: 4, arm: 0, grd: 0,
     text: 'Before: If you have a Boost in play, +0~3 RNG.',
     boostText: '[+] +0~1 RNG.\nNow: Draw 1.',
-    dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length > 0 ? 3 : 0; },
-    hooks: {},
+    hooks: { dynamicRangeMaxBonus(owner) { return owner.boostsInPlay.length > 0 ? 3 : 0; } },
     boost: { force: 0, continuous: true, rangeMaxBonus: 1, nowDraw: 1 },
   },
   {
@@ -3737,11 +3731,11 @@ const HAPPYCHAOS = [
   },
   {
     key: 'hc_gun_down', name: 'Gun Down', type: 'ultra', owner: 'happychaos', gaugeCost: 1, copies: 3,
-    range: [2, 5], pow: 3, spd: 5, arm: 0, grd: 0, ignoreGuard: true,
+    range: [2, 5], pow: 3, spd: 5, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard a card.\nAfter: Seal this.',
     boostText: '[+] Now: Retreat 1 or 2. You may spend {1}. If you do, Strike.\nHit: Add this to your Gauge.',
     sealAfterUse: true,
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); } , ignoreGuard: true },
     // NOTE: `triggersStrike` is unconditional, so the follow-up Strike is offered even
     // when the optional Force was not actually spent — the engine has no "Strike only if
     // you paid" shape. Same simplification on Goldlewis's Hurl and Happy Chaos's Gun Down.
@@ -3770,19 +3764,19 @@ const HAPPYCHAOS = [
 const GOLDLEWIS = [
   {
     key: 'gold_bt_crush', name: 'Behemoth Typhoon Crush', type: 'special', owner: 'goldlewis',
-    range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 6, ignoreArmor: true,
+    range: [1, 2], pow: 5, spd: 2, arm: 0, grd: 6,
     text: 'Ignore Armor.\nAfter: Close 2.',
     boostText: '[+] +0~1 RNG.\nHit: Push or Pull 1.',
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); } , ignoreArmor: true },
     boost: { cancelable: true, force: 0, continuous: true, rangeMaxBonus: 1,
       onHit(ctx) { ctx.engine.pushAway(ctx.opponent, ctx.player, 1); } },
   },
   {
     key: 'gold_bt_drop', name: 'Behemoth Typhoon Drop', type: 'special', owner: 'goldlewis',
-    range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 2], pow: 5, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard 2 random cards.',
     boostText: '[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, Close 2 and discard this.',
-    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } },
+    hooks: { hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 2); } , ignoreGuard: true },
     // "Range 4+" spelled out to the board's maximum useful distance, the same way
     // Hakumen's Enma boost enumerates its own protected ranges.
     boost: { force: 0, continuous: true, rangeImmuneRanges: [4, 5, 6, 7, 8],
@@ -3834,10 +3828,9 @@ const GOLDLEWIS = [
     range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 3,
     text: 'If you initiated, +2 ARM.\nAfter: Draw 2.',
     boostText: '[+] +2 POW.\nHit: Advantage.',
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 2); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 2); } , liveStatMods(owner, opponent, engine, info) { return info.initiator ? { arm: 2 } : {}; } },
     // `armBonusIfDefending` is the existing defender-side twin of this; the initiator
     // side has no numeric ARM hook, so it rides on the generic set-time bonus below.
-    liveStatMods(owner, opponent, engine, info) { return info.initiator ? { arm: 2 } : {}; },
     boost: { force: 0, continuous: true, statMods: { pow: 2 },
       onHit(ctx) { ctx.engine.grantAdvantage(ctx.player, 'Behemoth Typhoon Smash boost'); } },
   },
@@ -3846,8 +3839,8 @@ const GOLDLEWIS = [
     range: [2, 3], pow: 6, spd: 2, arm: 1, grd: 4,
     text: 'If you initiated, +2 GRD.\nHit: Push or Pull 2, Advantage.',
     boostText: 'Opponents cannot Advance past you.\nAt the start of your turn, add this to your Gauge.',
-    liveStatMods(owner, opponent, engine, info) { return info.initiator ? { grd: 2 } : {}; },
     hooks: {
+      liveStatMods(owner, opponent, engine, info) { return info.initiator ? { grd: 2 } : {}; },
       interactiveHit: 'grasp_move',
       moveMin: 2, moveMax: 2,
       hit(ctx) { ctx.engine.grantAdvantage(ctx.attacker, 'Behemoth Typhoon Spin'); },
@@ -3872,7 +3865,7 @@ const GOLDLEWIS = [
     text: 'Hit: Close 8.',
     boostText: 'Advance or Retreat 1. You may return a Special from your discard pile to your hand.',
     hooks: { hit(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 8); } },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
@@ -3955,7 +3948,7 @@ const ZATO = [
         ctx.engine.draw(ctx.attacker, 1);
       },
     },
-    boost: { force: 0, continuous: true, statMods: { spd: 1 }, needsDirectionChoice: true,
+    boost: { force: 0, continuous: true, statMods: { spd: 1 }, choice: { kind: 'direction' },
       resolve(ctx) {
         ctx.engine.placeEddie(ctx.player, ctx.player.pos, 'Leap boost');
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 2);
@@ -3973,7 +3966,7 @@ const ZATO = [
       // true when their card was faster — exactly what "if you were hit" means here.
       before(ctx) { if (ctx.attacker.strikeState.wasHit) ctx.powBonus = (ctx.powBonus || 0) + 3; },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
         else ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
@@ -3982,10 +3975,11 @@ const ZATO = [
   },
   {
     key: 'zato_damned_fang', name: 'Damned Fang', type: 'special', owner: 'zato1',
-    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0, ignoreGuard: true,
+    range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: Pull 2 (toward Zato-1). Draw 2.',
     boostText: '[+] Attacks at Range 4+ don’t hit you.\nAt the start of your turn, add this to your Gauge.',
     hooks: {
+      ignoreGuard: true,
       // The sheet spells out "(toward Zato-1)" precisely because the attack itself may
       // have come from Eddie — the pull is toward the character, not the source.
       hit(ctx) {
@@ -4012,7 +4006,7 @@ const ZATO = [
       },
       hit(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { cancelable: true, force: 0, continuous: false, needsEddieSpaceChoice: true,
+    boost: { cancelable: true, force: 0, continuous: false, choice: { kind: 'eddie_space' },
       resolve(ctx) {
         if (ctx.eddieSpace != null) ctx.engine.placeEddie(ctx.player, ctx.eddieSpace, 'Invite Hell boost');
       } },
@@ -4020,10 +4014,9 @@ const ZATO = [
   {
     key: 'zato_amorphous', name: 'Amorphous', type: 'ultra', owner: 'zato1', gaugeCost: 4,
     range: [3, 3], pow: 6, spd: 1, arm: 2, grd: 0,
-    stunImmuneBase: true,
     text: 'Stun Immunity.\nAfter: Draw 3.',
     boostText: '[+] Now: Strike.\nHit: If the opponent is between you and Eddie, +3 POW.',
-    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 3); } },
+    hooks: { after(ctx) { ctx.engine.draw(ctx.attacker, 3); } , stunImmune: true },
     boost: { force: 0, continuous: true, triggersStrike: true,
       onHit(ctx) {
         const eddie = ctx.player.eddiePos;
@@ -4115,8 +4108,8 @@ const RAGNA = [
     range: [1, 2], pow: 4, spd: 3, arm: 0, grd: 4,
     text: 'Ignore Armor.\nBefore: Advance 1 or 2. If you Advanced past the opponent, this attack does not hit.',
     boostText: '[+] Now: Draw 2.\nHit: Advantage.',
-    ignoreArmor: true,
     hooks: {
+      ignoreArmor: true,
       before(ctx) {
         // Advancing 2 is what makes the card reach, but it also risks the side swap
         // that switches its own hit off — so this is a genuine gamble the card text
@@ -4171,15 +4164,14 @@ const RAGNA = [
         }
       },
     },
-    boost: { force: 1, continuous: true, statMods: { pow: 1 }, stunImmuneGrant: true },
+    boost: { force: 1, continuous: true, statMods: { pow: 1 }, stunImmune: true },
   },
   {
     key: 'ragna_carnage_scissors', name: 'Carnage Scissors', type: 'ultra', owner: 'ragna', gaugeCost: 2,
     range: [1, 1], pow: 5, spd: 3, arm: 0, grd: 0,
     text: "Attacks at Range 4-5 don't hit you.\nBefore: Close 4.",
     boostText: '[+] +2 POW.\nNow, Range 1: Push 2 and Strike.',
-    rangeImmuneRanges: [4, 5],
-    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 4); } },
+    hooks: { before(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 4); } , rangeImmuneRanges: [4, 5] },
     boost: { force: 0, continuous: true, statMods: { pow: 2 },
       resolve(ctx) {
         if (ctx.engine.range(ctx.player, ctx.opponent) === 1) ctx.engine.pushAway(ctx.opponent, ctx.player, 2);
@@ -4396,7 +4388,7 @@ const NOEL = [
     range: [3, 4], pow: 6, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Armor.',
     boostText: "Look at the opponent's hand, then Strike.",
-    ignoreArmor: true,
+    hooks: { ignoreArmor: true },
     boost: { force: 0, continuous: false, triggersStrike: true,
       resolve(ctx) { ctx.engine.recordHandReveal(ctx.opponent); } },
   },
@@ -4414,8 +4406,8 @@ const NOEL = [
     range: [1, 2], pow: 3, spd: 2, arm: 5, grd: 0,
     text: 'Stun Immunity.\nBefore: If you were hit, +4 POW and you may draw 1-4.',
     boostText: 'Draw 2. Seal this and take another action.',
-    stunImmuneBase: true,
     hooks: {
+      stunImmune: true,
       // "If you were hit" reads the same wasHit state Hakumen's cards use — see the
       // ctx.defenderHitMe note in engine.js. Draw auto-resolves to the max of 4.
       before(ctx) {
@@ -4461,7 +4453,7 @@ const TAOKAKA = [
       hit(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 2); ctx.engine.grantAdvantage(ctx.attacker, 'Kitty Litter Special!'); },
       after(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
-    boost: { force: 0, continuous: false, triggersStrike: true, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, triggersStrike: true, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'retreat') ctx.engine.retreatSelf(ctx.player, ctx.opponent, 1);
         else ctx.engine.advanceSelf(ctx.player, ctx.opponent, 1, true);
@@ -4490,8 +4482,8 @@ const TAOKAKA = [
     range: [1, 1], pow: 4, spd: 3, arm: 0, grd: 0,
     text: 'Ignore Guard.\nBefore: If you are at the edge of the arena, Close 3.',
     boostText: 'If the opponent is at Range 1, Retreat 2 and Strike.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       before(ctx) { if (ctx.engine.isAtEdge(ctx.attacker)) ctx.engine.closeSelf(ctx.attacker, ctx.defender, 3); },
     },
     boost: { force: 1, continuous: false, triggersStrike: true,
@@ -4548,8 +4540,7 @@ const TAGER = [
     range: [1, 1], pow: 5, spd: 1, arm: 2, grd: 5,
     text: 'Ignore Armor.\nAfter: Close 1.',
     boostText: '[+] +0~1 RNG.\nNow: Strike.',
-    ignoreArmor: true,
-    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } },
+    hooks: { after(ctx) { ctx.engine.closeSelf(ctx.attacker, ctx.defender, 1); } , ignoreArmor: true },
     boost: { force: 1, continuous: true, rangeMaxBonus: 1, triggersStrike: true },
   },
   {
@@ -4593,7 +4584,7 @@ const TAGER = [
     },
     // "You cannot be Pushed or Pulled" reuses the existing movement-immunity flag that
     // Focus and Double Lariat already set, granted from a boost instead of a card.
-    boost: { force: 0, continuous: true, statMods: { spd: -2, arm: 4 }, movementImmuneGrant: true },
+    boost: { force: 0, continuous: true, statMods: { spd: -2, arm: 4 }, movementImmune: true },
   },
   {
     key: 'tager_genesic_emerald_tager_buster', name: 'Genesic Emerald Tager Buster', type: 'ultra', owner: 'tager', gaugeCost: 4,
@@ -4671,7 +4662,7 @@ const NU13 = [
       optionalRetreat: 1,
       hit(ctx) { ctx.engine.pushAway(ctx.defender, ctx.attacker, 1); },
     },
-    boost: { force: 0, continuous: false, needsDirectionChoice: true,
+    boost: { force: 0, continuous: false, choice: { kind: 'direction' },
       resolve(ctx) {
         if (ctx.moveDirection === 'advance') ctx.engine.advanceSelf(ctx.player, ctx.opponent, 3, true);
         else ctx.engine.retreatSelf(ctx.player, ctx.opponent, 3);
@@ -4720,8 +4711,8 @@ const NU13 = [
     range: [4, 8], pow: 7, spd: 3, arm: 0, grd: 0,
     text: "Attacks at Range 5+ don't hit you.\nHit: Advantage, then Advance or Retreat up to 8.",
     boostText: 'If the opponent is at Range 1, Push 3 and draw 2.',
-    rangeImmuneRanges: [5, 6, 7, 8],
     hooks: {
+      rangeImmuneRanges: [5, 6, 7, 8],
       hit(ctx) {
         ctx.engine.grantAdvantage(ctx.attacker, 'Legacy Edge');
         // Nu-13 wants range, so the "up to 8" auto-resolves to a full retreat.
@@ -4800,8 +4791,8 @@ const BANG = [
     range: [1, 2], pow: 4, spd: 4, arm: 0, grd: 0,
     text: 'Ignore Guard.\nHit: The opponent must discard a card at random.\nAfter: Draw 1.',
     boostText: '[+] Hit: +1 POW, Advantage. Then, add this card to your Gauge.',
-    ignoreGuard: true,
     hooks: {
+      ignoreGuard: true,
       hit(ctx) { ctx.engine.randomDiscardFromHand(ctx.defender, 1); },
       after(ctx) { ctx.engine.draw(ctx.attacker, 1); },
     },
@@ -4876,8 +4867,8 @@ const PLATINUM = [
     range: [1, 1], pow: 4, spd: 2, arm: 0, grd: 0,
     text: 'Ignore Armor, Guard.\nBefore: Advance 1-2.\nHit: Advantage. You may sustain one of your Continuous Boosts.',
     boostText: '[+] Hit, Range 2: +2 POW.',
-    ignoreArmor: true, ignoreGuard: true,
     hooks: {
+      ignoreArmor: true, ignoreGuard: true,
       before(ctx) { ctx.engine.advanceSelf(ctx.attacker, ctx.defender, 2, true); },
       // DEFERRED (partial): "you may sustain one of your Continuous Boosts" — boost
       // sustaining exists only as each boost's own sustain clause (sustain_choice),
@@ -5082,15 +5073,15 @@ const HAKUMEN = [
     hooks: {
       hit(ctx) { if (ctx.engine.range(ctx.attacker, ctx.defender) <= 2) ctx.powBonus = (ctx.powBonus || 0) + 4; },
     },
-    boost: { force: 1, continuous: true, stunImmuneGrant: true },
+    boost: { force: 1, continuous: true, stunImmune: true },
   },
   {
     key: 'haku_kokuujin_yukikaze', name: 'Kokuujin: Yukikaze', type: 'ultra', owner: 'hakumen', gaugeCost: 4,
     range: [1, 1], pow: 0, spd: 2, arm: 0, grd: 0,
     text: 'Stun Immunity. Your life cannot be reduced below 1 during this Strike.\nBefore: If you were hit, +6 POW and Close 8.\nHit: Advance 2.',
     boostText: '[+] +0~1 RNG, +2 ARM, +2 GRD.',
-    stunImmuneBase: true,
     hooks: {
+      stunImmune: true,
       before(ctx) {
         if (ctx.attacker.strikeState.wasHit) {
           ctx.powBonus = (ctx.powBonus || 0) + 6;
@@ -5110,10 +5101,10 @@ const HAKUMEN = [
     range: [1, 1], pow: 10, spd: 0, arm: 0, grd: 0,
     text: 'Opponents cannot move. Attacks at Range 1 cannot hit you.\nCleanup: Seal this.',
     boostText: 'Draw 2. Seal this and take another action.',
-    rangeImmuneRanges: [1],
     // DEFERRED: the attack's own "Opponents cannot move" (the flag exists as a boost
     // grant, not a card one) and "Cleanup: Seal this" (see the Astral seal note on
     // Ragna's Black Onslaught).
+    hooks: { rangeImmuneRanges: [1] },
     boost: { force: 0, continuous: false, bonusAction: true, resolve(ctx) { ctx.engine.draw(ctx.player, 2); } },
   },
 ];
@@ -5851,7 +5842,7 @@ const CHARACTERS = {
     innateText: 'Innate — When you initiate a Strike, you may place your attack face up for +1 SPD.',
     exceedText: 'Exceeded — When you Exceed, draw 2 and Retreat up to 2.\nWhen you initiate a Strike, you may place your attack face up for +1 POW and +1 SPD.',
     blurb: 'Face-up strike mechanic for stat bonuses. Exceeded boosts initiative.',    specials: SAGAT,
-    canGoFaceUp: true,
+    canGoFaceUp() { return true; },
     faceUpStatBonus(player) {
       return player.exceeded ? { pow: 1, spd: 1 } : { spd: 1 };
     },
@@ -5896,8 +5887,8 @@ const CHARACTERS = {
     blurb: 'Balanced zoning. Cancel draw reinforces action economy.',    specials: KY,
     onCancel(engine, player, opponent) {
       // Ky: first-time-per-turn gate on Cancel responses.
-      if (!player.firstCancelThisTurn) return;
-      player.firstCancelThisTurn = false;
+      if (!player.turnState.firstCancelThisTurn) return;
+      player.turnState.firstCancelThisTurn = false;
       if (player.exceeded) {
         engine.draw(player, 1); // Exceed: draw 1 first
       }
@@ -5976,7 +5967,7 @@ const CHARACTERS = {
     // explicitly). `canExceedAction: false` is read by engine.canExceed.
     canExceedAction: false,
     onReshuffle(engine, player) {
-      player.exceedAtEndOfTurn = true;
+      player.turnState.exceedAtEndOfTurn = true;
       engine.logMsg(`${player.name} will Exceed at the end of this turn (Nagoriyuki's Innate).`);
     },
     // "Your Specials have Cleanup: ..." / "Your Normals have Cleanup: ..." — a

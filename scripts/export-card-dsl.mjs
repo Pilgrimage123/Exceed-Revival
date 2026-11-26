@@ -7,12 +7,18 @@ import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
+import { assertValidCardCatalog } from './validate-card-schema.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const source = fs.readFileSync(path.join(root, 'game', 'cards.js'), 'utf8');
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(`${source}\nglobalThis.__cardDsl = { normals: NORMALS, ggNormals: GG_NORMALS, characters: CHARACTERS };`, sandbox, { filename: 'game/cards.js' });
+assertValidCardCatalog({
+  NORMALS: sandbox.__cardDsl.normals,
+  GG_NORMALS: sandbox.__cardDsl.ggNormals,
+  CHARACTERS: sandbox.__cardDsl.characters,
+});
 function parseBeforeMove(text) {
   if (!text) return null;
   const farMatch = text.match(/Before:\s*(Advance|Close)\s+as far as possible/i);
@@ -32,12 +38,13 @@ function annotateCard(card) {
 }
 
 const dsl = sandbox.__cardDsl;
+const rawGgNormals = dsl.ggNormals;
 dsl.normals = dsl.normals.map(annotateCard);
 dsl.ggNormals = dsl.ggNormals.map(annotateCard);
 const normalizedCharacters = Object.fromEntries(
   Object.entries(dsl.characters).map(([key, charDef]) => {
     const clone = { ...charDef };
-    clone.normalsPool = charDef.normals === dsl.ggNormals ? 'gg' : 'standard';
+    clone.normalsPool = charDef.normals === rawGgNormals ? 'gg' : 'standard';
     if (Array.isArray(charDef.specials)) clone.specials = charDef.specials.map(annotateCard);
     delete clone.normals;
     return [key, clone];

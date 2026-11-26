@@ -1149,7 +1149,7 @@ const StandeeStage = (() => {
 
     EventBus.on('OnStrikeHit', (payload) => {
       if (!payload) return;
-      const attId = payload.actor;
+      const attId = payload.playerId || payload.actor;
       const defId = payload.defenderId || (attId === 'p1' ? 'p2' : 'p1');
       const att = fighters[attId];
       const def = fighters[defId];
@@ -1192,7 +1192,7 @@ const StandeeStage = (() => {
     });
 
     EventBus.on('OnGuardBreak', (payload) => {
-      const pid = payload && payload.stunnedPlayerId;
+      const pid = payload && (payload.playerId || payload.stunnedPlayerId);
       const f = fighters[pid];
       if (!f || !f.active) return;
       const choreo = resolveStandeeChoreography(f.charKey, null, 'stunned', {

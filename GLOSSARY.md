@@ -103,3 +103,15 @@ _Avoid_: Guard break, cancel
 **Reshuffle**:
 Returning the discard pile to form a new deck, allowed once per game (either manually or automatically on an empty-deck draw/Wild Swing); needing a second reshuffle loses the game immediately.
 _Avoid_: Deck-out, mill loss
+
+**Turn**:
+A single player's active decision window (1-indexed), spanning any chained Cancels or Extra Actions until turn control passes or a Strike concludes, distinct from individual log action entries.
+_Avoid_: Round, step
+
+**Match Event**:
+A typed, engine-emitted record of a state transition during play that feeds the combat log, visual effects, Strike breakdown, and UI/audio observers, distinct from **Trigger Timeline** snapshots.
+_Avoid_: FX item, log entry
+
+**Interaction Mode**:
+The single active human decision state currently awaiting input from the player, paired with its contextual help copy.
+_Avoid_: UI mode, modal flag

@@ -1543,7 +1543,7 @@ test('Strike Preview rules parity: range bonuses, Before/Hit/After movement, imm
     eSol.P('p1').pos = 6; eSol.P('p2').pos = 7; // 1 space behind CPU -> Push 2 hits wall (+2 POW)
     eSol.P('p1').gauge = [SimulateStrikePreview.resolveCardByKey('gg_slash'), SimulateStrikePreview.resolveCardByKey('gg_slash')];
     const tyrantCorner = SimulateStrikePreview.run(eSol.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('tyrant_rave'), {});
-    eSol.P('p1').canceledThisTurn = true;
+    eSol.P('p1').turnState.canceledThisTurn = true;
     const tyrantCanceled = SimulateStrikePreview.run(eSol.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('tyrant_rave'), {});
 
     // 12. Vega Bloody High Claw boost (rangeMaxBonus +1 & free Critical) + Ryu Critical Shoryuken (Close 1 turns miss into hit)

@@ -2,7 +2,31 @@
 // Loaded in global script scope before engine.js, preview.js, and UI modules.
 
 const EventBus = (() => {
+  const EVENT_SCHEMAS = Object.freeze({
+    OnCardHoverStart: { required: [] },
+    OnCardHoverEnd: { required: [] },
+    OnTargetLockChanged: { required: [] },
+    OnToggleEXMode: { required: [] },
+    OnToggleOptionalBranch: { required: [] },
+    OnToggleCriticalPreview: { required: [] },
+    OnNeutralAction: { required: ['playerId'] },
+    OnForcePitched: { required: ['playerId'] },
+    OnExceedActivated: { required: ['playerId'] },
+    OnDeckReshuffled: { required: ['playerId'] },
+    OnStrikePhase: { required: ['phase'] },
+    OnStrikeReveal: { required: ['strikeInfo'] },
+    OnSpeedResolved: { required: ['playerId'] },
+    OnStrikeHit: { required: ['playerId'] },
+    OnLethalDetected: { required: ['playerId'] },
+    OnGuardBreak: { required: ['playerId'] },
+    OnStrikePlaybackEnd: { required: [] },
+  });
+  const EVENT_NAMES = Object.freeze(Object.keys(EVENT_SCHEMAS));
   const listeners = new Map();
+
+  function isKnownEvent(event) {
+    return Object.prototype.hasOwnProperty.call(EVENT_SCHEMAS, event);
+  }
 
   function on(event, handler) {
     if (typeof handler !== 'function') return () => {};
@@ -35,5 +59,5 @@ const EventBus = (() => {
     else listeners.clear();
   }
 
-  return { on, off, emit, clear };
+  return { EVENT_SCHEMAS, EVENT_NAMES, isKnownEvent, on, off, emit, clear };
 })();

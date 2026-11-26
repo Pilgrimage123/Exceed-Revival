@@ -20,8 +20,7 @@ function rosterKeys() { return Object.keys(CHARACTERS); }
 // one card in the GG set whose own text grants it, so the character field may be a
 // predicate instead of a boolean.
 function canGoFaceUpWith(char, card) {
-  if (!char || !char.canGoFaceUp) return false;
-  return typeof char.canGoFaceUp === 'function' ? !!char.canGoFaceUp(card) : true;
+  return !!(char && typeof char.canGoFaceUp === 'function' && char.canGoFaceUp(card));
 }
 
 // ---------------- Coach tips: per-decision help, shown once ----------------
@@ -61,21 +60,44 @@ function markCoachSeen(key) {
 // Painting is not reading: several modes repaint many times while the player is still
 // deciding (selecting cards, stepping a stepper), and collapsing the explanation
 // underneath them mid-decision is exactly the wrong moment.
+function isCoachExpanded(key) {
+  if (Object.prototype.hasOwnProperty.call(_coachOverride, key)) return _coachOverride[key];
+  if (G && G.beginner) return true;
+  return !coachSeen(key);
+}
 function coachExpanded(key) {
   if (_coachActiveKey !== key) {
     markCoachSeen(_coachActiveKey);
     _coachActiveKey = key;
   }
-  if (Object.prototype.hasOwnProperty.call(_coachOverride, key)) return _coachOverride[key];
-  if (G && G.beginner) return true;
-  return !coachSeen(key);
+  return isCoachExpanded(key);
 }
 function toggleCoach(key) {
-  const wasExpanded = coachExpanded(key);
+  const wasExpanded = isCoachExpanded(key);
   _coachOverride[key] = !wasExpanded;
   if (wasExpanded) markCoachSeen(key);
   if (typeof render === 'function') render();
 }
+
+const INTERACTION_MODES = new Set([
+  'action_force_select', 'action_gauge_select', 'awaiting_action',
+  'block_force_choice', 'boost', 'boost_bonus_force_select',
+  'boost_force_select', 'boost_select', 'boost_target_choice',
+  'cancel_choice', 'changecards_select', 'changecards_setup',
+  'char_exceed_action_choice', 'char_exceed_strike_choice',
+  'critical_choice', 'decklook_choice', 'defend_select',
+  'discard_to_seven', 'eddie_space_choice', 'face_up_choice',
+  'game_over', 'grasp_choice', 'hadoken_recycle_choice',
+  'may_exceed_choice', 'may_strike_choice', 'move_direction_choice',
+  'move_force_select', 'move_setup', 'mulligan_select',
+  'name_choice', 'name_range_choice', 'named_choice_effect',
+  'optional_force_spend_pow_choice', 'optional_gauge_spend_choice',
+  'optional_retreat_choice', 'overdrive_choice', 'place_eddie_choice',
+  'push_pull_choice', 'range_discard_choice', 'retreat_after_boost_choice',
+  'set_time_option_choice', 'special_move1', 'strike',
+  'strike_result', 'strike_select', 'sustain_choice',
+  'sustain_choice_paid',
+]);
 
 class GameController {
   // aiChar: explicit opponent character key. If omitted, picks randomly from the rest
@@ -192,13 +214,9 @@ class GameController {
   suggestMove(opts = {}) {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
+    const infoSet = this.engine.getInformationSet(p.id);
     const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
-      ? NativeCpuAI.advise('neutral', NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
-          turnNumber: this.engine.turn,
-          activePlayer: 'actor',
-          myBoostMods: this.engine.activeBoostMods(p),
-          oppBoostMods: this.engine.activeBoostMods(opp),
-        }))
+      ? NativeCpuAI.advise('neutral', NativeCpuAI.decisionSnapshot(infoSet))
       : null;
     let action = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeActionToEngineAction)
       ? NativeCpuAI.resolveNativeActionToEngineAction(nativeAdvice.action, p)
@@ -233,12 +251,11 @@ class GameController {
     const p = this.human(), opp = this.ai();
     const oppPublic = publicInfoOf(opp);
     const kind = isDefense ? 'defense' : 'strike';
+    const infoSet = this.engine.getInformationSet(p.id);
     const nativeAdvice = (typeof NativeCpuAI !== 'undefined' && NativeCpuAI.advise)
-      ? NativeCpuAI.advise(kind, NativeCpuAI.decisionSnapshot(p, oppPublic, this.engine.canExceed(p), {
-          turnNumber: this.engine.turn,
+      ? NativeCpuAI.advise(kind, NativeCpuAI.decisionSnapshot({
+          ...infoSet,
           activePlayer: isDefense ? 'opponent' : 'actor',
-          myBoostMods: this.engine.activeBoostMods(p),
-          oppBoostMods: this.engine.activeBoostMods(opp),
         }))
       : null;
     let selection = (nativeAdvice && nativeAdvice.available && nativeAdvice.action && NativeCpuAI.resolveNativeStrikeToEngineSelection)
@@ -325,6 +342,50 @@ class GameController {
     }
   }
 
+  setMode(mode, payload) {
+    if (!INTERACTION_MODES.has(mode)) {
+      throw new Error(`Unknown interaction mode: ${mode}`);
+    }
+    if (this.mode && this.mode !== mode) {
+      markCoachSeen(this.mode);
+      _coachActiveKey = mode;
+    }
+    this.mode = mode;
+    if (payload !== undefined) this.sel = payload;
+    if (mode === 'awaiting_action' || mode === 'game_over') {
+      this._graspAmount = null;
+      this._graspDir = null;
+      this._forcePowSpend = null;
+      this._namedRange = null;
+    }
+  }
+
+  consumeShakeOnRender() {
+    const val = !!this.shakeOnRender;
+    this.shakeOnRender = false;
+    return val;
+  }
+
+  setNamedRange(r) {
+    this._namedRange = Math.max(1, Math.min(8, r | 0));
+    render();
+  }
+
+  setGraspAmount(n) {
+    this._graspAmount = n;
+    render();
+  }
+
+  setGraspDir(dir) {
+    this._graspDir = dir;
+    render();
+  }
+
+  setForcePowSpend(n) {
+    this._forcePowSpend = Math.max(0, n | 0);
+    render();
+  }
+
   human() { return this.engine.P(this.humanId); }
   ai() { return this.engine.P(this.aiId); }
   log(msg, kind, who, extra) { this.engine.logMsg(msg, kind, who, extra); }
@@ -350,9 +411,8 @@ class GameController {
   // Strike would make the suite unusably slow, and the stub can't render the
   // animation anyway (see render.js's captureFlipPositions guard).
   playFx() {
-    const q = this.engine.fxQueue;
     if (typeof document === 'undefined' || !document.querySelectorAll) {
-      q.length = 0;
+      this.engine.clearPendingFx();
       this.currentFx = null;
       render();
       return;
@@ -360,7 +420,8 @@ class GameController {
     if (this.fxPlaying) return; // a step is already in flight; it will pick up the rest
     this.fxPlaying = true;
     const step = () => {
-      if (q.length === 0) {
+      const nextFx = this.engine.shiftPendingFx();
+      if (!nextFx) {
         this.fxPlaying = false;
         this.currentFx = null;
         this._fxTimer = null;
@@ -372,7 +433,7 @@ class GameController {
         }
         return;
       }
-      this.currentFx = q.shift();
+      this.currentFx = nextFx;
       render();
       const deferToStrikeTimeline = this.mode === 'strike_result' &&
         typeof StrikePlaybackController !== 'undefined' &&
@@ -396,7 +457,7 @@ class GameController {
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
     }
-    this.engine.fxQueue.length = 0;
+    this.engine.clearPendingFx();
     this.fxPlaying = false;
     this.currentFx = null;
     render();
@@ -460,7 +521,7 @@ class GameController {
   // Gated strictly on CHARACTERS[key].revertOnNonStrikeTurn so other fighters never revert on non-Strike turns.
   maybeRevertOnNonStrikeEnd(player, isHuman) {
     const char = CHARACTERS[player.characterKey];
-    if (char && char.revertOnNonStrikeTurn && player.exceeded && !player.strikeThisTurn) {
+    if (char && char.revertOnNonStrikeTurn && player.exceeded && !player.turnState.strikeThisTurn) {
       this.engine.doRevert(player);
       this.log(isHuman
         ? 'You Revert to Innate mode (ended turn without Striking).'
@@ -507,8 +568,7 @@ class GameController {
       render();
     } else {
       this.engine.clearAdvantage();
-      this.engine.resetPerTurnFlags(this.ai());
-      this.engine.active = this.aiId;
+      this.engine.beginTurn(this.aiId);
       this.engine.checkStartOfTurnExpiry(this.ai());
       this.startTurnFor(this.aiId, () => {
         this.mode = 'awaiting_action';
@@ -535,8 +595,7 @@ class GameController {
 
   continueAfterStrikeDiscard(nextActive) {
     const player = this.engine.P(nextActive);
-    this.engine.resetPerTurnFlags(player); // Reset per-turn one-shot flags (Ky's firstCancelThisTurn, Sol's canceledThisTurn, Leo's strikeThisTurn)
-    this.engine.active = nextActive;
+    this.engine.beginTurn(nextActive);
     this.startTurnFor(nextActive, () => {
       this.mode = 'awaiting_action';
       render();
@@ -761,7 +820,7 @@ class GameController {
       return;
     }
     if (res.triggersStrike) {
-      player.actionStrikeThisTurn = true; // Mark that this Strike came from a character action
+      player.turnState.actionStrikeThisTurn = true; // Mark that this Strike came from a character action
       this.startStrike();
       this.emitActionCallout(player.id, 'special', actionLbl, 'TRIGGERS STRIKE');
       return;
@@ -943,13 +1002,14 @@ class GameController {
   afterBoostForcePaid() {
     const player = this.human();
     const card = player.hand.find(c => c.uid === this.sel.cardUid);
-    if (card.boost.needsNameChoice) {
+    const choiceKind = card.boost.choice && card.boost.choice.kind;
+    if (choiceKind === 'card_name') {
       const pool = this.opponentUniqueKeys(this.ai().characterKey);
       this.mode = 'name_choice';
       this.sel = { ...this.sel, namePool: pool, promptText: `Name a card (Block): if ${this.ai().name} has it, it's discarded.` };
       return render();
     }
-    if (card.boost.needsNormalNameChoice) {
+    if (choiceKind === 'normal_name') {
       // Named card must come from the DEFENDER's (the opponent, who'll be forced
       // to Strike with it) own Normals pool — not always the base NORMAL_KEYS;
       // see the opponentUniqueKeys comment above for why (Axl's is a completely
@@ -959,13 +1019,13 @@ class GameController {
       this.sel = { ...this.sel, namePool: pool, promptText: 'Name a Normal (Focus Reading): your opponent must defend with it, or reveal their hand.' };
       return render();
     }
-    if (card.boost.needsRangeNameChoice) {
+    if (choiceKind === 'range_name') {
       this._namedRange = 1;
       this.mode = 'name_range_choice';
       this.sel = { ...this.sel, promptText: 'Name a Range (Flying Power Bomb): opponent must discard a card that includes it, or reveal their hand.' };
       return render();
     }
-    if (card.boost.needsBoostTargetChoice) {
+    if (choiceKind === 'boost_target') {
       // Only actually prompt when there's a real choice — 0 targets means Dive does
       // nothing (doBoost proceeds, engine.discardOpponentContinuousBoost no-ops on an
       // empty array), 1 target means there's nothing to choose between, matching the
@@ -982,20 +1042,20 @@ class GameController {
     // most Push/Pull-2 effects elsewhere in this codebase, which are Hit-time and
     // already yield-based; this is a Boost-time choice, resolved up front via
     // `extra` the same way namedCardKey/namedRange/targetBoostUid above are).
-    if (card.boost.needsPushPullChoice) {
+    if (choiceKind === 'push_pull') {
       this.mode = 'push_pull_choice';
       this.sel = { ...this.sel, promptText: `Push or Pull 2 (${card.name})?` };
       return render();
     }
     // Zato-1's Invite Hell boost: "Place Eddie in any space." — same up-front-choice
     // shape again, answered with a board space instead of a direction.
-    if (card.boost.needsEddieSpaceChoice) {
+    if (choiceKind === 'eddie_space') {
       this.mode = 'eddie_space_choice';
       this.sel = { ...this.sel, spaces: this.engine.eddiePlacementSpaces(player, card, true), promptText: `Place Eddie (${card.name}).` };
       return render();
     }
     // Rainwater's boost: "Now: Advance or Retreat 1." — same up-front-choice shape.
-    if (card.boost.needsDirectionChoice) {
+    if (choiceKind === 'direction') {
       this.mode = 'move_direction_choice';
       this.sel = { ...this.sel, promptText: `Advance or Retreat 1 (${card.name})?` };
       return render();
@@ -1006,7 +1066,7 @@ class GameController {
     // GG_NORMALS/AXL's header comments on the GGST set's {0}-cost boosts). Only
     // actually prompts if the player has any spendable Force at all; 0 available
     // just skips straight through with nothing spent, same "don't prompt for a
-    // degenerate choice" precedent as needsBoostTargetChoice above.
+    // degenerate choice" precedent as boost_target above.
     if (card.boost.optionalForceSpend) {
       const maxAllowed = card.boost.optionalForceSpend.max;
       const pool = [...player.hand, ...player.gauge];
@@ -1022,7 +1082,7 @@ class GameController {
     // pattern the others above use, since it needs to peek cards from the deck
     // BEFORE presenting any choice at all, and its resolution can lead to either
     // a Boost OR a Strike rather than always finishing the same way.
-    if (card.boost.needsDeckLookChoice) {
+    if (choiceKind === 'deck_look') {
       return this.startDeckLookChoice(card.boost.peekCount || 3);
     }
     this.doBoost(this.sel.cardUid, this.sel.chosen, null);
@@ -1067,8 +1127,7 @@ class GameController {
     const res = this.engine.playBoost(player, opp, uid, forceUids, extra);
     if (!res.ok) {
       // nothing actually happened — drop the empty round header we just logged.
-      this.engine.log.pop();
-      this.engine.roundNum--;
+      this.engine.cancelRound();
       this.mode = 'awaiting_action'; render(); return;
     }
     const boostCardName = res.card ? res.card.name.toUpperCase() : '';
@@ -1176,7 +1235,7 @@ class GameController {
       const opponent = this.ai();
       const spent = this.engine.spendGauge(player, 1);
       player.discard.push(...spent);
-      player.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
+      player.turnState.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
       const hookResult = this.engine.triggerOnCancelHooks(player, opponent); // Chipp, Ky: respond to Cancel
       this.log('You spend 1 Gauge to Cancel \u2014 take another action.');
       // Ky's Cancel may offer a movement choice
@@ -1241,8 +1300,7 @@ class GameController {
     const player = this.human(), opp = this.ai();
     const res = this.engine.playBoost(player, opp, this.sel.cardUid, this.sel.chosen, null);
     if (!res.ok) {
-      this.engine.log.pop();
-      this.engine.roundNum--;
+      this.engine.cancelRound();
       this.mode = 'awaiting_action'; render(); return;
     }
     const peeked = this.engine.peekTopN(player, n);
@@ -1300,7 +1358,7 @@ class GameController {
         const dSel = this.aiChooseDefense(ai, human);
         if (!dSel) { this.mode = 'game_over'; render(); return; }
         const gaugePay = { [this.humanId]: !!aSel.criticalPaid, [this.aiId]: !!dSel.criticalPaid };
-        human.strikeThisTurn = true; // Leo's Exceed: track that player struck this turn (for "Revert when you end a turn without Striking")
+        human.turnState.strikeThisTurn = true; // Leo's Exceed: track that player struck this turn (for "Revert when you end a turn without Striking")
         const gen = this.engine.resolveStrikeSteps({ initiator: this.humanId, attackerSel: aSel, defenderSel: dSel, gaugePay });
         this.driveStrikeGen(gen, undefined);
       });
@@ -1779,7 +1837,7 @@ class GameController {
       // mirrors human executeCharacterAction so CPU actually executes the Strike and gets
       // actionStrikePowBonus / actionStrikeHitHook.
       if (res && res.triggersStrike) {
-        player.actionStrikeThisTurn = true;
+        player.turnState.actionStrikeThisTurn = true;
         this.emitActionCallout(player.id, 'special', aiActionLbl, 'TRIGGERS STRIKE');
         this.aiInitiateStrike();
         return;
@@ -1892,30 +1950,31 @@ class GameController {
       const uids = need > 0 ? this.pickForceUidsForTarget(player, need, card.uid) : [];
       if (uids) {
         let namedKey = null, namedRange = null, targetBoostUid = null, pushPullDirection = null, moveDirection = null, bonusForceUids = null, eddieSpace = null;
-        if (card.boost.needsNameChoice) namedKey = chooseNamedCardKey({ oppPublic, pool: this.opponentUniqueKeys(opp.characterKey), rng: Math.random, randomness: this.randomness });
-        else if (card.boost.needsNormalNameChoice) namedKey = chooseNamedCardKey({ oppPublic, pool: (CHARACTERS[opp.characterKey].normals || NORMALS).map(c => c.key), rng: Math.random, randomness: this.randomness });
-        else if (card.boost.needsRangeNameChoice) namedRange = chooseRangeToName({ rng: Math.random, randomness: this.randomness, oppPublic: publicInfoOf(opp) });
-        else if (card.boost.needsBoostTargetChoice) {
-          const bestKey = chooseBoostTargetToDiscard({ oppBoostsInPlayKeys: oppPublic.boostsInPlay, rng: Math.random, randomness: this.randomness });
+        const choiceKind = card.boost.choice && card.boost.choice.kind;
+        if (choiceKind === 'card_name') namedKey = chooseNamedCardKey({ oppPublic, pool: this.opponentUniqueKeys(opp.characterKey), rng: Math.random, randomness: this.randomness });
+        else if (choiceKind === 'normal_name') namedKey = chooseNamedCardKey({ oppPublic, pool: (CHARACTERS[opp.characterKey].normals || NORMALS).map(c => c.key), rng: Math.random, randomness: this.randomness });
+        else if (choiceKind === 'range_name') namedRange = chooseRangeToName({ rng: Math.random, randomness: this.randomness, oppPublic: publicInfoOf(opp) });
+        else if (choiceKind === 'boost_target') {
+          const bestKey = chooseBoostTargetToDiscard({ oppBoostsInPlayKeys: oppPublic.boostKeys, rng: Math.random, randomness: this.randomness });
           const entry = bestKey ? opp.boostsInPlay.find(b => b.card.key === bestKey) : null;
           if (entry) targetBoostUid = entry.card.uid;
-        } else if (card.boost.needsPushPullChoice) {
+        } else if (choiceKind === 'push_pull') {
           // Simple heuristic: pull the opponent closer if this player is a
           // "get in range" character (favors low current range), otherwise
           // push away for tempo/breathing room. No deeper lookahead — same
           // simplification level as this file's other direction-choice defaults.
           pushPullDirection = this.engine.range(player, opp) > 3 ? 'pull' : 'push';
-        } else if (card.boost.needsDirectionChoice) {
+        } else if (choiceKind === 'direction') {
           const dist = this.engine.range(player, opp);
           moveDirection = dist <= 2 ? 'retreat' : 'advance';
-        } else if (card.boost.needsEddieSpaceChoice) {
+        } else if (choiceKind === 'eddie_space') {
           eddieSpace = chooseEddieSpace({
             spaces: this.engine.eddiePlacementSpaces(player, card, true),
             opponentPos: opp.pos, selfPos: player.pos,
             handRanges: player.hand.filter(c => c.range).map(c => ({ min: c.range[0], max: c.range[1] })),
             rng: Math.random, randomness: this.randomness,
           });
-        } else if (card.boost.needsDeckLookChoice) {
+        } else if (choiceKind === 'deck_look') {
           this.aiHandleDeckLook(card, uids);
           return;
         }
@@ -1934,7 +1993,7 @@ class GameController {
         this.engine.startRound();
         const extra = { namedCardKey: namedKey, namedRange, targetBoostUid, pushPullDirection, moveDirection, bonusForceUids, eddieSpace };
         const res = this.engine.playBoost(player, opp, card.uid, uids, extra);
-        if (!res.ok) { this.engine.log.pop(); this.engine.roundNum--; this.aiFinishNonStrike(); return; }
+        if (!res.ok) { this.engine.cancelRound(); this.aiFinishNonStrike(); return; }
         if (namedKey) this.log(`CPU's ${card.name} names ${cardNameForKey(namedKey)}.`);
         if (namedRange != null) this.log(`CPU's ${card.name} names Range ${namedRange}.`);
         // Chun-Li's Innate: "After you resolve a Boost, you may Retreat 1" — no real
@@ -1966,7 +2025,7 @@ class GameController {
           if (card.boost.cancelable && this.engine.gaugeCount(player) >= 1 && this.aiShouldCancel(player)) {
             const spent = this.engine.spendGauge(player, 1);
             player.discard.push(...spent);
-            player.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
+            player.turnState.canceledThisTurn = true; // Sol Badguy's Innate/Exceed cares about this
             const hookResult = this.engine.triggerOnCancelHooks(player, opp); // Chipp, Ky: respond to Cancel
             this.log(`CPU spends 1 Gauge to Cancel (${card.name}) \u2014 takes another action.`);
             if (hookResult && hookResult.needsMovementChoice) {
@@ -2018,7 +2077,7 @@ class GameController {
     const player = this.ai(), opp = this.human();
     this.engine.startRound();
     const res = this.engine.playBoost(player, opp, card.uid, uids, null);
-    if (!res.ok) { this.engine.log.pop(); this.engine.roundNum--; this.aiFinishNonStrike(); return; }
+    if (!res.ok) { this.engine.cancelRound(); this.aiFinishNonStrike(); return; }
     const peeked = this.engine.peekTopN(player, card.boost.peekCount || 3);
     const dist = this.engine.range(player, opp);
     const boostMods = this.engine.activeBoostMods(player);
@@ -2066,7 +2125,7 @@ class GameController {
         if (bRes.card.boost.cancelable && this.engine.gaugeCount(player) >= 1 && this.aiShouldCancel(player)) {
           const spent = this.engine.spendGauge(player, 1);
           player.discard.push(...spent);
-          player.canceledThisTurn = true;
+          player.turnState.canceledThisTurn = true;
           const hookResult = this.engine.triggerOnCancelHooks(player, opp);
           this.log(`CPU spends 1 Gauge to Cancel (${bRes.card.name}) \u2014 takes another action.`);
           if (hookResult && hookResult.needsMovementChoice) {
@@ -2111,8 +2170,7 @@ class GameController {
       this.scheduleAITurn(500);
     } else {
       this.engine.clearAdvantage();
-      this.engine.resetPerTurnFlags(this.human());
-      this.engine.active = this.humanId;
+      this.engine.beginTurn(this.humanId);
       this.engine.checkStartOfTurnExpiry(this.human());
       // A suggestion is only valid for the position it was asked about, so it is
       // dropped at the start of each of the player's turns rather than lingering as
@@ -2204,7 +2262,7 @@ class GameController {
     this.maybeAskCritical(human, dSel.card, hideCardName, (paid) => {
       dSel.criticalPaid = paid;
       const gaugePay = { [this.aiId]: !!this.pendingAiAttack.criticalPaid, [this.humanId]: !!dSel.criticalPaid };
-      this.ai().strikeThisTurn = true; // Leo's Exceed: track that AI struck this turn
+      this.ai().turnState.strikeThisTurn = true; // Leo's Exceed: track that AI struck this turn
       const gen = this.engine.resolveStrikeSteps({ initiator: this.aiId, attackerSel: this.pendingAiAttack, defenderSel: dSel, gaugePay });
       this.driveStrikeGen(gen, undefined);
     });

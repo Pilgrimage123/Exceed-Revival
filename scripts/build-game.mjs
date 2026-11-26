@@ -33,7 +33,7 @@ function validateJsSyntax(filename, code) {
 export function ensureCardDslExport() {
   const exportScript = path.join(rootDir, 'scripts', 'export-card-dsl.mjs');
   if (fs.existsSync(exportScript)) {
-    execFileSync(process.execPath, [exportScript], { stdio: 'ignore' });
+    execFileSync(process.execPath, [exportScript], { stdio: 'inherit' });
   }
 }
 

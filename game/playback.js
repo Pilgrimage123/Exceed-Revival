@@ -164,9 +164,10 @@ const StrikePlaybackController = (() => {
         });
         if (step.phase === 'reveal') {
           EventBus.emit('OnStrikeReveal', { strikeInfo: activeStrikeInfo });
-          EventBus.emit('OnSpeedResolved', { winnerId: step.speedWinner, tie: !!step.speedTie });
+          EventBus.emit('OnSpeedResolved', { playerId: step.speedWinner, winnerId: step.speedWinner, tie: !!step.speedTie });
         } else if (step.phase === 'hit') {
           EventBus.emit('OnStrikeHit', {
+            playerId: step.actor,
             actor: step.actor,
             defenderId: step.defenderId,
             damage: step.damageDealt || 0,
@@ -181,11 +182,12 @@ const StrikePlaybackController = (() => {
             criticalPaid: !!step.criticalPaid,
           });
           if (step.confirmedLethal) {
-            EventBus.emit('OnLethalDetected', { winnerId: step.actor });
+            EventBus.emit('OnLethalDetected', { playerId: step.actor, winnerId: step.actor });
             showConfirmedLethalCallout('CHECKMATE');
           }
         } else if (step.phase === 'stunned') {
           EventBus.emit('OnGuardBreak', {
+            playerId: step.actor,
             stunnedPlayerId: step.actor,
             damageDealt: step.damageDealt || 0,
             effectiveGuard: step.effectiveGuard || 0,
@@ -227,15 +229,16 @@ const StrikePlaybackController = (() => {
 
   function skip() {
     if (!activeStrikeInfo || !activeStrikeInfo.timeline) return;
+    const info = activeStrikeInfo;
     const cb = onCompleteCb;
     onCompleteCb = null;
     stop();
     if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.clearCallouts) {
       HitParticleEngine.clearCallouts();
     }
-    activeStepIdx = activeStrikeInfo.timeline.length - 1;
+    activeStepIdx = info.timeline.length - 1;
     const slot = typeof document !== 'undefined' ? document.getElementById('trigger-timeline-slot') : null;
-    if (slot) slot.innerHTML = timelineBarHTML(activeStrikeInfo, activeStepIdx);
+    if (slot) slot.innerHTML = timelineBarHTML(info, activeStepIdx);
     if (typeof cb === 'function') cb();
   }
 
@@ -1736,11 +1739,12 @@ const HitParticleEngine = (() => {
     });
     EventBus.on('OnStrikeHit', (payload) => {
       if (!payload) return;
+      const attId = payload.playerId || payload.actor;
       triggerHit({
         kind: 'hit',
-        actor: payload.actor,
-        attackerId: payload.actor,
-        defenderId: payload.defenderId || (payload.actor === 'p1' ? 'p2' : 'p1'),
+        actor: attId,
+        attackerId: attId,
+        defenderId: payload.defenderId || (attId === 'p1' ? 'p2' : 'p1'),
         damage: payload.damage != null ? payload.damage : 0,
         effectivePower: payload.effectivePower,
         effectiveArmor: payload.effectiveArmor,

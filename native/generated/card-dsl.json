@@ -45,7 +45,9 @@
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsNameChoice": true
+        "choice": {
+          "kind": "card_name"
+        }
       },
       "beforeMove": null
     },
@@ -90,7 +92,9 @@
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsBoostTargetChoice": true
+        "choice": {
+          "kind": "boost_target"
+        }
       },
       "beforeMove": {
         "kind": "advance",
@@ -113,12 +117,15 @@
       "grd": 5,
       "text": "Opponents can't move you. After: Draw 1.",
       "boostText": "Name a Normal and Strike. Opponent must Strike with that card or reveal their hand without it.",
-      "movementImmune": true,
-      "hooks": {},
+      "hooks": {
+        "movementImmune": true
+      },
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsNormalNameChoice": true,
+        "choice": {
+          "kind": "normal_name"
+        },
         "triggersStrike": true
       },
       "beforeMove": null
@@ -163,11 +170,12 @@
       "spd": 3,
       "arm": 0,
       "grd": 4,
-      "ignoreGuard": true,
-      "ignoreArmor": true,
       "text": "Ignore Guard, Armor.",
       "boostText": "+1 Armor, +3 Guard.",
-      "hooks": {},
+      "hooks": {
+        "ignoreArmor": true,
+        "ignoreGuard": true
+      },
       "boost": {
         "force": 0,
         "continuous": true,
@@ -224,7 +232,9 @@
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsNameChoice": true
+        "choice": {
+          "kind": "card_name"
+        }
       },
       "beforeMove": null
     },
@@ -247,7 +257,9 @@
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsPushPullChoice": true,
+        "choice": {
+          "kind": "push_pull"
+        },
         "cancelable": true
       },
       "beforeMove": null
@@ -271,7 +283,9 @@
       "boost": {
         "force": 0,
         "continuous": false,
-        "needsBoostTargetChoice": true,
+        "choice": {
+          "kind": "boost_target"
+        },
         "cancelable": true
       },
       "beforeMove": {
@@ -293,11 +307,12 @@
       "spd": 3,
       "arm": 0,
       "grd": 4,
-      "ignoreGuard": true,
-      "ignoreArmor": true,
       "text": "Ignore Guard, Armor.",
       "boostText": "+4 Guard. At the start of your turn, add this card to your Gauge.",
-      "hooks": {},
+      "hooks": {
+        "ignoreArmor": true,
+        "ignoreGuard": true
+      },
       "boost": {
         "force": 0,
         "continuous": true,
@@ -324,8 +339,9 @@
       "grd": 5,
       "text": "Opponents can't Push or Pull you. After: Draw 1.",
       "boostText": "When you initiate a Strike, the opponent must respond with a Wild Swing.",
-      "movementImmune": true,
-      "hooks": {},
+      "hooks": {
+        "movementImmune": true
+      },
       "boost": {
         "force": 0,
         "continuous": true,
@@ -493,8 +509,9 @@
           "grd": 4,
           "text": "Ignore Armor.\nBefore: Advance 1 or 2. If you Advanced past the opponent, this attack does not hit.",
           "boostText": "[+] Now: Draw 2.\nHit: Advantage.",
-          "ignoreArmor": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": true
@@ -557,7 +574,7 @@
             "statMods": {
               "pow": 1
             },
-            "stunImmuneGrant": true
+            "stunImmune": true
           },
           "beforeMove": null
         },
@@ -577,11 +594,12 @@
           "grd": 0,
           "text": "Attacks at Range 4-5 don't hit you.\nBefore: Close 4.",
           "boostText": "[+] +2 POW.\nNow, Range 1: Push 2 and Strike.",
-          "rangeImmuneRanges": [
-            4,
-            5
-          ],
-          "hooks": {},
+          "hooks": {
+            "rangeImmuneRanges": [
+              4,
+              5
+            ]
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -1035,7 +1053,9 @@
           "grd": 0,
           "text": "Ignore Armor.",
           "boostText": "Look at the opponent's hand, then Strike.",
-          "ignoreArmor": true,
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -1086,8 +1106,9 @@
           "grd": 0,
           "text": "Stun Immunity.\nBefore: If you were hit, +4 POW and you may draw 1-4.",
           "boostText": "Draw 2. Seal this and take another action.",
-          "stunImmuneBase": true,
-          "hooks": {},
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -1186,7 +1207,9 @@
             "force": 0,
             "continuous": false,
             "triggersStrike": true,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -1232,8 +1255,9 @@
           "grd": 0,
           "text": "Ignore Guard.\nBefore: If you are at the edge of the arena, Close 3.",
           "boostText": "If the opponent is at Range 1, Retreat 2 and Strike.",
-          "ignoreGuard": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 1,
             "continuous": false,
@@ -1379,8 +1403,9 @@
           "grd": 5,
           "text": "Ignore Armor.\nAfter: Close 1.",
           "boostText": "[+] +0~1 RNG.\nNow: Strike.",
-          "ignoreArmor": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 1,
             "continuous": true,
@@ -1464,7 +1489,7 @@
               "spd": -2,
               "arm": 4
             },
-            "movementImmuneGrant": true
+            "movementImmune": true
           },
           "beforeMove": null
         },
@@ -1635,7 +1660,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -1729,13 +1756,14 @@
           "grd": 0,
           "text": "Attacks at Range 5+ don't hit you.\nHit: Advantage, then Advance or Retreat up to 8.",
           "boostText": "If the opponent is at Range 1, Push 3 and draw 2.",
-          "rangeImmuneRanges": [
-            5,
-            6,
-            7,
-            8
-          ],
-          "hooks": {},
+          "hooks": {
+            "rangeImmuneRanges": [
+              5,
+              6,
+              7,
+              8
+            ]
+          },
           "boost": {
             "force": 2,
             "continuous": false
@@ -1875,8 +1903,9 @@
           "grd": 0,
           "text": "Ignore Guard.\nHit: The opponent must discard a card at random.\nAfter: Draw 1.",
           "boostText": "[+] Hit: +1 POW, Advantage. Then, add this card to your Gauge.",
-          "ignoreGuard": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -2157,7 +2186,7 @@
           "boost": {
             "force": 1,
             "continuous": true,
-            "stunImmuneGrant": true
+            "stunImmune": true
           },
           "beforeMove": null
         },
@@ -2177,8 +2206,9 @@
           "grd": 0,
           "text": "Stun Immunity. Your life cannot be reduced below 1 during this Strike.\nBefore: If you were hit, +6 POW and Close 8.\nHit: Advance 2.",
           "boostText": "[+] +0~1 RNG, +2 ARM, +2 GRD.",
-          "stunImmuneBase": true,
-          "hooks": {},
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -2208,9 +2238,11 @@
           "grd": 0,
           "text": "Opponents cannot move. Attacks at Range 1 cannot hit you.\nCleanup: Seal this.",
           "boostText": "Draw 2. Seal this and take another action.",
-          "rangeImmuneRanges": [
-            1
-          ],
+          "hooks": {
+            "rangeImmuneRanges": [
+              1
+            ]
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -2249,9 +2281,10 @@
           "grd": 0,
           "text": "Ignore Armor, Guard.\nBefore: Advance 1-2.\nHit: Advantage. You may sustain one of your Continuous Boosts.",
           "boostText": "[+] Hit, Range 2: +2 POW.",
-          "ignoreArmor": true,
-          "ignoreGuard": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true,
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true
@@ -2527,7 +2560,9 @@
           "boost": {
             "force": 0,
             "continuous": true,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -2546,8 +2581,9 @@
           "grd": 3,
           "text": "Ignore Armor.\nHit: The opponent must discard a random card.",
           "boostText": "[+] +1 SPD.\nNow: Look at the top card of your opponent's deck. You may discard it.",
-          "ignoreArmor": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -2632,7 +2668,7 @@
       "innateText": "Innate — Your Normals have \"Hit: You may Push or Pull 1.\"",
       "exceedText": "Exceeded — Your Normals have \"Hit: Draw 1. You may Push or Pull 1.\"",
       "blurb": "Zoning specialist. Normals threaten a free reposition on every hit.",
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "potemkin": {
       "key": "potemkin",
@@ -2737,7 +2773,7 @@
             "statMods": {
               "pow": 1
             },
-            "ignoreArmorGrant": true
+            "ignoreArmor": true
           },
           "beforeMove": {
             "kind": "advance",
@@ -2760,8 +2796,9 @@
           "grd": 3,
           "text": "You cannot be Pushed or Pulled.\nHit: The opponent must discard a random card.",
           "boostText": "[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, add this to your Gauge.",
-          "movementImmune": true,
-          "hooks": {},
+          "hooks": {
+            "movementImmune": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -2818,14 +2855,15 @@
           "grd": 4,
           "text": "Attacks at Range 4+ do not hit you.\nAfter: Close 3, Advantage.",
           "boostText": "[+] +4 ARM.\nNow: Close 1.",
-          "rangeImmuneRanges": [
-            4,
-            5,
-            6,
-            7,
-            8
-          ],
-          "hooks": {},
+          "hooks": {
+            "rangeImmuneRanges": [
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -2869,7 +2907,7 @@
       "innateText": "Innate — When you initiate a Strike at Range 1, +1POW and +1ARM.",
       "exceedText": "Exceeded — When you Exceed, Close 2. When you initiate a Strike at Range 1, +2POW and +2ARM.",
       "blurb": "Grappler with heavy Range-1 payoff.",
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "leo": {
       "key": "leo",
@@ -2897,7 +2935,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -2967,7 +3007,7 @@
             "cancelable": true,
             "force": 0,
             "continuous": true,
-            "stunImmuneGrant": true,
+            "stunImmune": true,
             "nowDraw": 2
           },
           "beforeMove": null
@@ -3019,9 +3059,11 @@
           "grd": 0,
           "text": "Attacks at Range 2 do not hit you.",
           "boostText": "[+] Your Wild Swings have +2 POW.\nNow: Strike.",
-          "rangeImmuneRanges": [
-            2
-          ],
+          "hooks": {
+            "rangeImmuneRanges": [
+              2
+            ]
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -3057,7 +3099,7 @@
       "innateText": "Innate — After: If the opponent is stunned, you may Exceed (at no cost).",
       "exceedText": "Exceeded — Your Wild Swings have +1POW and +1SPD. When you end a turn without Striking, Revert.",
       "blurb": "Bruiser built around Exceed tempo. Exceed grants mobility on normals.",
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "millia": {
       "key": "millia",
@@ -3113,7 +3155,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": true,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -3194,7 +3238,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -3256,7 +3302,7 @@
       "innateText": "Innate — After: If the opponent is stunned, you may draw 1, Advance 2, or Retreat 2.",
       "exceedText": "Exceeded — After: If the opponent is stunned, you may draw 1, Advance 2, Retreat 2, or gain Advantage.",
       "blurb": "Mobile rushdown. Stunning the opponent opens a real choice of payoff.",
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "ryu": {
       "key": "ryu",
@@ -3338,11 +3384,12 @@
           "spd": 3,
           "arm": 0,
           "grd": 6,
-          "ignoreArmor": true,
           "text": "Ignore Armor. Hit: Push 3.",
           "boostText": "Move 1, then take another action.",
           "criticalText": "Critical: +2 Armor.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "critical": {
             "statMods": {
               "arm": 2
@@ -3379,7 +3426,7 @@
             "force": 0,
             "continuous": true,
             "statMods": {},
-            "ignoreArmorGrant": true,
+            "ignoreArmor": true,
             "triggersStrike": true,
             "toGaugeIfHitThisStrike": true
           },
@@ -3502,11 +3549,12 @@
           "spd": 4,
           "arm": 0,
           "grd": 0,
-          "ignoreArmor": true,
           "text": "Ignore Armor. Before: Close 1.",
           "boostText": "Add this card to your Gauge.",
           "criticalText": "Critical: +2 Speed.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "critical": {
             "statMods": {
               "spd": 2
@@ -3895,13 +3943,13 @@
           "grd": 0,
           "text": "Attacks at range 1 don't hit you. Hit: Push or Pull any number of spaces.",
           "boostText": "Attacks at range 1 don't hit you. At the end of your next turn, add this card to your Gauge.",
-          "rangeImmuneRanges": [
-            1
-          ],
           "hooks": {
             "interactiveHit": "grasp_move",
             "moveMin": 0,
-            "moveMax": 8
+            "moveMax": 8,
+            "rangeImmuneRanges": [
+              1
+            ]
           },
           "boost": {
             "force": 0,
@@ -3929,11 +3977,11 @@
           "grd": 0,
           "text": "Attacks at range 4 or 5 don't hit you. Before: Advance as far as possible. Hit: Pull any number of spaces; +1 Power for each space pulled this way.",
           "boostText": "Retreat up to 3, then Strike.",
-          "rangeImmuneRanges": [
-            4,
-            5
-          ],
           "hooks": {
+            "rangeImmuneRanges": [
+              4,
+              5
+            ],
             "interactiveHit": "grasp_move",
             "moveMin": 0,
             "moveMax": 8,
@@ -4042,8 +4090,10 @@
           "text": "Opponents can't move you.",
           "boostText": "Add this card to your Gauge.",
           "criticalText": "Critical, After: Move 1 or 2.",
-          "movementImmune": true,
           "critical": {},
+          "hooks": {
+            "movementImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -4074,7 +4124,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsRangeNameChoice": true
+            "choice": {
+              "kind": "range_name"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -4095,11 +4147,12 @@
           "spd": 4,
           "arm": 0,
           "grd": 0,
-          "ignoreArmor": true,
-          "ignoreGuard": true,
           "text": "Ignore Armor, Guard. Hit: The opponent must discard a card at random.",
           "boostText": "+2 Armor. After: If you were hit this Strike, add this card to your Gauge.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true,
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -4126,8 +4179,9 @@
           "grd": 6,
           "text": "Opponents can't move past you. Before: Close 1. Hit: Draw 2.",
           "boostText": "Advance 1 and draw 3.",
-          "blocksOpponentPassThrough": true,
-          "hooks": {},
+          "hooks": {
+            "blocksOpponentPassThrough": true
+          },
           "boost": {
             "force": 0,
             "continuous": false
@@ -4161,7 +4215,7 @@
             "statMods": {
               "pow": 1
             },
-            "stunImmuneGrant": true,
+            "stunImmune": true,
             "toGaugeIfHitThisStrike": true
           },
           "beforeMove": null
@@ -4195,8 +4249,8 @@
           "text": "If you initiated, +2 POW.\nHit: Advance 2. You may spend [1]. If you do, Advantage.",
           "boostText": "[+] +1 POW\nAfter: If the opponent is stunned, draw 1.",
           "notes": "Opponents can still be stunned if you go second.",
-          "powBonusIfInitiating": 2,
           "hooks": {
+            "powBonusIfInitiating": 2,
             "optionalGaugeSpend": {
               "amount": 1,
               "grantsAdvantage": true
@@ -4209,7 +4263,7 @@
             "statMods": {
               "pow": 1
             },
-            "drawIfOpponentStunnedThisStrike": true
+            "drawIfOpponentStunnedThisStrike": 1
           },
           "beforeMove": null
         },
@@ -4238,7 +4292,9 @@
             "statMods": {
               "spd": 1
             },
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -4304,9 +4360,10 @@
           "grd": 0,
           "text": "Ignore Guard, Armor.\nBefore: Pull 8 without pulling past yourself.\nHit: Advance 2.",
           "boostText": "Spend up to {2}. For each spent, Push 1 and draw 2.",
-          "ignoreGuard": true,
-          "ignoreArmor": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true,
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -4373,7 +4430,7 @@
           }
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "sol": {
       "key": "sol",
@@ -4399,8 +4456,9 @@
           "grd": 4,
           "text": "Ignore Guard.\nBefore: Advance 2.",
           "boostText": "[+] Advance or Retreat up to 2.",
-          "ignoreGuard": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -4540,9 +4598,10 @@
           "grd": 3,
           "text": "Ignore Armor.\nYou cannot be Pushed or Pulled.\nHit: Pull 1, Advantage.",
           "boostText": "[+] Hit: +1 POW.\nAdd this to your Gauge.",
-          "hooks": {},
-          "ignoreArmor": true,
-          "movementImmune": true,
+          "hooks": {
+            "ignoreArmor": true,
+            "movementImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -4604,7 +4663,7 @@
           "beforeMove": null
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "cviper": {
       "key": "cviper",
@@ -4715,7 +4774,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsDiscardBoostChoice": true
+            "choice": {
+              "kind": "discard_boost"
+            }
           },
           "beforeMove": null
         },
@@ -4768,8 +4829,9 @@
           "grd": 0,
           "text": "Ignore Armor.\nHit: Push 8.\nAfter: Close 8.",
           "boostText": "[+] Opponent has +3 POW.\nNow: Draw 3.\nTake another action.",
-          "hooks": {},
-          "ignoreArmor": true,
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -4795,8 +4857,10 @@
           "grd": 0,
           "text": "Stun Immunity.\nIf you do not have any Continuous Boosts in play,\nyour attack does not hit.",
           "boostText": "[+] +3 ARM, +1 GRD.\nCleanup: If you weren't stunned,\nspend {1} to sustain.",
-          "stunImmuneBase": true,
           "noHitWithoutContinuousBoost": true,
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -4872,7 +4936,9 @@
           "boost": {
             "force": 1,
             "continuous": false,
-            "needsDirectionChoice": true,
+            "choice": {
+              "kind": "direction"
+            },
             "triggersStrike": true
           },
           "beforeMove": {
@@ -4902,7 +4968,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -4934,7 +5002,9 @@
           "boost": {
             "force": 2,
             "continuous": false,
-            "needsAnySpaceChoice": true,
+            "choice": {
+              "kind": "any_space"
+            },
             "triggersStrike": true
           },
           "beforeMove": {
@@ -4967,7 +5037,9 @@
           "boost": {
             "force": 1,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -5229,8 +5301,9 @@
           "text": "Ignore Armor.\nBefore: Close 2.",
           "boostText": "[+] If you have 3 or more bonus POW, +3 SPD.",
           "notes": "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-          "ignoreArmor": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": true
@@ -5327,8 +5400,10 @@
           "grd": 0,
           "text": "Ignore Guard.\nCritical, Hit: The opponent must discard 2 cards at random.",
           "boostText": "[+] +1 ARM, +3 GRD.\nAt the end of your next turn, add this card to your Gauge.",
-          "ignoreGuard": true,
           "critical": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -5549,7 +5624,7 @@
           "boost": {
             "force": 0,
             "continuous": true,
-            "ignoreArmorGrant": true,
+            "ignoreArmor": true,
             "triggersStrike": true
           },
           "beforeMove": null
@@ -5651,17 +5726,19 @@
           "grd": 0,
           "text": "Attacks at range 4+ don't hit you.\nAfter: If this attack did not hit the opponent, draw a card and add the top 2 cards of your discard pile to Gauge.",
           "boostText": "[+] Stun Immunity\nNow: Strike.\nHit: Add this card to your Gauge.",
-          "rangeImmuneRanges": [
-            4,
-            5,
-            6,
-            7,
-            8
-          ],
+          "hooks": {
+            "rangeImmuneRanges": [
+              4,
+              5,
+              6,
+              7,
+              8
+            ]
+          },
           "boost": {
             "force": 1,
             "continuous": true,
-            "stunImmuneGrant": true,
+            "stunImmune": true,
             "triggersStrike": true
           },
           "beforeMove": null
@@ -5814,12 +5891,14 @@
           "text": "If you have no cards in hand, ignore this card's Gauge cost.\nAttacks at range 2~5 don't hit you.",
           "boostText": "[+] Hit: If you have no cards in hand, +4 POW.",
           "notes": "Errata: no [+] symbol on first-print copies. It's still a Continuous Boost.",
-          "rangeImmuneRanges": [
-            2,
-            3,
-            4,
-            5
-          ],
+          "hooks": {
+            "rangeImmuneRanges": [
+              2,
+              3,
+              4,
+              5
+            ]
+          },
           "boost": {
             "force": 0,
             "continuous": true
@@ -5915,7 +5994,7 @@
           "boost": {
             "force": 1,
             "continuous": true,
-            "stunImmuneGrant": true,
+            "stunImmune": true,
             "forcesFreeCritical": true
           },
           "beforeMove": null
@@ -6275,7 +6354,6 @@
           }
         }
       ],
-      "canGoFaceUp": true,
       "normalsPool": "standard"
     },
     "chipp": {
@@ -6381,10 +6459,11 @@
           "spd": 2,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nBefore: Close 2.",
           "boostText": "[+] Attacks at Range 1 do not hit you.\nAfter: Add this to your Gauge.",
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -6484,7 +6563,7 @@
           "beforeMove": null
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "ky": {
       "key": "ky",
@@ -6690,7 +6769,7 @@
           "beforeMove": null
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "anji": {
       "key": "anji",
@@ -6724,7 +6803,9 @@
             "statMods": {
               "pow": 1
             },
-            "needsPushPullChoice": true
+            "choice": {
+              "kind": "push_pull"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -6797,11 +6878,12 @@
           "spd": 3,
           "arm": 0,
           "grd": 3,
-          "ignoreGuard": true,
-          "ignoreArmor": true,
           "text": "Ignore Guard, Armor.\nHit: Push 1.",
           "boostText": "[+] +1 ARM, +1 GRD.\nNow: Advance or Retreat 1.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true,
+            "ignoreGuard": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -6810,7 +6892,9 @@
               "arm": 1,
               "grd": 1
             },
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -6877,14 +6961,17 @@
           "spd": 3,
           "arm": 0,
           "grd": 0,
-          "stunImmuneBase": true,
           "text": "Stun Immunity.\nBefore: If you were hit, +6 POW and Close 3.",
           "boostText": "Name a Normal. Strike; the opponent must set that Normal or reveal a hand without it.",
-          "hooks": {},
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsNameChoice": true,
+            "choice": {
+              "kind": "card_name"
+            },
             "triggersStrike": true
           },
           "beforeMove": null
@@ -6896,7 +6983,7 @@
           "force": 1
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "may": {
       "key": "may",
@@ -6930,7 +7017,9 @@
             "statMods": {
               "pow": 1
             },
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": {
             "kind": "close",
@@ -7004,11 +7093,12 @@
           "spd": 3,
           "arm": 0,
           "grd": 0,
-          "ignoreArmor": true,
-          "ignoreGuard": true,
           "text": "Ignore Armor, Guard.\nHit: Push 2. Advantage.",
           "boostText": "[+] Now: Draw 2.\nHit: Advantage.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true,
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -7060,10 +7150,11 @@
           "spd": 1,
           "arm": 0,
           "grd": 0,
-          "stunImmuneBase": true,
           "text": "Stun Immunity.\nAfter: Close 3.",
           "boostText": "Close 3. You may spend {1}. If you do, Strike.",
-          "hooks": {},
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": false,
@@ -7112,7 +7203,7 @@
         },
         "initiatorOnly": true
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "ramlethal": {
       "key": "ramlethal",
@@ -7309,7 +7400,7 @@
           "force": 2
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "nagoriyuki": {
       "key": "nagoriyuki",
@@ -7330,10 +7421,11 @@
           "spd": 4,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nHit: Shuffle 2 cards from your discard pile into your deck.",
           "boostText": "[+] +1 SPD.\nNow: You may spend {1}. If you do, discard another boost from play.",
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -7416,7 +7508,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -7500,7 +7594,7 @@
       "exceedText": "Exceeded — Your Specials are invalid. Your Normals have +1 POW and \"Cleanup: Lose all Armor. Take 2 non-lethal damage.\"",
       "blurb": "Blood Rage samurai. Reshuffling forces him into an Exceed that locks out his own Specials.",
       "canExceedAction": false,
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "baiken": {
       "key": "baiken",
@@ -7623,10 +7717,11 @@
           "spd": 4,
           "arm": 0,
           "grd": 0,
-          "ignoreArmor": true,
           "text": "Ignore Armor.\nIf you have 3 or fewer cards in hand, +2 SPD.",
           "boostText": "[+] +3 POW.\nNow: Draw 1. Take 3 non-lethal damage.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -7656,7 +7751,7 @@
           "boost": {
             "force": 0,
             "continuous": true,
-            "stunImmuneGrant": true
+            "stunImmune": true
           },
           "beforeMove": null
         },
@@ -7702,7 +7797,7 @@
           "exceededBonus": 0.1
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "faust": {
       "key": "faust",
@@ -7804,10 +7899,11 @@
           "spd": 6,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nAfter: If you hit, add this to the opponent’s Boost area, ignoring Now effects, and sustain it.",
           "boostText": "[+] -6 GRD.\nNow: Draw 2.",
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -7857,9 +7953,10 @@
           "arm": 0,
           "grd": 0,
           "text": "Attacks with higher Speed do not hit you.\nBefore: Advance 3.",
-          "hitImmuneToFasterAttacks": true,
           "boostText": "[+] +0~1 RNG.\nBoth players have \"Before: +1 POW\".",
-          "hooks": {},
+          "hooks": {
+            "hitImmuneToFasterAttacks": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -7895,7 +7992,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         }
@@ -7908,7 +8007,7 @@
           "needsDeck": true
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "giovanna": {
       "key": "giovanna",
@@ -7939,7 +8038,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -8122,7 +8223,7 @@
           "exceededBonus": 0.15
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "ino": {
       "key": "ino",
@@ -8179,7 +8280,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -8338,7 +8441,7 @@
           "exceededBonus": 0.1
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "jacko": {
       "key": "jacko",
@@ -8530,7 +8633,7 @@
           "needsContinuousBoostInHand": true
         }
       },
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "happychaos": {
       "key": "happychaos",
@@ -8661,11 +8764,12 @@
           "spd": 5,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nHit: The opponent must discard a card.\nAfter: Seal this.",
           "boostText": "[+] Now: Retreat 1 or 2. You may spend {1}. If you do, Strike.\nHit: Add this to your Gauge.",
           "sealAfterUse": true,
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -8705,7 +8809,7 @@
           "beforeMove": null
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "zato1": {
       "key": "zato1",
@@ -8791,7 +8895,9 @@
             "statMods": {
               "spd": 1
             },
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -8816,7 +8922,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -8833,10 +8941,11 @@
           "spd": 3,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nHit: Pull 2 (toward Zato-1). Draw 2.",
           "boostText": "[+] Attacks at Range 4+ don’t hit you.\nAt the start of your turn, add this to your Gauge.",
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -8872,7 +8981,9 @@
             "cancelable": true,
             "force": 0,
             "continuous": false,
-            "needsEddieSpaceChoice": true
+            "choice": {
+              "kind": "eddie_space"
+            }
           },
           "beforeMove": null
         },
@@ -8890,10 +9001,11 @@
           "spd": 1,
           "arm": 2,
           "grd": 0,
-          "stunImmuneBase": true,
           "text": "Stun Immunity.\nAfter: Draw 3.",
           "boostText": "[+] Now: Strike.\nHit: If the opponent is between you and Eddie, +3 POW.",
-          "hooks": {},
+          "hooks": {
+            "stunImmune": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -8933,7 +9045,7 @@
       ],
       "usesEddie": true,
       "specialsRangeFromEddie": true,
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     },
     "goldlewis": {
       "key": "goldlewis",
@@ -8958,10 +9070,11 @@
           "spd": 2,
           "arm": 0,
           "grd": 6,
-          "ignoreArmor": true,
           "text": "Ignore Armor.\nAfter: Close 2.",
           "boostText": "[+] +0~1 RNG.\nHit: Push or Pull 1.",
-          "hooks": {},
+          "hooks": {
+            "ignoreArmor": true
+          },
           "boost": {
             "cancelable": true,
             "force": 0,
@@ -8983,10 +9096,11 @@
           "spd": 3,
           "arm": 0,
           "grd": 0,
-          "ignoreGuard": true,
           "text": "Ignore Guard.\nHit: The opponent must discard 2 random cards.",
           "boostText": "[+] Attacks at Range 4+ do not hit you.\nAt the start of your turn, Close 2 and discard this.",
-          "hooks": {},
+          "hooks": {
+            "ignoreGuard": true
+          },
           "boost": {
             "force": 0,
             "continuous": true,
@@ -9200,7 +9314,9 @@
           "boost": {
             "force": 0,
             "continuous": false,
-            "needsDirectionChoice": true
+            "choice": {
+              "kind": "direction"
+            }
           },
           "beforeMove": null
         },
@@ -9232,7 +9348,7 @@
           "beforeMove": null
         }
       ],
-      "normalsPool": "standard"
+      "normalsPool": "gg"
     }
   },
   "parity": {

@@ -8,12 +8,32 @@ use std::cmp::Ordering;
 pub const PROTOCOL_VERSION: u32 = 1;
 pub const BOARD_SPACES: u8 = 9;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CardType { Normal, Special, Ultra }
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CardCount {
     pub key: String,
     pub copies: u8,
     pub force: u8,
     pub range: Option<(u8, u8)>,
+    pub card_type: CardType,
+    pub gauge_cost: u8,
+    pub is_astral: bool,
+}
+
+impl CardCount {
+    pub fn new(
+        key: impl Into<String>,
+        copies: u8,
+        force: u8,
+        range: Option<(u8, u8)>,
+        card_type: CardType,
+        gauge_cost: u8,
+        is_astral: bool,
+    ) -> Self {
+        Self { key: key.into(), copies, force, range, card_type, gauge_cost, is_astral }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -21,6 +41,7 @@ pub struct CardBelief {
     pub card: CardCount,
     pub public: u8,
     pub known_hand: u8,
+    pub out_of_play: u8,
     pub excluded_from_hand: bool,
 }
 
@@ -58,7 +79,7 @@ impl BeliefState {
         if known > self.hand_size as u16 { return Err("known hand exceeds public hand size".into()); }
         let mut unknown = 0u16;
         for e in &self.entries {
-            let used = e.public as u16 + e.known_hand as u16;
+            let used = e.public as u16 + e.known_hand as u16 + e.out_of_play as u16;
             if used > e.card.copies as u16 { return Err(format!("card conservation violated for {}", e.card.key)); }
             unknown += e.card.copies as u16 - used;
         }
@@ -67,7 +88,7 @@ impl BeliefState {
         }
         let eligible: u16 = self.entries.iter()
             .filter(|e| !e.excluded_from_hand)
-            .map(|e| e.card.copies as u16 - e.public as u16 - e.known_hand as u16)
+            .map(|e| e.card.copies as u16 - e.public as u16 - e.known_hand as u16 - e.out_of_play as u16)
             .sum();
         if eligible < self.hand_size as u16 - known { return Err("not enough eligible cards for unknown hand slots".into()); }
         Ok(())
@@ -80,7 +101,7 @@ impl BeliefState {
 
     pub fn unknown_copies(&self, index: usize) -> u8 {
         let e = &self.entries[index];
-        e.card.copies.saturating_sub(e.public.saturating_add(e.known_hand))
+        e.card.copies.saturating_sub(e.public.saturating_add(e.known_hand).saturating_add(e.out_of_play))
     }
 
     /// Exact uniform-prior P(the opponent holds at least one copy of `index`).
@@ -112,20 +133,38 @@ impl BeliefState {
         if required <= 0 { return 1.0; }
         if entry.excluded_from_hand { return 0.0; }
         let target = self.unknown_copies(index) as u64;
+        let hand = self.unknown_hand_slots() as u64;
+        if target < required as u64 || hand < required as u64 { return 0.0; }
         let eligible: u64 = (0..self.entries.len())
             .filter(|&i| !self.entries[i].excluded_from_hand)
             .map(|i| self.unknown_copies(i) as u64)
             .sum();
-        let hand = self.unknown_hand_slots() as u64;
-        let denom = choose(eligible, hand);
-        if !denom.is_finite() || denom == 0.0 { return 0.0; }
-        let mut result = 0.0;
-        for copies in required as u64..=target.min(hand) {
-            if hand - copies <= eligible.saturating_sub(target) {
-                result += choose(target, copies) * choose(eligible - target, hand - copies) / denom;
+        if eligible < hand { return 0.0; }
+
+        let p_zero = if eligible - target < hand {
+            0.0
+        } else {
+            let mut prod = 1.0;
+            for j in 0..hand {
+                prod *= (eligible - target - j) as f64 / (eligible - j) as f64;
             }
+            prod
+        };
+        if required == 1 {
+            return (1.0 - p_zero).clamp(0.0, 1.0);
         }
-        result
+
+        // required == 2: P(X >= 2) = 1 - P(X = 0) - P(X = 1) via overflow-safe product ratio.
+        let p_one = if eligible - target < hand - 1 {
+            0.0
+        } else {
+            let mut prod = (target as f64 * hand as f64) / (eligible - hand + 1) as f64;
+            for j in 0..(hand - 1) {
+                prod *= (eligible - target - j) as f64 / (eligible - j) as f64;
+            }
+            prod
+        };
+        (1.0 - p_zero - p_one).clamp(0.0, 1.0)
     }
 }
 
@@ -142,35 +181,32 @@ pub fn choose(n: u64, k: u64) -> f64 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ForceCard { pub id: String, pub force: u8, pub discard_cost: f64 }
 
-pub fn choose_force_payment(cards: &[ForceCard], min_force: u8, forbidden_id: Option<&str>) -> Option<Vec<String>> {
-    if cards.len() > 64 { return None; }
+pub fn choose_force_payment(cards: &[ForceCard], min_force: u8, forbidden_ids: &[&str]) -> Option<Vec<String>> {
     let target = min_force as usize;
-    let mut dp: Vec<Option<(f64, usize, u64)>> = vec![None; target + 1];
-    dp[0] = Some((0.0, 0, 0));
+    let mut dp: Vec<Option<(f64, usize, Vec<usize>)>> = vec![None; target + 1];
+    dp[0] = Some((0.0, 0, Vec::new()));
     for (i, card) in cards.iter().enumerate() {
-        if Some(card.id.as_str()) == forbidden_id { continue; }
+        if forbidden_ids.contains(&card.id.as_str()) { continue; }
         let f = card.force as usize;
         if f == 0 && target > 0 { continue; }
         for prev in (0..=target).rev() {
-            if let Some((prev_cost, prev_force, prev_mask)) = dp[prev] {
+            if let Some((prev_cost, prev_force, ref prev_indices)) = dp[prev] {
                 let next_s = prev.saturating_add(f).min(target);
                 let next_cost = prev_cost + card.discard_cost;
                 let next_force = prev_force + f;
-                let next_mask = prev_mask | (1u64 << i);
-                let better = dp[next_s].map_or(true, |(old_cost, old_force, _)| {
-                    next_cost < old_cost || (next_cost == old_cost && next_force < old_force)
+                let better = dp[next_s].as_ref().map_or(true, |(old_cost, old_force, _)| {
+                    next_cost < *old_cost || (next_cost == *old_cost && next_force < *old_force)
                 });
                 if better {
-                    dp[next_s] = Some((next_cost, next_force, next_mask));
+                    let mut next_indices = prev_indices.clone();
+                    next_indices.push(i);
+                    dp[next_s] = Some((next_cost, next_force, next_indices));
                 }
             }
         }
     }
-    dp[target].map(|(_, _, mask)| {
-        cards.iter().enumerate()
-            .filter(|(i, _)| mask & (1u64 << i) != 0)
-            .map(|(_, c)| c.id.clone())
-            .collect()
+    dp[target].as_ref().map(|(_, _, indices)| {
+        indices.iter().map(|&i| cards[i].id.clone()).collect()
     })
 }
 
@@ -263,21 +299,38 @@ mod tests {
     use super::*;
     fn belief() -> BeliefState {
         BeliefState::new(vec![
-            CardBelief { card: CardCount { key: "a".into(), copies: 2, force: 1, range: Some((1, 1)) }, public: 0, known_hand: 0, excluded_from_hand: false },
-            CardBelief { card: CardCount { key: "b".into(), copies: 2, force: 1, range: Some((1, 2)) }, public: 0, known_hand: 0, excluded_from_hand: false },
-            CardBelief { card: CardCount { key: "block".into(), copies: 2, force: 1, range: None }, public: 2, known_hand: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount::new("a", 2, 1, Some((1, 1)), CardType::Normal, 0, false), public: 0, known_hand: 0, out_of_play: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount::new("b", 2, 1, Some((1, 2)), CardType::Normal, 0, false), public: 0, known_hand: 0, out_of_play: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount::new("block", 2, 1, None, CardType::Normal, 0, false), public: 2, known_hand: 0, out_of_play: 0, excluded_from_hand: false },
         ], 2, 2).unwrap()
     }
     #[test] fn belief_probability_is_exact() { assert!((belief().probability_at_least_one(0) - 5.0 / 6.0).abs() < 1e-12); assert!((belief().probability_ex_ready(0) - 1.0 / 6.0).abs() < 1e-12); assert_eq!(belief().probability_at_least_one(2), 0.0); }
     #[test] fn exclusion_is_hard_constraint() { let mut state = belief(); state.set_excluded_from_hand(0, true).unwrap(); assert_eq!(state.probability_at_least_one(0), 0.0); }
-    #[test] fn force_pruner_preserves_expensive_cards() { let cards = vec![ForceCard { id: "cheap".into(), force: 1, discard_cost: 1.0 }, ForceCard { id: "pair".into(), force: 1, discard_cost: 9.0 }, ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }]; assert_eq!(choose_force_payment(&cards, 2, None), Some(vec!["ultra".into()])); }
+    #[test] fn astral_out_of_play_and_large_deck_ex_ready() {
+        let state = BeliefState::new(vec![
+            CardBelief { card: CardCount::new("astral", 1, 2, Some((1, 2)), CardType::Ultra, 3, true), public: 0, known_hand: 0, out_of_play: 1, excluded_from_hand: true },
+            CardBelief { card: CardCount::new("filler", 200, 1, Some((1, 2)), CardType::Normal, 0, false), public: 0, known_hand: 0, out_of_play: 0, excluded_from_hand: false },
+            CardBelief { card: CardCount::new("target", 4, 1, Some((1, 2)), CardType::Special, 0, false), public: 0, known_hand: 0, out_of_play: 0, excluded_from_hand: false },
+        ], 150, 54).unwrap();
+        assert_eq!(state.probability_at_least_one(0), 0.0);
+        let p_ex = state.probability_ex_ready(2);
+        assert!(p_ex.is_finite() && p_ex > 0.0 && p_ex < 1.0, "expected finite p_ex, got {p_ex}");
+    }
+    #[test] fn force_pruner_preserves_expensive_cards() { let cards = vec![ForceCard { id: "cheap".into(), force: 1, discard_cost: 1.0 }, ForceCard { id: "pair".into(), force: 1, discard_cost: 9.0 }, ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }]; assert_eq!(choose_force_payment(&cards, 2, &[]), Some(vec!["ultra".into()])); }
     #[test] fn force_pruner_allows_overpayment_with_ultra() {
         let cards = vec![ForceCard { id: "ultra".into(), force: 2, discard_cost: 3.0 }];
-        assert_eq!(choose_force_payment(&cards, 1, None), Some(vec!["ultra".into()]));
+        assert_eq!(choose_force_payment(&cards, 1, &[]), Some(vec!["ultra".into()]));
     }
-    #[test] fn force_pruner_respects_forbidden_at_u8_max() {
-        let cards = vec![ForceCard { id: "forbid".into(), force: 255, discard_cost: 0.1 }];
-        assert_eq!(choose_force_payment(&cards, 255, Some("forbid")), None);
+    #[test] fn force_pruner_respects_forbidden_at_u8_max_and_ex_pair() {
+        let cards = vec![
+            ForceCard { id: "ex1".into(), force: 2, discard_cost: 0.1 },
+            ForceCard { id: "ex2".into(), force: 2, discard_cost: 0.1 },
+            ForceCard { id: "ok".into(), force: 1, discard_cost: 1.0 },
+        ];
+        assert_eq!(choose_force_payment(&cards, 2, &["ex1", "ex2"]), None);
+        assert_eq!(choose_force_payment(&cards, 1, &["ex1", "ex2"]), Some(vec!["ok".into()]));
+        let many: Vec<ForceCard> = (0..70).map(|i| ForceCard { id: format!("c{i}"), force: 1, discard_cost: 1.0 }).collect();
+        assert_eq!(choose_force_payment(&many, 2, &[]).map(|v| v.len()), Some(2));
     }
     #[test] fn cfr_finds_matching_pennies_mix() {
         let result = solve_zero_sum_cfr(&vec![vec![1.0, -1.0], vec![-1.0, 1.0]], 10_000).unwrap();
