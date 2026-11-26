@@ -333,6 +333,7 @@
   .cell.band-lit.band-self{box-shadow:0 0 0 2px var(--you) inset, 0 0 0 4px var(--cpu) inset;}
   .range-chip{display:inline-block;font-size:10.5px;font-weight:800;border-radius:5px;padding:1px 5px;margin-left:4px;}
   .range-chip.in{background:rgba(74,222,128,.18);color:var(--good);}
+  .range-chip.in.move-hit{background:rgba(77,230,209,.2);color:var(--you);border:1px solid rgba(77,230,209,.45);}
   .range-chip.out{background:rgba(248,113,113,.18);color:var(--bad);}
 
   .breakdown{margin:8px 0;}
@@ -987,32 +988,69 @@
   .ghost-label{font-size:10px;font-weight:900;letter-spacing:.4px;color:var(--you);background:rgba(9,13,22,.9);padding:2px 6px;border-radius:4px;border:1px solid rgba(77,230,209,.5);}
   .telegraph-ghost.crossed-up .ghost-label{color:#f7c65a;border-color:rgba(247,198,90,.6);}
   .telegraph-after-ghost{position:absolute;left:6px;right:6px;bottom:6px;height:27%;min-height:30px;max-height:68px;border:2px dashed rgba(96,165,250,.85);background:rgba(59,130,246,.16);border-radius:7px;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;z-index:5;}
-  .telegraph-after-ghost span{font-size:9px;font-weight:800;color:#bfdbfe;background:rgba(9,13,22,.88);padding:1px 4px;border-radius:3px;margin-bottom:2px;}
-  .telegraph-whiff-tag{position:absolute;bottom:calc(31% + 10px);left:50%;transform:translateX(-50%);background:#ff4d5e;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:4px;z-index:9;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,.65);}
+  .telegraph-after-ghost span{font-size:9px;font-weight:800;color:#bfdbfe;background:rgba(9,13,22,.9);padding:1px 4px;border-radius:3px;margin-bottom:2px;white-space:nowrap;}
+  .telegraph-opp-ghost{position:absolute;left:5px;right:5px;bottom:5px;height:29%;min-height:32px;max-height:70px;border:2px dashed rgba(255,140,66,.92);background:rgba(255,140,66,.18);border-radius:7px;display:flex;align-items:flex-end;justify-content:center;pointer-events:none;z-index:6;}
+  .telegraph-opp-ghost span{font-size:9px;font-weight:800;color:#ffd0a6;background:rgba(9,13,22,.92);padding:1px 4px;border-radius:3px;margin-bottom:2px;white-space:nowrap;}
+  .telegraph-eddie-tag{position:absolute;top:18px;left:50%;transform:translateX(-50%);background:rgba(167,139,250,.95);color:#0d0b1a;font-size:8.5px;font-weight:900;padding:1px 5px;border-radius:4px;z-index:9;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,.6);}
+  .telegraph-impact-tag{position:absolute;top:16px;left:50%;transform:translateX(-50%);font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:9.5px;font-weight:900;padding:2px 6px;border-radius:4px;z-index:10;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,.72);pointer-events:none;}
+  .telegraph-impact-tag.is-hit{background:#122b23;color:#6ef5a8;border:1px solid #4ade80;}
+  .telegraph-impact-tag.is-lethal{background:#47121c;color:#ff8a95;border:1.5px solid #ff5f6d;}
+  .telegraph-impact-tag.is-zero{background:#1b2336;color:#cbd5e1;border:1px solid #64748b;}
+  .telegraph-impact-tag.is-var{background:#33260f;color:#f7c65a;border:1px solid #f7c65a;}
+  .telegraph-whiff-tag{position:absolute;bottom:calc(31% + 10px);left:50%;transform:translateX(-50%);background:#b91c2c;color:#fff;font-size:9px;font-weight:900;padding:2px 6px;border-radius:4px;border:1px solid rgba(255,155,165,.7);z-index:10;white-space:nowrap;box-shadow:0 3px 10px rgba(0,0,0,.7);pointer-events:none;}
   .telegraph-spline-svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:5;overflow:visible;filter:drop-shadow(0 2px 4px rgba(0,0,0,.7));}
   .telegraph-spline-svg path.spline-before{fill:none;stroke:var(--you);stroke-width:3.2;stroke-linecap:round;stroke-dasharray:6 4;opacity:.95;}
   .telegraph-spline-svg path.spline-before.crossup{stroke:#f7c65a;stroke-width:3.8;}
-  .telegraph-spline-svg path.spline-after{fill:none;stroke:#60a5fa;stroke-width:2.6;stroke-dasharray:3 4;opacity:.85;}
+  .telegraph-spline-svg path.spline-after{fill:none;stroke:#60a5fa;stroke-width:2.6;stroke-dasharray:3 4;opacity:.9;}
+  .telegraph-spline-svg path.spline-opp-push{fill:none;stroke:#ff8c42;stroke-width:2.8;stroke-dasharray:5 3;opacity:.95;}
   @keyframes ghostPulse{0%,100%{opacity:.95}50%{opacity:.65}}
 
   #clash-banner-slot{min-height:0;margin:6px 0;}
-  .clash-banner{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;background:linear-gradient(90deg,rgba(77,230,209,.12),rgba(20,26,40,.95) 48%,rgba(255,95,109,.12));border:1.5px solid var(--line);border-radius:10px;padding:7px 12px;font-size:12px;}
-  .clash-side{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .clash-banner{display:flex;flex-direction:column;gap:4px;background:linear-gradient(90deg,rgba(77,230,209,.12),rgba(20,26,40,.96) 48%,rgba(255,95,109,.12));border:1.5px solid var(--line);border-radius:10px;padding:6px 11px;font-size:12px;}
+  .clash-banner.is-lethal{border-color:rgba(255,95,109,.75);}
+  .clash-banner.is-miss{border-color:rgba(248,113,113,.5);}
+  .clash-top-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+  .clash-detail-row{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding-top:3px;border-top:1px solid rgba(148,163,184,.16);font-size:11px;color:#cbd5e1;}
+  .clash-detail-left,.clash-detail-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .clash-detail-item{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;color:#dbe2f3;}
+  .clash-detail-item.clash-move{color:#93e9de;}
+  .clash-detail-item.clash-fx{color:#fcd37a;}
+  .clash-card-name{font-weight:800;color:#ffffff;font-size:12px;}
+  .clash-side{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
   .clash-vs{font-weight:900;color:var(--text-dim);font-size:11px;letter-spacing:1px;}
   .clash-badge{font-size:10px;font-weight:900;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.4px;}
   .clash-badge.striker{background:rgba(77,230,209,.2);color:var(--you);border:1px solid var(--you);}
   .clash-badge.defender{background:rgba(148,163,184,.18);color:var(--text-dim);border:1px solid var(--line);}
   .clash-pill{font-size:10.5px;font-weight:800;padding:2px 6px;border-radius:5px;}
+  .clash-pill.hit{background:rgba(74,222,128,.18);color:#6ef5a8;border:1px solid rgba(74,222,128,.45);}
   .clash-pill.lethal{background:rgba(255,95,109,.18);color:#ff5f6d;border:1.5px dashed #ff5f6d;}
-  .clash-pill.whiff{background:rgba(255,95,109,.2);color:#ff8a95;}
+  .clash-pill.whiff{background:rgba(255,95,109,.22);color:#ff9aa3;border:1px solid rgba(255,95,109,.4);}
   .clash-pill.var{background:rgba(247,198,90,.2);color:#f7c65a;border:1px solid #f7c65a;}
   .clash-pill.ex{background:rgba(247,198,90,.2);color:#f7c65a;}
-  .clash-toggle{font-size:11px;font-weight:700;padding:3px 8px;min-height:0;border-radius:6px;border:1px solid var(--you);background:rgba(77,230,209,.1);color:var(--you);cursor:pointer;}
+  .clash-pill.crit{background:rgba(255,204,77,.24);color:#ffd66b;border:1px solid rgba(255,204,77,.6);}
+  .clash-pill.guard-break{background:rgba(251,146,60,.2);color:#fdba74;border:1px solid rgba(251,146,60,.45);font-size:9.5px;padding:1px 5px;}
+  .clash-dmg{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11.5px;color:#edf2fc;}
+  .clash-life-loss{font-style:normal;font-weight:900;color:#ff8a95;}
+  .clash-life-loss.lethal{color:#ff4d5e;}
+  .clash-life-miss{font-style:normal;color:var(--text-dim);}
+  .clash-self-hp{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;font-weight:800;padding:1px 5px;border-radius:4px;}
+  .clash-self-hp.heal{background:rgba(74,222,128,.16);color:#6ef5a8;}
+  .clash-self-hp.dmg{background:rgba(248,113,113,.18);color:#fca5a5;}
+  .clash-toggle{font-size:10.5px;font-weight:700;padding:2px 7px;min-height:0;border-radius:5px;border:1px solid var(--you);background:rgba(77,230,209,.1);color:var(--you);cursor:pointer;}
   .clash-toggle.active{background:var(--you);color:#0f1218;}
+  .clash-toggle.crit-toggle{border-color:#f7c65a;background:rgba(247,198,90,.12);color:#f7c65a;}
+  .clash-toggle.crit-toggle.active{background:#f7c65a;color:#0f1218;}
   .tag-ignore{font-style:normal;font-size:10px;font-weight:800;color:#f7c65a;margin-left:4px;}
 
   .life-bar-track{position:relative;overflow:hidden;}
   .opp-projected-dmg{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(-45deg,rgba(255,95,109,.8),rgba(255,95,109,.8) 4px,rgba(120,20,30,.7) 4px,rgba(120,20,30,.7) 8px);width:0%;transition:width .12s ease;pointer-events:none;z-index:2;}
+  .opp-projected-life,.you-projected-life{display:none;margin-left:5px;font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;font-weight:800;padding:0 5px;border-radius:4px;}
+  .opp-projected-life.visible{display:inline-block;background:rgba(255,95,109,.18);color:#ff9aa3;border:1px solid rgba(255,95,109,.45);}
+  .opp-projected-life.visible.is-lethal{background:rgba(255,75,95,.28);color:#ffb3bc;border-color:#ff5f6d;}
+  .opp-projected-life.visible.is-miss{background:rgba(148,163,184,.16);color:#94a3b8;border-color:rgba(148,163,184,.35);}
+  .opp-projected-life.visible.is-zero{background:rgba(148,163,184,.16);color:#cbd5e1;border-color:rgba(148,163,184,.35);}
+  .you-projected-life.visible.is-heal{display:inline-block;background:rgba(74,222,128,.18);color:#6ef5a8;border:1px solid rgba(74,222,128,.45);}
+  .you-projected-life.visible.is-dmg{display:inline-block;background:rgba(248,113,113,.2);color:#fca5a5;border:1px solid rgba(248,113,113,.45);}
   .opp-public-lethal-skull{display:none;margin-left:6px;padding:1px 6px;border:1.5px dashed #ff5f6d;border-radius:6px;color:#ff5f6d;font-size:11px;font-weight:900;background:rgba(255,95,109,.1);}
   .opp-public-lethal-skull.visible{display:inline-flex;align-items:center;gap:3px;}
 
@@ -1272,9 +1310,30 @@
   }
   .arena-stage-band .cell.telegraph-hitbox{background:transparent;box-shadow:none;}
   .arena-stage-band .cell.telegraph-hitbox .cell-floor-pad{
-    background:linear-gradient(180deg, rgba(255,75,95,.38) 0%, rgba(255,55,80,.62) 100%);
+    background:linear-gradient(180deg, rgba(255,75,95,.36) 0%, rgba(255,55,80,.58) 100%);
     border-color:#ff5f6d;
-    box-shadow:inset 0 0 0 2px #ff5f6d, 0 0 18px rgba(255,75,95,.62);
+    box-shadow:inset 0 0 0 2px #ff5f6d, 0 0 18px rgba(255,75,95,.58);
+  }
+  .arena-stage-band .cell.telegraph-hitbox.telegraph-hitbox-miss .cell-floor-pad{
+    background:linear-gradient(180deg, rgba(248,113,113,.2) 0%, rgba(185,28,44,.34) 100%);
+    border-color:rgba(248,113,113,.65);
+    box-shadow:inset 0 0 0 1.5px rgba(248,113,113,.65);
+  }
+  .arena-stage-band .cell.telegraph-target-hit .cell-floor-pad{
+    background:linear-gradient(180deg, rgba(74,222,128,.34) 0%, rgba(34,197,94,.52) 100%);
+    border-color:#4ade80;
+    box-shadow:inset 0 0 0 2.5px #4ade80, 0 0 20px rgba(74,222,128,.55);
+  }
+  .arena-stage-band .cell.telegraph-target-miss .cell-floor-pad{
+    border-color:rgba(248,113,113,.8);
+    box-shadow:inset 0 0 0 2px rgba(248,113,113,.75);
+  }
+  .arena-stage-band .cell.telegraph-eddie-origin .cell-floor-pad{
+    box-shadow:inset 0 0 0 2px #a78bfa, 0 0 14px rgba(167,139,250,.55);
+    border-color:#a78bfa;
+  }
+  .arena-stage-band .cell.telegraph-opp-after .cell-floor-pad{
+    box-shadow:inset 0 0 0 2px rgba(255,140,66,.9);
   }
   .arena-stage-band .cell.telegraph-after-space .cell-floor-pad{
     box-shadow:inset 0 0 0 2px rgba(96,165,250,.85);
@@ -1540,13 +1599,35 @@
   .inspector-attack-text{font-size:12.5px;line-height:1.45;color:#dbe2f3;margin-bottom:6px;}
   .inspector-critical-text{font-size:12px;line-height:1.4;color:#ffcf6b;margin-bottom:6px;}
   .inspector-boost-box{background:#181e30;border:1px solid #2e3b5c;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.4;color:#e3d6ff;margin-bottom:6px;}
-  .inspector-preview-box{background:#0d1a20;border:1px solid #235c55;border-radius:6px;padding:6px 8px;font-size:11.5px;}
-  .inspector-preview-head{display:flex;align-items:center;gap:6px;font-weight:800;color:var(--you);margin-bottom:3px;}
-  .inspector-preview-stats{font-family:'JetBrains Mono',monospace;font-size:11px;color:#dbe2f3;}
+  .inspector-preview-box{background:#0d1a20;border:1px solid #235c55;border-radius:6px;padding:7px 9px;font-size:11.5px;display:flex;flex-direction:column;gap:5px;}
+  .inspector-preview-box.is-miss{border-color:rgba(248,113,113,.5);background:#1a1219;}
+  .inspector-preview-box.is-lethal{border-color:#ff5f6d;background:#201119;}
+  .inspector-preview-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-weight:800;color:var(--you);}
+  .insp-pv-role{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;background:rgba(148,163,184,.14);padding:1px 5px;border-radius:4px;}
+  .inspector-preview-stats{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;color:#dbe2f3;}
+  .insp-stat-wrap{display:inline-flex;align-items:center;gap:2px;}
+  .insp-pv-delta{font-size:9.5px;font-weight:900;padding:0 3px;border-radius:3px;}
+  .insp-pv-delta.up{background:rgba(74,222,128,.2);color:#6ef5a8;}
+  .insp-pv-delta.down{background:rgba(248,113,113,.2);color:#fca5a5;}
+  .insp-pv-rows{display:flex;flex-direction:column;gap:3px;font-size:11px;line-height:1.35;}
+  .insp-pv-row{display:flex;align-items:baseline;gap:6px;}
+  .insp-pv-k{flex:0 0 38px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#8c9bc0;}
+  .insp-pv-v{flex:1 1 auto;color:#e4ebf8;font-variant-numeric:tabular-nums;}
+  .insp-pv-loss{font-weight:800;color:#ff8a95;}
+  .insp-pv-loss.is-lethal{color:#ff4d5e;}
+  .insp-pv-formula{font-family:'JetBrains Mono',monospace;font-size:10px;color:#94a3b8;}
+  .insp-pv-muted{color:#94a3b8;}
+  .insp-pv-gb{font-size:9.5px;font-weight:800;color:#fdba74;background:rgba(251,146,60,.16);padding:0 4px;border-radius:3px;margin-left:3px;}
+  .insp-pv-self.heal{color:#6ef5a8;font-weight:800;}
+  .insp-pv-self.dmg{color:#fca5a5;font-weight:800;}
+  .insp-pv-toggles{display:flex;flex-wrap:wrap;gap:5px;margin-top:2px;}
+  .insp-pv-note{font-size:10px;color:#7f90b4;border-top:1px solid rgba(148,163,184,.14);padding-top:3px;}
   .insp-tag{font-size:10px;font-weight:800;padding:1px 5px;border-radius:4px;}
   .insp-tag.in-range{background:rgba(74,222,128,.18);color:var(--good);}
   .insp-tag.whiff{background:rgba(248,113,113,.2);color:var(--bad);}
   .insp-tag.lethal{background:rgba(255,95,109,.22);color:#ff5f6d;border:1px solid #ff5f6d;}
+  .insp-tag.var{background:rgba(247,198,90,.2);color:#f7c65a;border:1px solid rgba(247,198,90,.6);}
+  .insp-tag.crit{background:rgba(255,204,77,.22);color:#ffd66b;border:1px solid rgba(255,204,77,.55);}
   .inspector-idle-prompt{font-size:12px;color:var(--text-dim);line-height:1.45;margin-top:6px;}
   .inspector-dual-cards{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-bottom:8px;}
   .inspector-dual-col{background:#171e2e;border:1px solid #2d3a58;border-radius:6px;padding:6px 8px;font-size:11.5px;min-width:0;overflow:hidden;}
@@ -1843,7 +1924,10 @@
     .arena-turn-state{font-size:12px;}
     .arena-round-label,.arena-spacing-meta{font-size:9.5px;}
     .clash-banner-reserved{min-height:0;margin:0;}
-    .clash-banner{padding:2px 6px;font-size:9.5px;gap:2px 6px;flex-wrap:wrap;justify-content:center;overflow-x:visible;border-radius:6px;}
+    .clash-banner{padding:2px 6px;font-size:9.5px;gap:2px;border-radius:6px;}
+    .clash-top-row{gap:2px 5px;justify-content:center;}
+    .clash-detail-row{padding-top:2px;gap:4px;font-size:9px;justify-content:center;}
+    .clash-detail-item{font-size:9px;}
     .clash-side{gap:4px;flex-wrap:wrap;justify-content:center;white-space:normal;}
     .clash-badge,.clash-pill{font-size:9px;padding:1px 4px;}
     .clash-toggle{font-size:9.5px;padding:1px 5px;}
@@ -1861,7 +1945,10 @@
     .telegraph-ghost{left:2px;right:2px;bottom:2px;height:34%;min-height:24px;border-radius:5px;}
     .ghost-label{font-size:8px;padding:1px 3px;}
     .telegraph-whiff-tag{font-size:8px;padding:1px 4px;bottom:calc(34% + 5px);}
+    .telegraph-impact-tag{font-size:8px;padding:1px 4px;top:12px;}
+    .telegraph-opp-ghost span,.telegraph-after-ghost span{font-size:7.5px;padding:0 3px;}
     .telegraph-wall-chevron{font-size:8px;padding:0 3px;}
+    .opp-projected-life,.you-projected-life{font-size:9.5px;padding:0 3px;margin-left:3px;}
     .arena-stage-band .range-readout,.arena-range-bar{margin:0;padding:1px 6px;font-size:10px;gap:5px;line-height:1.15;}
     .arena-eddie-readout{font-size:9.5px;}
     .arena-move-hint{display:none;}
@@ -2634,8 +2721,9 @@
   .full-card-live-label{font-size:11px;font-weight:800;color:var(--you);text-transform:uppercase;letter-spacing:.04em;}
   .full-card-live-tags{display:inline-flex;align-items:center;gap:4px;}
   .full-card-live-stats{display:flex;flex-wrap:wrap;align-items:center;gap:4px;}
-  .full-card-live-dmg{font-family:'JetBrains Mono',monospace;font-size:11px;color:#dbe2f3;margin-left:auto;}
+  .full-card-live-dmg{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:11px;color:#dbe2f3;margin-left:auto;}
   .full-card-live-dmg b{color:#ffffff;}
+  .full-card-live-move{font-family:'JetBrains Mono',monospace;font-variant-numeric:tabular-nums;font-size:10.5px;color:#93e9de;border-top:1px solid rgba(148,163,184,.16);padding-top:4px;}
 
   .full-card-split{
     display:flex;align-items:center;gap:8px;padding:0 16px;
@@ -11106,6 +11194,11 @@ class Engine {
     ];
   }
 
+  canPayForce(player, cost, excludeUid = null) {
+    if (!player || cost <= 0) return true;
+    return this.pickExactForceCards(player, cost, excludeUid) != null;
+  }
+
   // Vega's Bloody High Claw boost: "your attacks are Critical" — a continuous
   // boost that makes EVERY attack card this player sets Critical for free
   // (no Gauge spent, no prompt). Checked by ui.js's maybeAskCritical/
@@ -13278,6 +13371,8 @@ class Engine {
         base.handKeys = mapZoneKeys(p.hand);
         base.knownDeckTop = Array.isArray(p.knownDeckTop) ? p.knownDeckTop.slice() : [];
         base.knownDeckBottom = Array.isArray(p.knownDeckBottom) ? p.knownDeckBottom.slice() : [];
+        base.canceledThisTurn = !!p.canceledThisTurn;
+        base.actionStrikeThisTurn = !!p.actionStrikeThisTurn;
       } else {
         base.revealedHand = p.revealedHand ? { ...p.revealedHand, keys: p.revealedHand.keys.slice() } : null;
         base.observations = p.aiObs ? p.aiObs.slice() : null;
@@ -13339,20 +13434,43 @@ const SimulateStrikePreview = (() => {
     return _cardIndex[key] || null;
   }
 
-  function makeSimPlayer(pub, isActor) {
+  function forceValueOfCard(card) {
+    return card && card.type === 'ultra' ? 2 : 1;
+  }
+
+  function readNumericBonus(val) {
+    if (typeof val === 'number' && Number.isFinite(val)) return val;
+    if (val && typeof val.max === 'number' && Number.isFinite(val.max)) return val.max;
+    return 0;
+  }
+
+  function makeSimPlayer(pub, isActor, playedCardKey, isEX) {
     const boosts = (pub.boostKeys || []).map((k) => ({ card: resolveCardByKey(k) || { key: k, boost: {} } }));
     const gauge = (pub.gaugeKeys || []).map((k) => resolveCardByKey(k) || { key: k, type: 'normal' });
-    const hand = isActor && Array.isArray(pub.handKeys)
-      ? pub.handKeys.map((k) => resolveCardByKey(k) || { key: k, type: 'normal' })
-      : new Array(pub.handCount || 0).fill({ key: '_hidden', type: 'normal' });
+    let hand;
+    if (isActor && Array.isArray(pub.handKeys)) {
+      const keys = pub.handKeys.slice();
+      if (playedCardKey) {
+        let toRemove = isEX ? 2 : 1;
+        for (let i = keys.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (keys[i] === playedCardKey) {
+            keys.splice(i, 1);
+            toRemove--;
+          }
+        }
+      }
+      hand = keys.map((k) => resolveCardByKey(k) || { key: k, type: 'normal' });
+    } else {
+      hand = new Array(pub.handCount || 0).fill({ key: '_hidden', type: 'normal' });
+    }
     return {
       id: pub.id,
       name: pub.id === 'p1' ? 'You' : 'CPU',
       characterKey: pub.characterKey,
       life: pub.life,
-      maxLife: pub.maxLife,
+      maxLife: pub.maxLife || 30,
       pos: pub.pos,
-      eddiePos: pub.eddiePos,
+      eddiePos: pub.eddiePos != null ? pub.eddiePos : null,
       exceeded: !!pub.exceeded,
       advantage: !!pub.advantage,
       reshuffleUsed: !!pub.reshuffleUsed,
@@ -13362,15 +13480,46 @@ const SimulateStrikePreview = (() => {
       boostsInPlay: boosts,
       sealedCards: (pub.sealedKeys || []).map((k) => resolveCardByKey(k) || { key: k }),
       overdrive: (pub.overdriveKeys || []).map((k) => resolveCardByKey(k) || { key: k }),
-      canceledThisTurn: false,
-      actionStrikeThisTurn: false,
-      strikeState: {},
+      canceledThisTurn: isActor ? !!pub.canceledThisTurn : false,
+      actionStrikeThisTurn: isActor ? !!pub.actionStrikeThisTurn : false,
+      strikeState: {
+        focusActive: false,
+        rangeImmune: [],
+        blocksOpponentPassThrough: false,
+        unhittable: false,
+        faceUp: false,
+        setOptionStatMods: null,
+        setOptionRangeBonus: 0,
+        setOptionAfter: null,
+        wasHit: false,
+      },
     };
   }
 
   function computeVisibleBoostMods(pub) {
     if (pub && pub.activeBoostMods) return { ...pub.activeBoostMods };
     return { pow: 0, spd: 0, arm: 0, grd: 0, ignoreArmor: false, stunImmune: false };
+  }
+
+  function computeOppVisibleRangeImmunity(simOpp) {
+    const out = [];
+    for (const b of (simOpp.boostsInPlay || [])) {
+      if (b.card && b.card.boost && Array.isArray(b.card.boost.rangeImmuneRanges)) {
+        for (const r of b.card.boost.rangeImmuneRanges) {
+          if (!out.includes(r)) out.push(r);
+        }
+      }
+    }
+    return out;
+  }
+
+  function hasFreeCriticalBoost(simMe) {
+    return (simMe.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.forcesFreeCritical);
+  }
+
+  function gaugeCostsAreFree(simMe) {
+    const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
+    return !!(char.gaugeCostsFree && char.gaugeCostsFree(simMe));
   }
 
   function buildEffectiveCard(card, isEX) {
@@ -13386,12 +13535,72 @@ const SimulateStrikePreview = (() => {
     };
   }
 
+  function computeEffectiveRange(simMe, simOpp, card, fakeEngine, isInitiator) {
+    if (!card || !card.range) {
+      return {
+        minRange: null,
+        maxRange: null,
+        printedMinRange: null,
+        printedMaxRange: null,
+      };
+    }
+    const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
+    const printedMin = card.range[0];
+    const printedMax = card.range[1];
+    let maxR = printedMax;
+
+    if (card.hooks && card.hooks.rangeMaxBonusIfInitiating && isInitiator) {
+      maxR += card.hooks.rangeMaxBonusIfInitiating;
+    }
+    for (const b of (simMe.boostsInPlay || [])) {
+      if (b.card && b.card.boost && b.card.boost.rangeMaxBonus) {
+        maxR += b.card.boost.rangeMaxBonus;
+      }
+    }
+    if (card.type === 'normal' && char.normalsRangeBonus) {
+      maxR += readNumericBonus(char.normalsRangeBonus(simMe));
+    }
+    if (char.attackRangeBonus) {
+      maxR += readNumericBonus(char.attackRangeBonus(simMe, card));
+    }
+    if (simMe.strikeState && simMe.strikeState.setOptionRangeBonus) {
+      maxR += simMe.strikeState.setOptionRangeBonus;
+    }
+    if (card.dynamicRangeMaxBonus) {
+      maxR += readNumericBonus(card.dynamicRangeMaxBonus(simMe, simOpp, fakeEngine, isInitiator));
+    }
+
+    return {
+      minRange: printedMin,
+      maxRange: maxR,
+      printedMinRange: printedMin,
+      printedMaxRange: printedMax,
+    };
+  }
+
   function computeVisibleStats(simMe, simOpp, mePub, oppPub, card, opts = {}) {
     const mods = computeVisibleBoostMods(mePub);
     const oppMods = computeVisibleBoostMods(oppPub);
     const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
     const initiator = opts.isInitiator !== false;
     const distNow = Math.abs(simMe.pos - simOpp.pos);
+    const criticalActive = !!opts.criticalActive;
+
+    const cm = { ...((criticalActive && card.critical && card.critical.statMods) || {}) };
+    if (criticalActive && opts.fromWildSwing && char.wildSwingCriticalStatMods) {
+      const b = char.wildSwingCriticalStatMods(simMe) || {};
+      cm.pow = (cm.pow || 0) + (b.pow || 0);
+      cm.spd = (cm.spd || 0) + (b.spd || 0);
+    }
+    if (criticalActive && char.extraCriticalStatsIfOpponentAtRange1 && distNow === 1) {
+      const b = char.extraCriticalStatsIfOpponentAtRange1(simMe) || {};
+      cm.pow = (cm.pow || 0) + (b.pow || 0);
+      cm.spd = (cm.spd || 0) + (b.spd || 0);
+    }
+    if (criticalActive && char.grantsMutualCriticalPow) {
+      const b = char.grantsMutualCriticalPow(simMe) || {};
+      cm.pow = (cm.pow || 0) + (b.pow || 0);
+    }
 
     const nsm = (card.type === 'normal' && char.normalsStatMods) ? (char.normalsStatMods(simMe) || {}) : {};
     const isAtEdge = simMe.pos === 0 || simMe.pos === BOARD_SIZE - 1;
@@ -13399,6 +13608,12 @@ const SimulateStrikePreview = (() => {
       ? (char.specialsUltrasStatModsIfAtEdge(simMe) || {}) : {};
     const rcb = (char.rangeConditionalStatBonus && initiator && distNow === 1)
       ? (char.rangeConditionalStatBonus(simMe) || {}) : {};
+    const wsm = (opts.fromWildSwing && char.wildSwingStatMods && simMe.exceeded)
+      ? (char.wildSwingStatMods(simMe) || {}) : {};
+    const cancelBonus = (char.powBonusIfCanceledThisTurn && simMe.canceledThisTurn)
+      ? (char.powBonusIfCanceledThisTurn(simMe) || 0) : 0;
+    const actionStrikeBonus = (char.actionStrikePowBonus && simMe.actionStrikeThisTurn && simMe.exceeded)
+      ? (char.actionStrikePowBonus || 0) : 0;
 
     let oppPowDebuff = 0;
     for (const b of simOpp.boostsInPlay) {
@@ -13409,6 +13624,7 @@ const SimulateStrikePreview = (() => {
     const gaugeSpdBonus = card.spdPerGaugeCard ? simMe.gauge.length : 0;
 
     const fakeEngine = {
+      BOARD_SIZE,
       range: (a, b) => Math.abs(a.pos - b.pos),
       isAtEdge: (p) => p.pos === 0 || p.pos === BOARD_SIZE - 1,
       gaugeCount: (p) => p.gauge.length,
@@ -13422,11 +13638,16 @@ const SimulateStrikePreview = (() => {
       ? (card.liveStatMods(simMe, simOpp, fakeEngine, { initiator, fromWildSwing: !!opts.fromWildSwing, dist: distNow }) || {})
       : {};
 
+    const printedPow = card.pow || 0;
+    const printedSpd = card.spd || 0;
+    const printedArm = card.arm || 0;
+    const printedGrd = card.guardEqualsHandSize ? simMe.hand.length : (card.grd || 0);
+
     const statTotal = {
-      pow: card.pow || 0,
-      spd: card.spd || 0,
-      arm: card.arm || 0,
-      grd: card.guardEqualsHandSize ? simMe.hand.length : (card.grd || 0),
+      pow: printedPow,
+      spd: printedSpd,
+      arm: printedArm,
+      grd: printedGrd,
     };
     const addMods = (m) => {
       if (!m) return;
@@ -13435,8 +13656,8 @@ const SimulateStrikePreview = (() => {
       statTotal.arm += m.arm || 0;
       statTotal.grd += m.grd || 0;
     };
-    for (const m of [cdm, mods, nsm, esm, rcb, asm]) addMods(m);
-    statTotal.pow += oppPowDebuff;
+    for (const m of [cdm, mods, cm, nsm, esm, wsm, rcb, asm]) addMods(m);
+    statTotal.pow += cancelBonus + actionStrikeBonus + oppPowDebuff;
     statTotal.spd += rangeSpdBonus + gaugeSpdBonus;
 
     if (card.hooks) {
@@ -13447,51 +13668,100 @@ const SimulateStrikePreview = (() => {
     }
     if (card.selfArmorZero) statTotal.arm = 0;
 
+    const rangeInfo = computeEffectiveRange(simMe, simOpp, card, fakeEngine, initiator);
+    const oppRangeImmune = computeOppVisibleRangeImmunity(simOpp);
+
     return {
       pow: statTotal.pow,
       spd: statTotal.spd,
       arm: statTotal.arm,
       grd: statTotal.grd,
-      ignoreArmor: !!card.ignoreArmor || !!mods.ignoreArmor,
-      ignoreGuard: !!card.ignoreGuard,
+      printedPow,
+      printedSpd,
+      printedArm,
+      printedGrd,
+      minRange: rangeInfo.minRange,
+      maxRange: rangeInfo.maxRange,
+      printedMinRange: rangeInfo.printedMinRange,
+      printedMaxRange: rangeInfo.printedMaxRange,
+      ignoreArmor: !!card.ignoreArmor || !!mods.ignoreArmor || !!(criticalActive && card.critical && card.critical.ignoreArmor),
+      ignoreGuard: !!card.ignoreGuard || !!(criticalActive && card.critical && card.critical.ignoreGuard),
       oppVisibleArm: oppMods.arm || 0,
       oppVisibleGrd: oppMods.grd || 0,
       oppStunImmune: !!oppMods.stunImmune,
+      oppRangeImmune,
     };
+  }
+
+  function maxAffordableHandForce(simMe, maxWanted) {
+    const cap = Math.max(0, maxWanted | 0);
+    if (cap <= 0 || !simMe || !Array.isArray(simMe.hand)) return 0;
+    const byCost = [...simMe.hand].sort((a, b) =>
+      (forceValueOfCard(a) - forceValueOfCard(b)) || ((a.pow || 0) - (b.pow || 0)));
+    let spent = 0;
+    for (const c of byCost) {
+      const v = forceValueOfCard(c);
+      if (spent + v > cap) continue;
+      spent += v;
+      if (spent >= cap) break;
+    }
+    return spent;
   }
 
   function detectOptionalBranches(card, simMe) {
     const branches = [];
-    if (!card || !card.hooks) return branches;
-    if (card.hooks.optionalRetreat) {
-      branches.push({ id: 'optionalRetreat', label: `Retreat ${card.hooks.optionalRetreat}` });
+    if (!card) return branches;
+    const hooks = card.hooks || {};
+    if (hooks.optionalRetreat) {
+      branches.push({ id: 'optionalRetreat', type: 'before', label: `Retreat ${hooks.optionalRetreat}` });
     }
-    if (card.hooks.optionalForceSpendPow) {
-      const f = card.hooks.optionalForceSpendPow;
-      branches.push({ id: 'optionalForceSpendPow', label: `+${f.pow || 0} POW (Spend ${f.force || 1} Force)` });
+    const forceSpecs = [];
+    if (hooks.optionalForceSpendForPow) forceSpecs.push(hooks.optionalForceSpendForPow);
+    if (hooks.optionalForceSpendPow) {
+      forceSpecs.push({ max: hooks.optionalForceSpendPow.force || 1, powPerForce: hooks.optionalForceSpendPow.pow || 1 });
     }
-    if (card.hooks.optionalGaugeSpend) {
-      const g = card.hooks.optionalGaugeSpend;
-      if (simMe.gauge.length >= (g.gauge || 1)) {
-        branches.push({ id: 'optionalGaugeSpend', label: g.label || `Spend ${g.gauge || 1} Gauge` });
+    for (const b of (simMe.boostsInPlay || [])) {
+      if (b.card && b.card.boost && b.card.boost.optionalForceSpendForPowOnHit) {
+        forceSpecs.push(b.card.boost.optionalForceSpendForPowOnHit);
+      }
+    }
+    if (forceSpecs.length > 0) {
+      let totalForce = 0;
+      let totalPow = 0;
+      for (const spec of forceSpecs) {
+        const spendable = maxAffordableHandForce(simMe, spec.max || 1);
+        totalForce += spendable;
+        totalPow += spendable * (spec.powPerForce || 1);
+      }
+      if (totalForce > 0) {
+        branches.push({
+          id: 'optionalForceSpendForPow',
+          type: 'hit',
+          label: `+${totalPow} POW (${totalForce} Force)`,
+          force: totalForce,
+          pow: totalPow,
+        });
+      }
+    }
+    if (hooks.optionalGaugeSpend) {
+      const g = hooks.optionalGaugeSpend;
+      const amt = g.amount != null ? g.amount : (g.gauge || 1);
+      if (simMe.gauge.length >= amt) {
+        const benefit = g.grantsAdvantage ? 'Advantage' : 'Effect';
+        branches.push({
+          id: 'optionalGaugeSpend',
+          type: 'hit',
+          label: g.label || `${benefit} (${amt} Gauge)`,
+          amount: amt,
+          grantsAdvantage: !!g.grantsAdvantage,
+        });
       }
     }
     return branches;
   }
 
-  function computeHitboxSpaces(sourcePos, card, simMe) {
-    if (!card || card.alwaysMiss || !card.range) return [];
-    const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
-    let minR = card.range[0];
-    let maxR = card.range[1];
-    if (card.type === 'normal' && char.normalsRangeBonus) {
-      const rb = char.normalsRangeBonus(simMe) || {};
-      maxR += rb.max || 0;
-    }
-    if (char.attackRangeBonus) {
-      const rb = char.attackRangeBonus(simMe, card) || {};
-      maxR += rb.max || 0;
-    }
+  function computeHitboxSpaces(sourcePos, minR, maxR, card) {
+    if (!card || card.alwaysMiss || minR == null || maxR == null) return [];
     const spaces = [];
     for (let s = 0; s < BOARD_SIZE; s++) {
       const d = Math.abs(s - sourcePos);
@@ -13500,88 +13770,331 @@ const SimulateStrikePreview = (() => {
     return spaces;
   }
 
+  function formatRangeBand(minR, maxR) {
+    if (minR == null || maxR == null) return '—';
+    return minR === maxR ? `${minR}` : `${minR}–${maxR}`;
+  }
+
+  function formatMoveLabel(startPos, endPos, kindLabel, didCrossUp, wallTruncated, blocked, capped) {
+    if (blocked) return 'Blocked (Cannot Move)';
+    const delta = Math.abs(endPos - startPos);
+    if (delta === 0) {
+      if (wallTruncated) return `Wall Stop (Sp ${startPos + 1})`;
+      return null;
+    }
+    const notes = [];
+    if (didCrossUp) notes.push('Cross-Up ⇄');
+    if (capped) notes.push('Capped');
+    if (wallTruncated) notes.push('Wall');
+    const suffix = notes.length ? ` · ${notes.join(', ')}` : '';
+    return `${kindLabel} (Sp ${startPos + 1}→${endPos + 1}${suffix})`;
+  }
+
   function run(infoSet, rawCard, opts = {}) {
     if (!infoSet || !infoSet.actor || !infoSet.opponent) return null;
     const isEX = !!opts.isEX;
+    const isInitiator = opts.isInitiator !== false;
     const useOptionalBranch = !!opts.useOptionalBranch;
     const mePub = infoSet.actor;
     const oppPub = infoSet.opponent;
-    const simMe = makeSimPlayer(mePub, true);
-    const simOpp = makeSimPlayer(oppPub, false);
 
     // Wild Swing or missing card is purely stochastic
     if (!rawCard || rawCard.isWildSwing) {
+      const oppMods = computeVisibleBoostMods(oppPub);
+      const startPos = mePub.pos;
+      const oppStartPos = oppPub.pos;
+      const initialDist = Math.abs(startPos - oppStartPos);
       return {
         cardKey: 'wild_swing',
+        cardName: 'Wild Swing',
+        cardType: 'wild_swing',
         isEX: false,
-        effectiveStats: { pow: '?', spd: '?', arm: '?', grd: '?', ignoreArmor: false, ignoreGuard: false, oppVisibleArm: computeVisibleBoostMods(oppPub).arm || 0, oppVisibleGrd: computeVisibleBoostMods(oppPub).grd || 0 },
-        movementPath: [simMe.pos],
-        postBeforeSpace: simMe.pos,
+        isInitiator,
+        criticalActive: false,
+        criticalFree: false,
+        canPreviewCritical: false,
+        effectiveStats: {
+          pow: '?', spd: '?', arm: '?', grd: '?',
+          printedPow: '?', printedSpd: '?', printedArm: '?', printedGrd: '?',
+          minRange: null, maxRange: null, printedMinRange: null, printedMaxRange: null,
+          ignoreArmor: false, ignoreGuard: false,
+          oppVisibleArm: oppMods.arm || 0, oppVisibleGrd: oppMods.grd || 0,
+          oppStunImmune: !!oppMods.stunImmune, oppRangeImmune: [],
+        },
+        startSpace: startPos,
+        oppStartSpace: oppStartPos,
+        initialDist,
+        movementPath: [startPos],
+        postBeforeSpace: startPos,
+        beforeMoveSummary: null,
         didCrossUp: false,
         wallTruncated: false,
+        moveBlockedByBoost: false,
+        moveCappedByInnate: false,
+        attackOrigin: startPos,
+        usesEddie: false,
+        postBeforeDist: initialDist,
         hitboxSpaces: [],
         willWhiff: false,
+        expectedHit: false,
+        missReason: null,
+        missReasonLabel: null,
+        hitBySideSwap: false,
+        hitByBeforeMove: false,
         projectedDamage: 0,
+        damageFormula: '? (Top of Deck)',
+        oppLifeBefore: oppPub.life,
+        oppLifeAfter: oppPub.life,
+        oppLifeLoss: 0,
+        selfLifeBefore: mePub.life,
+        selfLifeAfter: mePub.life,
+        selfLifeDelta: 0,
         isPublicStateLethal: false,
+        breaksVisibleGuard: false,
+        oppPostHitSpace: null,
+        oppHitMovePath: null,
+        oppHitMoveSummary: null,
         postAfterSpace: null,
         afterPath: null,
+        afterMoveSummary: null,
+        effectsSummary: ['Random top card of deck'],
         hasStochasticVariance: true,
         optionalBranches: [],
       };
     }
 
+    const simMe = makeSimPlayer(mePub, true, rawCard.key, isEX);
+    const simOpp = makeSimPlayer(oppPub, false, null, false);
     const card = buildEffectiveCard(rawCard, isEX);
-    const stats = computeVisibleStats(simMe, simOpp, mePub, oppPub, card, opts);
+    const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
+    const initialDist = Math.abs(simMe.pos - simOpp.pos);
+
+    const ultraCost = (card.type === 'ultra' && !gaugeCostsAreFree(simMe)) ? (card.gaugeCost || 0) : 0;
+    const availableGaugeForCrit = Math.max(0, simMe.gauge.length - ultraCost);
+    const criticalFree = hasFreeCriticalBoost(simMe);
+    const hasCritEffect = !!(
+      card.critical ||
+      (char.extraCriticalStatsIfOpponentAtRange1 && initialDist === 1) ||
+      char.grantsMutualCriticalPow
+    );
+    const canPreviewCritical = !criticalFree && !!char.isStreetFighter && availableGaugeForCrit >= 1 && hasCritEffect;
+    const criticalActive = criticalFree || (!!opts.criticalPaid && !!char.isStreetFighter && availableGaugeForCrit >= 1);
+
+    const stats = computeVisibleStats(simMe, simOpp, mePub, oppPub, card, {
+      ...opts,
+      isInitiator,
+      criticalActive,
+    });
     const optionalBranches = detectOptionalBranches(card, simMe);
 
     let hasStochasticVariance = !!(
-      (card.hooks && (card.hooks.wildSwing || card.hooks.randomDiscard || card.hooks.drawOnHit || card.hooks.stochastic)) ||
+      (card.hooks && (card.hooks.wildSwing || card.hooks.stochastic)) ||
       card.type === 'wild_swing'
     );
 
     const startPos = simMe.pos;
+    const oppStartPos = simOpp.pos;
     const movementPath = [startPos];
     let didCrossUp = false;
     let wallTruncated = false;
+    let moveBlockedByBoost = false;
+    let moveCappedByInnate = false;
+    let beforeMoveKind = null;
+    let beforeMoveReq = 0;
     let powBonus = 0;
 
-    const applyMove = (amount, mode) => {
-      const res = Engine.simulateMovementPath(simMe.pos, simOpp.pos, amount, mode, {});
+    let oppPostHitSpace = null;
+    let oppHitMovePath = null;
+    let oppHitMoveKind = null;
+    let oppHitMoveAmt = 0;
+    let oppHitWall = false;
+
+    const effectsSet = new Set();
+    let totalDraws = 0;
+    let oppDiscards = 0;
+
+    const isPushPullImmune = (target) => {
+      if (target.strikeState && target.strikeState.focusActive) return true;
+      return (target.boostsInPlay || []).some((b) => b.card && b.card.boost && b.card.boost.movementImmuneGrant);
+    };
+
+    const cappedSelfMove = (mover, opponent, amount, forced) => {
+      if (forced) return amount;
+      for (const b of (opponent.boostsInPlay || [])) {
+        if (b.card && b.card.boost && b.card.boost.opponentCannotMove) {
+          if (mover.id === simMe.id) moveBlockedByBoost = true;
+          return 0;
+        }
+      }
+      const mChar = (typeof CHARACTERS !== 'undefined' && CHARACTERS[mover.characterKey]) || {};
+      if (!mChar.selfMoveCap) return amount;
+      const cap = mChar.selfMoveCap(mover);
+      if (cap != null && amount >= cap.threshold) {
+        if (mover.id === simMe.id) moveCappedByInnate = true;
+        return cap.instead;
+      }
+      return amount;
+    };
+
+    const applyBeforeMove = (amount, mode) => {
+      const cappedAmt = cappedSelfMove(simMe, simOpp, amount, false);
+      if (!beforeMoveKind && amount > 0) {
+        beforeMoveKind = mode === 'advance' ? 'Advance' : (mode === 'close' ? 'Close' : 'Retreat');
+        beforeMoveReq = amount;
+      }
+      const res = Engine.simulateMovementPath(simMe.pos, simOpp.pos, cappedAmt, mode, {});
       if (res.path.length > 1) {
         for (let i = 1; i < res.path.length; i++) movementPath.push(res.path[i]);
       }
+      const prev = simMe.pos;
       simMe.pos = res.endSpace;
       if (res.didCrossUp) didCrossUp = true;
       if (res.wallTruncated) wallTruncated = true;
-      return Math.abs(res.endSpace - (res.path[0] || startPos));
+      return Math.abs(res.endSpace - prev);
     };
 
-    const simCtx = {
-      engine: {
-        advanceSelf: (m, o, amt, allowPass) => { if (m.id === simMe.id) applyMove(amt, allowPass ? 'advance' : 'close'); },
-        closeSelf: (m, o, amt) => { if (m.id === simMe.id) applyMove(amt, 'close'); },
-        retreatSelf: (m, o, amt) => { if (m.id === simMe.id) applyMove(amt, 'retreat'); },
-        pushAway: () => {},
-        pushToward: () => {},
-        pullTowardWithoutPassing: () => {},
-        range: (a, b) => Math.abs(a.pos - b.pos),
-        draw: () => { hasStochasticVariance = true; },
-        logMsg: () => {},
+    const applyOppHitMove = (target, sourcePos, amount, mode) => {
+      if (target.id !== simOpp.id) return 0;
+      if (isPushPullImmune(target)) {
+        effectsSet.add('CPU Push/Pull Immune');
+        return 0;
+      }
+      const prev = target.pos;
+      let res;
+      if (mode === 'push') {
+        const dir = sourcePos <= target.pos ? 1 : -1;
+        const clamped = Math.max(0, Math.min(BOARD_SIZE - 1, target.pos + dir * amount));
+        const path = [prev];
+        if (clamped !== prev) {
+          const step = clamped > prev ? 1 : -1;
+          for (let p = prev + step; step > 0 ? p <= clamped : p >= clamped; p += step) path.push(p);
+        }
+        res = {
+          path,
+          endSpace: clamped,
+          wallTruncated: Math.abs(clamped - prev) < amount,
+        };
+      } else {
+        // Pull toward sourcePos: 'pull_pass' (pushToward) or 'pull_nopass' (pullTowardWithoutPassing)
+        res = Engine.simulateMovementPath(target.pos, sourcePos, amount, mode === 'pull_pass' ? 'advance' : 'close', {});
+      }
+      target.pos = res.endSpace;
+      if (!oppHitMovePath) oppHitMovePath = [oppStartPos];
+      if (res.path.length > 1) {
+        for (let i = 1; i < res.path.length; i++) oppHitMovePath.push(res.path[i]);
+      }
+      if (target.pos !== oppStartPos) oppPostHitSpace = target.pos;
+      if (!oppHitMoveKind) {
+        oppHitMoveKind = mode === 'push' ? 'Push CPU' : 'Pull CPU';
+        oppHitMoveAmt = amount;
+      }
+      if (res.wallTruncated) oppHitWall = true;
+      return Math.abs(target.pos - prev);
+    };
+
+    const attackSourcePosOf = (attacker, c) => {
+      const aChar = (typeof CHARACTERS !== 'undefined' && CHARACTERS[attacker.characterKey]) || {};
+      if (aChar.specialsRangeFromEddie && aChar.usesEddie && attacker.eddiePos != null && c && (c.type === 'special' || c.type === 'ultra')) {
+        return attacker.eddiePos;
+      }
+      return attacker.pos;
+    };
+
+    const makeSimEngine = (moveHandlers) => ({
+      BOARD_SIZE,
+      spaceWord: (n) => `${n} space${n === 1 ? '' : 's'}`,
+      range: (a, b) => Math.abs(a.pos - b.pos),
+      isAtEdge: (p) => p.pos === 0 || p.pos === BOARD_SIZE - 1,
+      gaugeCount: (p) => (p && p.gauge ? p.gauge.length : 0),
+      eddieInPlay: (p) => {
+        const pChar = (typeof CHARACTERS !== 'undefined' && CHARACTERS[p.characterKey]) || {};
+        return !!(pChar.usesEddie && p.eddiePos != null);
       },
+      attackSourcePos: (a, c) => attackSourcePosOf(a, c),
+      attackRange: (a, d, c) => Math.abs(attackSourcePosOf(a, c) - d.pos),
+      spacesBehindAwayFrom: (target, source) => {
+        const dir = source.pos <= target.pos ? 1 : -1;
+        return dir === 1 ? (BOARD_SIZE - 1 - target.pos) : target.pos;
+      },
+      activeBoostMods: (p) => (p.id === simMe.id ? computeVisibleBoostMods(mePub) : computeVisibleBoostMods(oppPub)),
+      forceValueOfCard,
+      advanceSelf: (m, o, amt, allowPass, forced) => moveHandlers.advanceSelf(m, o, amt, allowPass, forced),
+      closeSelf: (m, o, amt) => moveHandlers.closeSelf(m, o, amt),
+      retreatSelf: (m, o, amt) => moveHandlers.retreatSelf(m, o, amt),
+      advanceAsFarAsPossible: (m, o) => moveHandlers.advanceSelf(m, o, BOARD_SIZE, true, false),
+      moveChoice: (m, amt) => moveHandlers.advanceSelf(m, m.id === simMe.id ? simOpp : simMe, amt, true, false),
+      pushAway: (target, source, amt) => moveHandlers.pushAway(target, source, amt),
+      pushAwayFromAttackSource: (a, d, c, amt) => moveHandlers.pushAway(d, { pos: attackSourcePosOf(a, c) }, amt),
+      pushToward: (target, source, amt) => moveHandlers.pushToward(target, source, amt),
+      pullTowardWithoutPassing: (target, source, amt) => moveHandlers.pullNoPass(target, source, amt),
+      gainLife: (p, amt) => {
+        if (!p || !amt) return 0;
+        const before = p.life;
+        p.life = Math.min(p.maxLife, p.life + amt);
+        return p.life - before;
+      },
+      takeDamageNonLethal: (p, amt) => {
+        if (!p || !amt) return;
+        p.life = Math.max(1, p.life - amt);
+      },
+      grantAdvantage: (p) => {
+        if (p && p.id === simMe.id) effectsSet.add('+Advantage');
+      },
+      draw: (p, n) => {
+        if (p && p.id === simMe.id) totalDraws += (n || 1);
+      },
+      randomDiscardFromHand: (p, n) => {
+        if (p && p.id === simOpp.id) oppDiscards += (n || 1);
+      },
+      discardAllHand: (p) => {
+        if (p && p.id === simOpp.id) effectsSet.add('CPU discards hand');
+        if (p && p.id === simMe.id) effectsSet.add('You discard hand');
+      },
+      discardFromHand: () => null,
+      sealCardFromHand: () => null,
+      spendGaugeIfAble: (p, n) => {
+        if (!p || p.gauge.length < n) return false;
+        p.gauge.splice(p.gauge.length - n, n);
+        return true;
+      },
+      addLowestCardFromHandToGauge: () => null,
+      discardOpponentContinuousBoost: () => { effectsSet.add('Discard CPU boost'); },
+      reviveBestContinuousBoostFromDiscard: () => null,
+      placeEddie: () => 0,
+      setReading: () => {},
+      recordHandReveal: () => {},
+      peekTopN: () => [],
+      playForcedBoost: () => {},
+      logMsg: () => {},
+    });
+
+    const beforeEngine = makeSimEngine({
+      advanceSelf: (m, o, amt, allowPass) => { if (m.id === simMe.id) applyBeforeMove(amt, allowPass ? 'advance' : 'close'); },
+      closeSelf: (m, o, amt) => { if (m.id === simMe.id) applyBeforeMove(amt, 'close'); },
+      retreatSelf: (m, o, amt) => { if (m.id === simMe.id) applyBeforeMove(amt, 'retreat'); },
+      pushAway: () => {},
+      pushToward: () => {},
+      pullNoPass: () => {},
+    });
+
+    const simCtx = {
+      engine: beforeEngine,
       attacker: simMe,
       defender: simOpp,
       attackerCard: card,
       defenderCard: null,
+      strikeInitiator: isInitiator ? simMe : simOpp,
       sideSwapped: false,
       powBonus: 0,
       ignoreGuardThisHit: false,
       hitLanded: false,
-      criticalPaid: !!opts.criticalPaid,
+      selfCannotHit: false,
+      criticalPaid: criticalActive,
       attStats: stats,
       defStats: { pow: 0, spd: 0, arm: stats.oppVisibleArm, grd: stats.oppVisibleGrd },
-      advance: (amt) => applyMove(amt, 'advance'),
-      close: (amt) => applyMove(amt, 'close'),
-      retreat: (amt) => applyMove(amt, 'retreat'),
+      advance: (amt) => applyBeforeMove(amt, 'advance'),
+      close: (amt) => applyBeforeMove(amt, 'close'),
+      retreat: (amt) => applyBeforeMove(amt, 'retreat'),
       push: () => {},
       pull: () => {},
     };
@@ -13589,92 +14102,252 @@ const SimulateStrikePreview = (() => {
     // 1. Boost-granted Before movement
     for (const b of simMe.boostsInPlay) {
       const bonus = b.card && b.card.boost && b.card.boost.grantsNormalsBeforeAdvance;
-      if (bonus && card.type === 'normal') applyMove(bonus, 'advance');
+      if (bonus && card.type === 'normal') {
+        const beforeSide = simMe.pos < simOpp.pos;
+        applyBeforeMove(bonus, 'advance');
+        if (beforeSide !== (simMe.pos < simOpp.pos)) simCtx.sideSwapped = true;
+      }
       const closeBonus = b.card && b.card.boost && b.card.boost.grantsBeforeCloseWithBonus;
       if (closeBonus) {
-        const moved = applyMove(closeBonus.amount, 'close');
+        const moved = applyBeforeMove(closeBonus.amount, 'close');
         if (moved < closeBonus.amount) powBonus += closeBonus.pow || 0;
       }
     }
 
     // 2. Character Before hook
-    const char = (typeof CHARACTERS !== 'undefined' && CHARACTERS[simMe.characterKey]) || {};
     if (char.attackBeforeHook) {
       try {
-        char.attackBeforeHook(simCtx, { initiator: opts.isInitiator !== false, fromWildSwing: !!opts.fromWildSwing });
-      } catch (_) { hasStochasticVariance = true; }
+        char.attackBeforeHook(simCtx, { initiator: isInitiator, fromWildSwing: !!opts.fromWildSwing });
+      } catch (_) {}
     }
 
-    // 3. Card Before hook
+    // 3. Card Before hook & Critical Before hook
     if (card.hooks && card.hooks.before) {
       try {
         card.hooks.before(simCtx);
-      } catch (_) { hasStochasticVariance = true; }
+      } catch (_) {}
+    }
+    if (criticalActive && card.critical && card.critical.before) {
+      try {
+        card.critical.before(simCtx);
+      } catch (_) {}
     }
 
-    // 4. Optional branch (when toggled on)
-    if (useOptionalBranch) {
-      if (card.hooks && card.hooks.optionalRetreat) {
-        applyMove(card.hooks.optionalRetreat, 'retreat');
-      }
-      if (card.hooks && card.hooks.optionalForceSpendPow) {
-        powBonus += card.hooks.optionalForceSpendPow.pow || 0;
-      }
+    // 4. Optional Before branch (when toggled on)
+    if (useOptionalBranch && card.hooks && card.hooks.optionalRetreat) {
+      applyBeforeMove(card.hooks.optionalRetreat, 'retreat');
     }
 
+    if (simCtx.sideSwapped) didCrossUp = true;
     const postBeforeSpace = simMe.pos;
-    stats.pow += powBonus + (simCtx.powBonus || 0);
+    if (simMe.strikeState.unhittable) effectsSet.add('Unhittable (Cross-Up)');
 
     // 5. Range & Hit validation (Zato-1 Specials/Ultras measure from Eddie if in play)
-    const usesEddie = simMe.characterKey === 'zato1' && card.type !== 'normal' && simMe.eddiePos != null;
+    const usesEddie = !!(char.specialsRangeFromEddie && char.usesEddie && simMe.eddiePos != null && (card.type === 'special' || card.type === 'ultra'));
     const attackOrigin = usesEddie ? simMe.eddiePos : postBeforeSpace;
-    const hitboxSpaces = computeHitboxSpaces(attackOrigin, card, simMe);
-    let willWhiff = true;
-    if (!card.alwaysMiss) {
-      if (hitboxSpaces.includes(simOpp.pos)) willWhiff = false;
-      else if (card.rangeIncludeIfSideSwapped && didCrossUp) willWhiff = false;
+    const postBeforeDist = Math.abs(attackOrigin - simOpp.pos);
+
+    const hitboxSpaces = computeHitboxSpaces(attackOrigin, stats.minRange, stats.maxRange, card);
+    const passiveRangeInclude = !!(char.sideSwapRangeInclude && didCrossUp) || !!(card.rangeIncludeIfSideSwapped && didCrossUp);
+    const burstTimeBlocked = !!(card.noHitWithoutContinuousBoost && simMe.boostsInPlay.length === 0);
+    const rangeImmune = stats.oppRangeImmune.includes(postBeforeDist);
+
+    const inPrintedOrBonusBand = !!(stats.minRange != null && stats.maxRange != null && postBeforeDist >= stats.minRange && postBeforeDist <= stats.maxRange);
+    const hitBySideSwap = !inPrintedOrBonusBand && passiveRangeInclude;
+    if (hitBySideSwap && !hitboxSpaces.includes(simOpp.pos)) {
+      hitboxSpaces.push(simOpp.pos);
     }
 
-    // 6. Post-After movement preview (only if attack hits and has an after hook)
+    let missReason = null;
+    let missReasonLabel = null;
+    if (card.alwaysMiss) {
+      missReason = 'always_miss';
+      missReasonLabel = 'Cannot Hit (Defense/Utility)';
+    } else if (burstTimeBlocked) {
+      missReason = 'no_continuous_boost';
+      missReasonLabel = 'Needs Continuous Boost';
+    } else if (simCtx.selfCannotHit) {
+      missReason = 'self_cannot_hit';
+      missReasonLabel = 'Crossed Past (Cannot Hit)';
+    } else if (rangeImmune) {
+      missReason = 'range_immune';
+      missReasonLabel = `CPU Range Immune at Rng ${postBeforeDist}`;
+    } else if (!inPrintedOrBonusBand && !passiveRangeInclude) {
+      missReason = 'out_of_range';
+      missReasonLabel = `Out of Range (Dist ${postBeforeDist} vs Rng ${formatRangeBand(stats.minRange, stats.maxRange)})`;
+    }
+    const willWhiff = missReason !== null;
+
+    const initialOrigin = usesEddie ? simMe.eddiePos : startPos;
+    const initialOriginDist = Math.abs(initialOrigin - oppStartPos);
+    const initiallyInRange = !!(stats.minRange != null && stats.maxRange != null && initialOriginDist >= stats.minRange && initialOriginDist <= stats.maxRange);
+    const hitByBeforeMove = !willWhiff && !initiallyInRange && (postBeforeSpace !== startPos || hitBySideSwap);
+
+    // 6. Hit hooks (only when expected to connect) — runs BEFORE damage math in engine.js
+    const hitEngine = makeSimEngine({
+      advanceSelf: (m, o, amt, allowPass) => {
+        if (m.id === simOpp.id) applyOppHitMove(m, o.pos, amt, allowPass ? 'pull_pass' : 'pull_nopass');
+      },
+      closeSelf: (m, o, amt) => {
+        if (m.id === simOpp.id) applyOppHitMove(m, o.pos, amt, 'pull_nopass');
+      },
+      retreatSelf: () => {},
+      pushAway: (target, source, amt) => applyOppHitMove(target, source.pos, amt, 'push'),
+      pushToward: (target, source, amt) => applyOppHitMove(target, source.pos, amt, 'pull_pass'),
+      pullNoPass: (target, source, amt) => applyOppHitMove(target, source.pos, amt, 'pull_nopass'),
+    });
+
+    if (!willWhiff) {
+      const hitCtx = {
+        ...simCtx,
+        engine: hitEngine,
+        hitLanded: true,
+        push: (amt) => applyOppHitMove(simOpp, simMe.pos, amt, 'push'),
+        pull: (amt) => applyOppHitMove(simOpp, simMe.pos, amt, 'pull_pass'),
+      };
+
+      if (card.hooks && card.hooks.interactiveHit === 'grasp_move') {
+        const mMin = card.hooks.moveMin != null ? card.hooks.moveMin : 1;
+        const mMax = card.hooks.moveMax != null ? card.hooks.moveMax : 2;
+        const forceDir = card.hooks.moveForceDirection || null;
+        if (forceDir && mMin === mMax) {
+          const moved = applyOppHitMove(simOpp, simMe.pos, mMax, forceDir === 'advance' ? 'pull_pass' : 'push');
+          if (card.hooks.afterInteractiveMove) {
+            try { card.hooks.afterInteractiveMove(hitCtx, moved); } catch (_) {}
+          }
+        } else {
+          const dirText = forceDir === 'advance' ? 'Pull' : (forceDir === 'retreat' ? 'Push' : 'Push/Pull');
+          const rangeTxt = mMin === mMax ? `${mMax}` : `${mMin}–${mMax}`;
+          oppHitMoveKind = `${dirText} CPU ${rangeTxt} (Choice)`;
+          effectsSet.add(`${dirText} CPU ${rangeTxt} (Choice)`);
+        }
+      } else if (card.hooks && card.hooks.hit) {
+        try { card.hooks.hit(hitCtx); } catch (_) {}
+      }
+
+      if (criticalActive && card.critical && card.critical.hit) {
+        try { card.critical.hit(hitCtx); } catch (_) {}
+      }
+
+      if (simMe.exceeded && didCrossUp && char.exceededSideSwapHit) {
+        try { char.exceededSideSwapHit(hitCtx); } catch (_) {}
+      }
+
+      // Safely step generator character hit hooks (e.g. Ragna life gain, Zato-1 Advantage, Testament choice)
+      const stepHitGenerator = (genFn) => {
+        try {
+          const gen = genFn(hitCtx);
+          if (gen && typeof gen.next === 'function') {
+            const step = gen.next();
+            if (!step.done && step.value && step.value.type === 'grasp_move') {
+              effectsSet.add('Push/Pull 1 (Choice)');
+            }
+          }
+        } catch (_) {}
+      };
+      if (card.type === 'normal' && char.normalsHitHook) stepHitGenerator(char.normalsHitHook);
+      if (char.attackHitHook) stepHitGenerator(char.attackHitHook);
+      if (simMe.actionStrikeThisTurn && char.actionStrikeHitHook) {
+        try { char.actionStrikeHitHook(hitCtx); } catch (_) {}
+      }
+
+      for (const b of simMe.boostsInPlay) {
+        if (b.card && b.card.boost && b.card.boost.onHit) {
+          try { b.card.boost.onHit({ engine: hitEngine, player: simMe, opponent: simOpp }); } catch (_) {}
+        }
+      }
+
+      // Optional Hit branches (when toggled on)
+      if (useOptionalBranch) {
+        const forceBranch = optionalBranches.find((b) => b.id === 'optionalForceSpendForPow');
+        if (forceBranch) powBonus += forceBranch.pow || 0;
+        const gaugeBranch = optionalBranches.find((b) => b.id === 'optionalGaugeSpend');
+        if (gaugeBranch && gaugeBranch.grantsAdvantage) effectsSet.add('+Advantage (Gauge)');
+      }
+
+      simCtx.powBonus = hitCtx.powBonus;
+      simCtx.ignoreGuardThisHit = hitCtx.ignoreGuardThisHit;
+    }
+
+    // Finalize effective POW & ignore flags after Before + Hit hooks
+    stats.pow += powBonus + (simCtx.powBonus || 0);
+    if (simCtx.ignoreGuardThisHit) stats.ignoreGuard = true;
+    if (stats.ignoreArmor) effectsSet.add('Ignores ARM');
+    if (stats.ignoreGuard) effectsSet.add('Ignores GRD');
+
+    // 7. Projected damage, Life Loss, Guard Break, & Public-State Lethal
+    const effectiveOppArmor = stats.ignoreArmor ? 0 : stats.oppVisibleArm;
+    const effectiveOppGuard = stats.ignoreGuard ? 0 : stats.oppVisibleGrd;
+    const projectedDamage = willWhiff ? 0 : Math.max(0, stats.pow - effectiveOppArmor);
+    const oppLifeBefore = oppPub.life;
+    const oppLifeAfter = Math.max(0, oppLifeBefore - projectedDamage);
+    const oppLifeLoss = oppLifeBefore - oppLifeAfter;
+    const isPublicStateLethal = !willWhiff && !hasStochasticVariance && projectedDamage >= oppLifeBefore && oppLifeBefore > 0;
+    const breaksVisibleGuard = !willWhiff && !stats.oppStunImmune && projectedDamage > effectiveOppGuard;
+
+    let damageFormula;
+    if (hasStochasticVariance) {
+      damageFormula = '? (Variable)';
+    } else if (willWhiff) {
+      damageFormula = '0 (Miss)';
+    } else if (stats.ignoreArmor && stats.oppVisibleArm > 0) {
+      damageFormula = `${stats.pow} POW (Ignores ${stats.oppVisibleArm} ARM) = ${projectedDamage}`;
+    } else if (effectiveOppArmor > 0) {
+      damageFormula = `${stats.pow} POW − ${effectiveOppArmor} ARM = ${projectedDamage}`;
+    } else {
+      damageFormula = `${stats.pow} POW = ${projectedDamage}`;
+    }
+
+    // 8. Post-After movement preview (runs EVEN ON MISS per Exceed rules!)
     let postAfterSpace = null;
     let afterPath = null;
-    if (!willWhiff && card.hooks && card.hooks.after) {
+    let afterMoveKind = null;
+    let afterWallTruncated = false;
+    let afterCrossUp = false;
+    const hasAfterHook = !!(
+      (card.hooks && card.hooks.after) ||
+      (criticalActive && card.critical && card.critical.after) ||
+      char.attackAfterHook
+    );
+    if (hasAfterHook) {
       const savedPos = simMe.pos;
       const afterSteps = [savedPos];
+      const applyAfterMove = (amt, mode) => {
+        const cappedAmt = cappedSelfMove(simMe, simOpp, amt, false);
+        if (!afterMoveKind && amt > 0) {
+          afterMoveKind = mode === 'advance' ? 'Advance' : (mode === 'close' ? 'Close' : 'Retreat');
+        }
+        const r = Engine.simulateMovementPath(simMe.pos, simOpp.pos, cappedAmt, mode, {});
+        simMe.pos = r.endSpace;
+        for (let i = 1; i < r.path.length; i++) afterSteps.push(r.path[i]);
+        if (r.wallTruncated) afterWallTruncated = true;
+        if (r.didCrossUp) afterCrossUp = true;
+      };
+      const afterEngine = makeSimEngine({
+        advanceSelf: (m, o, amt, allowPass) => { if (m.id === simMe.id) applyAfterMove(amt, allowPass ? 'advance' : 'close'); },
+        closeSelf: (m, o, amt) => { if (m.id === simMe.id) applyAfterMove(amt, 'close'); },
+        retreatSelf: (m, o, amt) => { if (m.id === simMe.id) applyAfterMove(amt, 'retreat'); },
+        pushAway: () => {},
+        pushToward: () => {},
+        pullNoPass: () => {},
+      });
       const afterCtx = {
         ...simCtx,
-        hitLanded: true,
-        engine: {
-          ...simCtx.engine,
-          advanceSelf: (m, o, amt, allowPass) => {
-            if (m.id === simMe.id) {
-              const r = Engine.simulateMovementPath(simMe.pos, simOpp.pos, amt, allowPass ? 'advance' : 'close', {});
-              simMe.pos = r.endSpace;
-              for (let i = 1; i < r.path.length; i++) afterSteps.push(r.path[i]);
-            }
-          },
-          closeSelf: (m, o, amt) => {
-            if (m.id === simMe.id) {
-              const r = Engine.simulateMovementPath(simMe.pos, simOpp.pos, amt, 'close', {});
-              simMe.pos = r.endSpace;
-              for (let i = 1; i < r.path.length; i++) afterSteps.push(r.path[i]);
-            }
-          },
-          retreatSelf: (m, o, amt) => {
-            if (m.id === simMe.id) {
-              const r = Engine.simulateMovementPath(simMe.pos, simOpp.pos, amt, 'retreat', {});
-              simMe.pos = r.endSpace;
-              for (let i = 1; i < r.path.length; i++) afterSteps.push(r.path[i]);
-            }
-          },
-        },
-        advance: (amt) => afterCtx.engine.advanceSelf(simMe, simOpp, amt, true),
-        close: (amt) => afterCtx.engine.closeSelf(simMe, simOpp, amt),
-        retreat: (amt) => afterCtx.engine.retreatSelf(simMe, simOpp, amt),
+        hitLanded: !willWhiff,
+        engine: afterEngine,
+        advance: (amt) => applyAfterMove(amt, 'advance'),
+        close: (amt) => applyAfterMove(amt, 'close'),
+        retreat: (amt) => applyAfterMove(amt, 'retreat'),
       };
-      try {
-        card.hooks.after(afterCtx);
-      } catch (_) { hasStochasticVariance = true; }
+      if (card.hooks && card.hooks.after) {
+        try { card.hooks.after(afterCtx); } catch (_) {}
+      }
+      if (criticalActive && card.critical && card.critical.after) {
+        try { card.critical.after(afterCtx); } catch (_) {}
+      }
+      if (char.attackAfterHook) {
+        try { char.attackAfterHook(afterCtx); } catch (_) {}
+      }
       if (simMe.pos !== savedPos) {
         postAfterSpace = simMe.pos;
         afterPath = afterSteps;
@@ -13682,48 +14355,111 @@ const SimulateStrikePreview = (() => {
       simMe.pos = savedPos;
     }
 
-    // 7. Projected damage & Public-State Lethal
-    const effectiveOppArmor = stats.ignoreArmor ? 0 : stats.oppVisibleArm;
-    const projectedDamage = willWhiff ? 0 : Math.max(0, stats.pow - effectiveOppArmor);
-    const isPublicStateLethal = !willWhiff && !hasStochasticVariance && projectedDamage >= oppPub.life;
+    // 9. Card Cleanup preview (e.g. Nagoriyuki Exceed Normals non-lethal self-damage)
+    const cleanups = [
+      char.cardCleanupFor && char.cardCleanupFor(simMe, card),
+      card.cleanup,
+    ].filter(Boolean);
+    for (const cl of cleanups) {
+      if (cl.nonLethalDamage) {
+        simMe.life = Math.max(1, simMe.life - cl.nonLethalDamage);
+      }
+      if (cl.draw) totalDraws += cl.draw;
+    }
+
+    const selfLifeBefore = mePub.life;
+    const selfLifeAfter = simMe.life;
+    const selfLifeDelta = selfLifeAfter - selfLifeBefore;
+    if (selfLifeDelta > 0) effectsSet.add(`You +${selfLifeDelta} HP`);
+    else if (selfLifeDelta < 0) effectsSet.add(`You ${selfLifeDelta} HP`);
+    if (totalDraws > 0) effectsSet.add(`Draw ${totalDraws}`);
+    if (oppDiscards > 0) effectsSet.add(`CPU discards ${oppDiscards}`);
+
+    const beforeMoveSummary = beforeMoveKind
+      ? formatMoveLabel(startPos, postBeforeSpace, `${beforeMoveKind} ${beforeMoveReq}`, didCrossUp, wallTruncated, moveBlockedByBoost, moveCappedByInnate)
+      : null;
+
+    let oppHitMoveSummary = null;
+    if (oppPostHitSpace != null && oppHitMoveKind) {
+      oppHitMoveSummary = `${oppHitMoveKind} ${oppHitMoveAmt} (Sp ${oppStartPos + 1}→${oppPostHitSpace + 1}${oppHitWall ? ' · Wall' : ''})`;
+    } else if (oppHitMoveKind && oppHitMoveKind.includes('(Choice)')) {
+      oppHitMoveSummary = oppHitMoveKind;
+    }
+
+    const afterMoveSummary = (postAfterSpace != null && afterMoveKind)
+      ? formatMoveLabel(postBeforeSpace, postAfterSpace, `${afterMoveKind} ${Math.abs(postAfterSpace - postBeforeSpace)}`, afterCrossUp, afterWallTruncated, false, moveCappedByInnate)
+      : null;
 
     return {
       cardKey: card.key,
+      cardName: card.name || card.key,
+      cardType: card.type || 'normal',
       isEX,
+      isInitiator,
+      criticalActive,
+      criticalFree,
+      canPreviewCritical,
       effectiveStats: stats,
+      startSpace: startPos,
+      oppStartSpace: oppStartPos,
+      initialDist,
       movementPath,
       postBeforeSpace,
+      beforeMoveSummary,
       didCrossUp,
       wallTruncated,
+      moveBlockedByBoost,
+      moveCappedByInnate,
+      attackOrigin,
+      usesEddie,
+      postBeforeDist,
       hitboxSpaces,
       willWhiff,
+      expectedHit: !willWhiff && !hasStochasticVariance,
+      missReason,
+      missReasonLabel,
+      hitBySideSwap,
+      hitByBeforeMove,
       projectedDamage,
+      damageFormula,
+      oppLifeBefore,
+      oppLifeAfter,
+      oppLifeLoss,
+      selfLifeBefore,
+      selfLifeAfter,
+      selfLifeDelta,
       isPublicStateLethal,
+      breaksVisibleGuard,
+      oppPostHitSpace,
+      oppHitMovePath,
+      oppHitMoveSummary,
       postAfterSpace,
       afterPath,
+      afterMoveSummary,
+      effectsSummary: [...effectsSet],
       hasStochasticVariance,
       optionalBranches,
-      usesEddie,
-      attackOrigin,
     };
   }
 
-  return { run, resolveCardByKey };
+  return { run, resolveCardByKey, formatRangeBand };
 })();
 
-// State-change memoization for hand-wide Lethal Aura & EX pair checks
+// State-change memoization for hand-wide Lethal Aura, range chips & EX pair checks
 const PreviewMemo = (() => {
   let lastFingerprint = '';
   let cachedMap = new Map();
 
-  function fingerprint(infoSet) {
+  function fingerprint(infoSet, isInitiator) {
     if (!infoSet || !infoSet.actor || !infoSet.opponent) return '';
     const a = infoSet.actor;
     const o = infoSet.opponent;
     return [
       infoSet.turnNumber,
+      isInitiator ? 1 : 0,
       a.pos, o.pos, a.life, o.life,
       a.exceeded ? 1 : 0, o.exceeded ? 1 : 0,
+      a.canceledThisTurn ? 1 : 0, a.actionStrikeThisTurn ? 1 : 0,
       a.eddiePos, o.eddiePos,
       (a.handKeys || []).join(','),
       (a.gaugeKeys || []).length,
@@ -13732,8 +14468,9 @@ const PreviewMemo = (() => {
     ].join('|');
   }
 
-  function evaluateHand(infoSet, handCards, engine, player) {
-    const fp = fingerprint(infoSet);
+  function evaluateHand(infoSet, handCards, engine, player, opts = {}) {
+    const isInitiator = opts.isInitiator !== false;
+    const fp = fingerprint(infoSet, isInitiator);
     if (fp && fp === lastFingerprint && cachedMap.size > 0) return cachedMap;
     const next = new Map();
     const counts = {};
@@ -13741,9 +14478,9 @@ const PreviewMemo = (() => {
 
     for (const c of (handCards || [])) {
       const canPlay = !engine || !player || (typeof engine.canPayUltra !== 'function' || c.type !== 'ultra' || engine.canPayUltra(player, c));
-      const base = canPlay ? SimulateStrikePreview.run(infoSet, c, { isEX: false }) : null;
+      const base = canPlay ? SimulateStrikePreview.run(infoSet, c, { isEX: false, isInitiator }) : null;
       const exPlayable = counts[c.key] >= 2 && (!engine || !player || c.type !== 'ultra' || (typeof engine.canPayUltra === 'function' ? engine.canPayUltra(player, c) : true));
-      const ex = exPlayable ? SimulateStrikePreview.run(infoSet, c, { isEX: true }) : null;
+      const ex = exPlayable ? SimulateStrikePreview.run(infoSet, c, { isEX: true, isInitiator }) : null;
       next.set(c.uid || c.key, { base, ex, canPlay, exPlayable });
     }
     lastFingerprint = fp;
@@ -13761,7 +14498,7 @@ const PreviewMemo = (() => {
 
 // Controller subscribing to hover & toggle events and dispatching to renderers
 const StrikePreviewController = (() => {
-  let activeHover = null; // { card, isEX, useOptionalBranch }
+  let activeHover = null; // { card, isEX, useOptionalBranch, criticalPaid }
   let lastTargetLock = null;
 
   function refresh() {
@@ -13775,6 +14512,7 @@ const StrikePreviewController = (() => {
     const result = SimulateStrikePreview.run(infoSet, activeHover.card, {
       isEX: activeHover.isEX,
       useOptionalBranch: activeHover.useOptionalBranch,
+      criticalPaid: activeHover.criticalPaid,
       isInitiator: G.mode !== 'defend_select',
     });
     if (typeof ArenaTelegraphRenderer !== 'undefined') {
@@ -13783,20 +14521,25 @@ const StrikePreviewController = (() => {
     if (typeof ClashSummaryBanner !== 'undefined') {
       ClashSummaryBanner.render(result, infoSet, activeHover);
     }
+    if (typeof updateUniversalInspectorSlot === 'function') {
+      updateUniversalInspectorSlot();
+    }
     const locked = !!(result && !result.willWhiff);
     if (locked !== lastTargetLock) {
       lastTargetLock = locked;
-      if (locked) EventBus.emit('OnTargetLockChanged', { locked: true, cardKey: result.cardKey });
+      if (locked && typeof EventBus !== 'undefined') EventBus.emit('OnTargetLockChanged', { locked: true, cardKey: result.cardKey });
     }
   }
 
   if (typeof EventBus !== 'undefined') {
     EventBus.on('OnCardHoverStart', (payload) => {
       if (!payload || !payload.card) return;
+      const sameCard = !!(activeHover && activeHover.card && activeHover.card.key === payload.card.key);
       activeHover = {
         card: payload.card,
         isEX: !!payload.isEX,
-        useOptionalBranch: !!(activeHover && activeHover.useOptionalBranch),
+        useOptionalBranch: sameCard ? !!activeHover.useOptionalBranch : false,
+        criticalPaid: sameCard ? !!activeHover.criticalPaid : false,
       };
       refresh();
     });
@@ -13816,6 +14559,13 @@ const StrikePreviewController = (() => {
         : !activeHover.useOptionalBranch;
       refresh();
     });
+    EventBus.on('OnToggleCriticalPreview', (payload) => {
+      if (!activeHover) return;
+      activeHover.criticalPaid = payload && typeof payload.enabled === 'boolean'
+        ? payload.enabled
+        : !activeHover.criticalPaid;
+      refresh();
+    });
   }
 
   function syncSelectedCard(card, isEX = false) {
@@ -13824,10 +14574,12 @@ const StrikePreviewController = (() => {
       refresh();
       return;
     }
+    const sameCard = !!(activeHover && activeHover.card && activeHover.card.key === card.key);
     activeHover = {
       card,
       isEX: !!isEX,
-      useOptionalBranch: !!(activeHover && activeHover.card && activeHover.card.key === card.key && activeHover.useOptionalBranch),
+      useOptionalBranch: sameCard ? !!activeHover.useOptionalBranch : false,
+      criticalPaid: sameCard ? !!activeHover.criticalPaid : false,
     };
     refresh();
   }
@@ -17282,7 +18034,8 @@ class GameController {
     this._pendingAiCallback = null;
     this._aiTimer = setTimeout(() => {
       this._aiTimer = null;
-      if (this.fxPlaying) {
+      const isPlaybackRunning = (typeof StrikePlaybackController !== 'undefined' && StrikePlaybackController.isPlaying && StrikePlaybackController.isPlaying());
+      if (this.fxPlaying || isPlaybackRunning) {
         this._pendingAiCallback = () => this.runAITurn();
         return;
       }
@@ -18404,10 +19157,25 @@ class GameController {
     const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike'));
     if (!pauseAfter) {
       this.beatIndex = Number.MAX_SAFE_INTEGER;
-      this.afterStrike(res.value);
-      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerStrikeReveal) {
+      if (typeof StrikePlaybackController !== 'undefined' && typeof document !== 'undefined') {
+        if (this._aiTimer) {
+          clearTimeout(this._aiTimer);
+          this._aiTimer = null;
+        }
+        const shouldRunAiAfterPlayback = !this.engine.gameOver && this.engine.active === this.aiId;
+        StrikePlaybackController.start(this.engine.lastStrikeInfo, () => {
+          if (this._pendingAiCallback) {
+            const cb = this._pendingAiCallback;
+            this._pendingAiCallback = null;
+            cb();
+          } else if (shouldRunAiAfterPlayback && !this.engine.gameOver && this.mode === 'awaiting_action' && this.engine.active === this.aiId) {
+            this.scheduleAITurn(180);
+          }
+        });
+      } else if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerStrikeReveal) {
         HitParticleEngine.triggerStrikeReveal(this.engine.lastStrikeInfo);
       }
+      this.afterStrike(res.value);
       return;
     }
     this.mode = 'strike_result';
@@ -19525,95 +20293,187 @@ class GameController {
 const ArenaTelegraphRenderer = (() => {
   function clear() {
     const board = document.querySelector('.board');
-    if (!board) return;
-    board.querySelectorAll('.cell').forEach((cell) => {
-      cell.classList.remove('telegraph-hitbox', 'telegraph-wall-hazard', 'telegraph-after-space', 'band-lit');
-      cell.querySelectorAll('.telegraph-ghost, .telegraph-after-ghost, .telegraph-whiff-tag, .telegraph-wall-chevron').forEach((el) => el.remove());
-    });
-    const oldSvg = board.querySelector('.telegraph-spline-svg');
-    if (oldSvg) oldSvg.remove();
-    // Clear projected lethal damage segment on opponent HP bar
+    if (board) {
+      board.querySelectorAll('.cell').forEach((cell) => {
+        cell.classList.remove(
+          'telegraph-hitbox',
+          'telegraph-hitbox-miss',
+          'telegraph-target-hit',
+          'telegraph-target-miss',
+          'telegraph-wall-hazard',
+          'telegraph-after-space',
+          'telegraph-opp-after',
+          'telegraph-eddie-origin',
+          'band-lit',
+        );
+        cell.querySelectorAll(
+          '.telegraph-ghost, .telegraph-after-ghost, .telegraph-opp-ghost, .telegraph-whiff-tag, .telegraph-impact-tag, .telegraph-eddie-tag, .telegraph-wall-chevron',
+        ).forEach((el) => el.remove());
+      });
+      const oldSvg = board.querySelector('.telegraph-spline-svg');
+      if (oldSvg) oldSvg.remove();
+    }
+
+    // Clear projected damage & HP delta readouts on HUD life bars
     const dmgSeg = document.querySelector('.opp-projected-dmg');
     if (dmgSeg) dmgSeg.style.width = '0%';
     const skull = document.querySelector('.opp-public-lethal-skull');
     if (skull) skull.classList.remove('visible');
+    const oppLifeEl = document.querySelector('.opp-projected-life');
+    if (oppLifeEl) {
+      oppLifeEl.textContent = '';
+      oppLifeEl.classList.remove('visible', 'is-lethal', 'is-miss', 'is-zero');
+    }
+    const youLifeEl = document.querySelector('.you-projected-life');
+    if (youLifeEl) {
+      youLifeEl.textContent = '';
+      youLifeEl.classList.remove('visible', 'is-heal', 'is-dmg');
+    }
+  }
+
+  function shortMissTag(preview) {
+    switch (preview.missReason) {
+      case 'range_immune': return '✗ RNG IMMUNE';
+      case 'no_continuous_boost': return '✗ NO BOOST';
+      case 'self_cannot_hit': return '✗ CROSSED PAST';
+      case 'always_miss': return '✗ CANNOT HIT';
+      default: return 'OUT OF RANGE';
+    }
   }
 
   function render(preview, infoSet) {
     clear();
     if (!preview || !infoSet) return;
     const board = document.querySelector('.board');
-    if (!board) return;
-    const cells = [...board.querySelectorAll('.cell')];
-    if (cells.length !== BOARD_SIZE) return;
+    const cells = board ? [...board.querySelectorAll('.cell')] : [];
+    const hasBoard = !!(board && cells.length === BOARD_SIZE);
 
     const myPos = infoSet.actor.pos;
     const oppPos = infoSet.opponent.pos;
-
-    // 1. Bright red hitbox spaces (post-Before)
-    for (const s of (preview.hitboxSpaces || [])) {
-      const cell = cells[s];
-      if (cell) cell.classList.add('telegraph-hitbox');
-    }
-
-    // 2. Wall hazard chevrons on space 0 (1) or 8 (9) when truncated
-    if (preview.wallTruncated) {
-      const edgeIdx = preview.postBeforeSpace <= 1 ? 0 : (preview.postBeforeSpace >= BOARD_SIZE - 2 ? BOARD_SIZE - 1 : (myPos < oppPos ? BOARD_SIZE - 1 : 0));
-      const edgeCell = cells[edgeIdx];
-      if (edgeCell) {
-        edgeCell.classList.add('telegraph-wall-hazard');
-        const chev = document.createElement('div');
-        chev.className = 'telegraph-wall-chevron';
-        chev.textContent = edgeIdx === 0 ? '« WALL' : 'WALL »';
-        edgeCell.appendChild(chev);
-      }
-    }
-
-    // 3. Solid post-Before ghost silhouette (if moved or whiffing)
-    const ghostCell = cells[preview.postBeforeSpace];
-    if (ghostCell) {
-      const facingRightAfter = preview.postBeforeSpace < oppPos;
-      const ghost = document.createElement('div');
-      ghost.className = `telegraph-ghost ${facingRightAfter ? 'facing-right' : 'facing-left'}${preview.didCrossUp ? ' crossed-up' : ''}`;
-      ghost.innerHTML = `<span class="ghost-label">${preview.didCrossUp ? '⇄ FLIP' : 'YOU'}</span>`;
-      ghostCell.appendChild(ghost);
-
-      if (preview.willWhiff) {
-        const whiff = document.createElement('div');
-        whiff.className = 'telegraph-whiff-tag';
-        whiff.textContent = 'OUT OF RANGE';
-        ghostCell.appendChild(whiff);
-      }
-    }
-
-    // 4. Faint dotted post-After ghost (secondary outcome, shown only if hitting)
-    if (preview.postAfterSpace != null && preview.postAfterSpace !== preview.postBeforeSpace) {
-      const afterCell = cells[preview.postAfterSpace];
-      if (afterCell) {
-        afterCell.classList.add('telegraph-after-space');
-        const ag = document.createElement('div');
-        ag.className = 'telegraph-after-ghost';
-        ag.innerHTML = '<span>AFTER</span>';
-        afterCell.appendChild(ag);
-      }
-    }
-
-    // 5. Stepped path spline SVG overlay
-    const path = preview.movementPath || [];
-    if (path.length > 1) {
-      renderSpline(board, cells, path, preview.didCrossUp, preview.afterPath);
-    } else if (preview.afterPath && preview.afterPath.length > 1) {
-      renderSpline(board, cells, [], false, preview.afterPath);
-    }
-
-    // 6. Projected damage & Public-State Lethal skull on opponent HP bar
     const oppMax = Math.max(1, infoSet.opponent.maxLife || 30);
-    const oppLife = Math.max(0, infoSet.opponent.life || 0);
+    const oppLifeBefore = preview.oppLifeBefore != null ? preview.oppLifeBefore : Math.max(0, infoSet.opponent.life || 0);
     const dmg = preview.projectedDamage || 0;
+    const oppLifeAfter = preview.oppLifeAfter != null ? preview.oppLifeAfter : Math.max(0, oppLifeBefore - dmg);
+    const oppLifeLoss = preview.oppLifeLoss != null ? preview.oppLifeLoss : Math.max(0, oppLifeBefore - oppLifeAfter);
+
+    if (hasBoard) {
+      // 1. Hitbox spaces (measured from post-Before position or Eddie)
+      for (const s of (preview.hitboxSpaces || [])) {
+        const cell = cells[s];
+        if (!cell) continue;
+        cell.classList.add('telegraph-hitbox');
+        if (preview.willWhiff) cell.classList.add('telegraph-hitbox-miss');
+      }
+
+      // 2. Eddie origin indicator (Zato-1 Specials/Ultras)
+      if (preview.usesEddie && preview.attackOrigin != null && cells[preview.attackOrigin]) {
+        const edCell = cells[preview.attackOrigin];
+        edCell.classList.add('telegraph-eddie-origin');
+        const tag = document.createElement('div');
+        tag.className = 'telegraph-eddie-tag';
+        tag.textContent = 'EDDIE · RNG';
+        edCell.appendChild(tag);
+      }
+
+      // 3. Target cell hit / miss highlight & impact badge
+      const oppCell = cells[oppPos];
+      if (oppCell) {
+        if (preview.hasStochasticVariance) {
+          const imp = document.createElement('div');
+          imp.className = 'telegraph-impact-tag is-var';
+          imp.textContent = '🎲 RANDOM';
+          oppCell.appendChild(imp);
+        } else if (preview.willWhiff) {
+          oppCell.classList.add('telegraph-target-miss');
+        } else {
+          oppCell.classList.add('telegraph-target-hit');
+          const imp = document.createElement('div');
+          imp.className = `telegraph-impact-tag ${preview.isPublicStateLethal ? 'is-lethal' : (dmg > 0 ? 'is-hit' : 'is-zero')}`;
+          if (preview.isPublicStateLethal) {
+            imp.textContent = `☠ LETHAL (-${oppLifeLoss} HP)`;
+          } else if (dmg > 0) {
+            imp.textContent = `✓ HIT -${oppLifeLoss} HP`;
+          } else {
+            imp.textContent = '✓ HIT · 0 DMG';
+          }
+          oppCell.appendChild(imp);
+        }
+      }
+
+      // 4. Wall hazard chevrons on space 0 (Sp 1) or 8 (Sp 9) when movement is truncated
+      if (preview.wallTruncated) {
+        const postBefore = preview.postBeforeSpace != null ? preview.postBeforeSpace : myPos;
+        const edgeIdx = postBefore <= 1
+          ? 0
+          : (postBefore >= BOARD_SIZE - 2 ? BOARD_SIZE - 1 : (myPos < oppPos ? BOARD_SIZE - 1 : 0));
+        const edgeCell = cells[edgeIdx];
+        if (edgeCell) {
+          edgeCell.classList.add('telegraph-wall-hazard');
+          const chev = document.createElement('div');
+          chev.className = 'telegraph-wall-chevron';
+          chev.textContent = edgeIdx === 0 ? '« WALL' : 'WALL »';
+          edgeCell.appendChild(chev);
+        }
+      }
+
+      // 5. Post-Before ghost silhouette (shown when moving or crossing up) & whiff tag
+      const postBefore = preview.postBeforeSpace != null ? preview.postBeforeSpace : myPos;
+      const ghostCell = cells[postBefore];
+      const movedBefore = postBefore !== myPos || !!preview.didCrossUp;
+      if (ghostCell) {
+        if (movedBefore) {
+          const facingRightAfter = postBefore < oppPos;
+          const ghost = document.createElement('div');
+          ghost.className = `telegraph-ghost ${facingRightAfter ? 'facing-right' : 'facing-left'}${preview.didCrossUp ? ' crossed-up' : ''}`;
+          ghost.innerHTML = `<span class="ghost-label">${preview.didCrossUp ? `⇄ FLIP · Sp ${postBefore + 1}` : `YOU · Sp ${postBefore + 1}`}</span>`;
+          ghostCell.appendChild(ghost);
+        }
+        if (preview.willWhiff) {
+          const whiff = document.createElement('div');
+          whiff.className = 'telegraph-whiff-tag';
+          whiff.textContent = shortMissTag(preview);
+          (oppCell || ghostCell).appendChild(whiff);
+        }
+      }
+
+      // 6. Opponent Hit Push/Pull destination ghost
+      if (preview.oppPostHitSpace != null && preview.oppPostHitSpace !== oppPos) {
+        const oppAfterCell = cells[preview.oppPostHitSpace];
+        if (oppAfterCell) {
+          oppAfterCell.classList.add('telegraph-opp-after');
+          const og = document.createElement('div');
+          og.className = 'telegraph-opp-ghost';
+          og.innerHTML = `<span>CPU → Sp ${preview.oppPostHitSpace + 1}</span>`;
+          oppAfterCell.appendChild(og);
+        }
+      }
+
+      // 7. Post-After self-move ghost (runs even on whiff, e.g. Cross Retreat 3)
+      if (preview.postAfterSpace != null && preview.postAfterSpace !== postBefore) {
+        const afterCell = cells[preview.postAfterSpace];
+        if (afterCell) {
+          afterCell.classList.add('telegraph-after-space');
+          const ag = document.createElement('div');
+          ag.className = 'telegraph-after-ghost';
+          ag.innerHTML = `<span>AFTER · Sp ${preview.postAfterSpace + 1}</span>`;
+          afterCell.appendChild(ag);
+        }
+      }
+
+      // 8. Stepped path spline SVG overlay (Before, Hit Push/Pull, After)
+      const path = preview.movementPath || [];
+      const oppPath = preview.oppHitMovePath || [];
+      const afterPath = preview.afterPath || [];
+      if (path.length > 1 || oppPath.length > 1 || afterPath.length > 1) {
+        renderSpline(board, cells, path, !!preview.didCrossUp, afterPath, oppPath);
+      }
+    }
+
+    // 9. Projected damage bar, Public-State Lethal skull, and Life Loss deltas on HUD bars
     const dmgSeg = document.querySelector('.opp-projected-dmg');
-    if (dmgSeg && dmg > 0) {
-      const pct = Math.min(100, (Math.min(oppLife, dmg) / oppMax) * 100);
-      const rightPct = Math.max(0, ((oppMax - oppLife) / oppMax) * 100);
+    if (dmgSeg && !preview.hasStochasticVariance && !preview.willWhiff && dmg > 0) {
+      const pct = Math.min(100, (Math.min(oppLifeBefore, dmg) / oppMax) * 100);
+      const rightPct = Math.max(0, ((oppMax - oppLifeBefore) / oppMax) * 100);
       dmgSeg.style.right = `${rightPct}%`;
       dmgSeg.style.width = `${pct}%`;
     }
@@ -19621,9 +20481,50 @@ const ArenaTelegraphRenderer = (() => {
     if (skull) {
       skull.classList.toggle('visible', !!preview.isPublicStateLethal);
     }
+    const oppLifeEl = document.querySelector('.opp-projected-life');
+    if (oppLifeEl) {
+      if (preview.hasStochasticVariance) {
+        oppLifeEl.textContent = '→ ?';
+        oppLifeEl.classList.add('visible', 'is-zero');
+      } else if (preview.willWhiff) {
+        oppLifeEl.textContent = 'MISS';
+        oppLifeEl.classList.add('visible', 'is-miss');
+      } else if (oppLifeLoss > 0) {
+        oppLifeEl.textContent = preview.isPublicStateLethal
+          ? `→ 0 (-${oppLifeLoss})`
+          : `→ ${oppLifeAfter} (-${oppLifeLoss})`;
+        oppLifeEl.classList.add('visible');
+        if (preview.isPublicStateLethal) oppLifeEl.classList.add('is-lethal');
+      } else {
+        oppLifeEl.textContent = `→ ${oppLifeBefore} (0)`;
+        oppLifeEl.classList.add('visible', 'is-zero');
+      }
+    }
+    const youLifeEl = document.querySelector('.you-projected-life');
+    if (youLifeEl && preview.selfLifeDelta) {
+      const sign = preview.selfLifeDelta > 0 ? '+' : '';
+      youLifeEl.textContent = `→ ${preview.selfLifeAfter} (${sign}${preview.selfLifeDelta})`;
+      youLifeEl.classList.add('visible', preview.selfLifeDelta > 0 ? 'is-heal' : 'is-dmg');
+    }
   }
 
-  function renderSpline(board, cells, path, didCrossUp, afterPath) {
+  function addMarker(defs, svgNS, id, color) {
+    const marker = document.createElementNS(svgNS, 'marker');
+    marker.setAttribute('id', id);
+    marker.setAttribute('viewBox', '0 0 10 10');
+    marker.setAttribute('refX', '7');
+    marker.setAttribute('refY', '5');
+    marker.setAttribute('markerWidth', '5');
+    marker.setAttribute('markerHeight', '5');
+    marker.setAttribute('orient', 'auto-start-reverse');
+    const poly = document.createElementNS(svgNS, 'path');
+    poly.setAttribute('d', 'M 0 1.5 L 8.5 5 L 0 8.5 z');
+    poly.setAttribute('fill', color);
+    marker.appendChild(poly);
+    defs.appendChild(marker);
+  }
+
+  function renderSpline(board, cells, path, didCrossUp, afterPath, oppPath) {
     const boardRect = board.getBoundingClientRect();
     if (!boardRect.width || !boardRect.height) return;
     const svgNS = 'http://www.w3.org/2000/svg';
@@ -19631,23 +20532,30 @@ const ArenaTelegraphRenderer = (() => {
     svg.setAttribute('class', 'telegraph-spline-svg');
     svg.setAttribute('viewBox', `0 0 ${boardRect.width} ${boardRect.height}`);
 
-    const centerOf = (idx) => {
+    const defs = document.createElementNS(svgNS, 'defs');
+    addMarker(defs, svgNS, 'tp-arrow-before', '#4de6d1');
+    addMarker(defs, svgNS, 'tp-arrow-crossup', '#f7c65a');
+    addMarker(defs, svgNS, 'tp-arrow-after', '#60a5fa');
+    addMarker(defs, svgNS, 'tp-arrow-opp', '#ff8c42');
+    svg.appendChild(defs);
+
+    const centerOf = (idx, yOffset = 0) => {
       const cell = cells[idx];
       const pad = cell && cell.querySelector ? cell.querySelector('.cell-floor-pad') : null;
       const r = pad ? pad.getBoundingClientRect() : cell.getBoundingClientRect();
       return {
         x: r.left - boardRect.left + r.width / 2,
-        y: pad ? (r.top - boardRect.top + r.height * 0.5) : (r.top - boardRect.top + r.height * 0.8),
+        y: (pad ? (r.top - boardRect.top + r.height * 0.5) : (r.top - boardRect.top + r.height * 0.8)) + yOffset,
       };
     };
 
-    if (path.length > 1) {
+    if (path && path.length > 1) {
       let d = '';
       for (let i = 0; i < path.length; i++) {
-        const pt = centerOf(path[i]);
+        const pt = centerOf(path[i], 0);
         if (i === 0) d += `M ${pt.x} ${pt.y}`;
         else {
-          const prev = centerOf(path[i - 1]);
+          const prev = centerOf(path[i - 1], 0);
           const jump = Math.abs(path[i] - path[i - 1]) > 1;
           if (jump) {
             const mx = (prev.x + pt.x) / 2;
@@ -19661,18 +20569,44 @@ const ArenaTelegraphRenderer = (() => {
       const pEl = document.createElementNS(svgNS, 'path');
       pEl.setAttribute('d', d);
       pEl.setAttribute('class', didCrossUp ? 'spline-before crossup' : 'spline-before');
+      pEl.setAttribute('marker-end', didCrossUp ? 'url(#tp-arrow-crossup)' : 'url(#tp-arrow-before)');
       svg.appendChild(pEl);
+    }
+
+    if (oppPath && oppPath.length > 1) {
+      let dOpp = '';
+      for (let i = 0; i < oppPath.length; i++) {
+        const pt = centerOf(oppPath[i], -8);
+        if (i === 0) dOpp += `M ${pt.x} ${pt.y}`;
+        else {
+          const prev = centerOf(oppPath[i - 1], -8);
+          const jump = Math.abs(oppPath[i] - oppPath[i - 1]) > 1;
+          if (jump) {
+            const mx = (prev.x + pt.x) / 2;
+            const my = Math.min(prev.y, pt.y) - 22;
+            dOpp += ` Q ${mx} ${my} ${pt.x} ${pt.y}`;
+          } else {
+            dOpp += ` L ${pt.x} ${pt.y}`;
+          }
+        }
+      }
+      const pOpp = document.createElementNS(svgNS, 'path');
+      pOpp.setAttribute('d', dOpp);
+      pOpp.setAttribute('class', 'spline-opp-push');
+      pOpp.setAttribute('marker-end', 'url(#tp-arrow-opp)');
+      svg.appendChild(pOpp);
     }
 
     if (afterPath && afterPath.length > 1) {
       let d2 = '';
       for (let i = 0; i < afterPath.length; i++) {
-        const pt = centerOf(afterPath[i]);
+        const pt = centerOf(afterPath[i], 6);
         d2 += (i === 0 ? `M ${pt.x} ${pt.y}` : ` L ${pt.x} ${pt.y}`);
       }
       const p2 = document.createElementNS(svgNS, 'path');
       p2.setAttribute('d', d2);
       p2.setAttribute('class', 'spline-after');
+      p2.setAttribute('marker-end', 'url(#tp-arrow-after)');
       svg.appendChild(p2);
     }
 
@@ -19703,6 +20637,11 @@ const ClashSummaryBanner = (() => {
     }
   }
 
+  function formatRangeText(s) {
+    if (s.minRange == null || s.maxRange == null) return '—';
+    return s.minRange === s.maxRange ? String(s.minRange) : `${s.minRange}–${s.maxRange}`;
+  }
+
   function render(preview, infoSet, hoverMeta) {
     const slot = getSlot();
     if (!slot) return;
@@ -19711,48 +20650,138 @@ const ClashSummaryBanner = (() => {
       syncStripState(slot, false);
       return;
     }
+
     const s = preview.effectiveStats || {};
-    const isInitiator = typeof G === 'undefined' || G.mode !== 'defend_select';
+    const isInitiator = preview.isInitiator != null
+      ? !!preview.isInitiator
+      : (typeof G === 'undefined' || G.mode !== 'defend_select');
     const oppBoosts = (infoSet.opponent.boostKeys || []).map((k) => {
       const c = typeof SimulateStrikePreview !== 'undefined' ? SimulateStrikePreview.resolveCardByKey(k) : null;
       if (!c) return k;
       return typeof boostEffectSummary === 'function' ? boostEffectSummary(c) : c.name;
     });
-    const hasOpt = preview.optionalBranches && preview.optionalBranches.length > 0;
+    const hasOpt = Array.isArray(preview.optionalBranches) && preview.optionalBranches.length > 0;
     const optActive = !!(hoverMeta && hoverMeta.useOptionalBranch);
-    const exActive = !!(hoverMeta && hoverMeta.isEX);
+    const exActive = !!(preview.isEX || (hoverMeta && hoverMeta.isEX));
+    const critActive = !!preview.criticalActive;
+    const critFree = !!preview.criticalFree;
+    const canPreviewCrit = !!preview.canPreviewCritical;
 
-    const varBadge = preview.hasStochasticVariance ? '<span class="clash-pill var" title="Stochastic outcome (Wild Swing / Draw)">?</span>' : '';
-    const lethalBadge = preview.isPublicStateLethal
-      ? '<span class="clash-pill lethal" title="Lethal vs. current board state">☠ Public Lethal</span>'
+    const rangeText = formatRangeText(s);
+    const initialDist = preview.initialDist != null
+      ? preview.initialDist
+      : Math.abs((infoSet.actor.pos || 0) - (infoSet.opponent.pos || 0));
+    const postBeforeDist = preview.postBeforeDist != null ? preview.postBeforeDist : initialDist;
+    const oppLifeBefore = preview.oppLifeBefore != null ? preview.oppLifeBefore : Math.max(0, infoSet.opponent.life || 0);
+    const dmg = preview.projectedDamage != null ? preview.projectedDamage : 0;
+    const oppLifeAfter = preview.oppLifeAfter != null ? preview.oppLifeAfter : Math.max(0, oppLifeBefore - dmg);
+    const oppLifeLoss = preview.oppLifeLoss != null ? preview.oppLifeLoss : Math.max(0, oppLifeBefore - oppLifeAfter);
+
+    const spdVal = s.spd != null ? s.spd : 0;
+    const powVal = s.pow != null ? s.pow : 0;
+    const armVal = s.arm != null ? s.arm : 0;
+    const grdVal = s.grd != null ? s.grd : 0;
+    const oppArmVal = s.oppVisibleArm != null ? s.oppVisibleArm : 0;
+    const oppGrdVal = s.oppVisibleGrd != null ? s.oppVisibleGrd : 0;
+
+    let verdictBadge = '';
+    if (preview.hasStochasticVariance) {
+      verdictBadge = '<span class="clash-pill var" title="Stochastic outcome (Wild Swing)">🎲 WILD SWING</span>';
+    } else if (preview.isPublicStateLethal) {
+      verdictBadge = '<span class="clash-pill lethal" title="Lethal vs. current visible board state">☠ Public Lethal</span>';
+    } else if (preview.willWhiff) {
+      const missTxt = preview.missReason === 'range_immune'
+        ? '✗ RANGE IMMUNE'
+        : (preview.missReason === 'no_continuous_boost'
+          ? '✗ NEEDS BOOST'
+          : (preview.missReason === 'self_cannot_hit'
+            ? '✗ CROSSED PAST'
+            : (preview.missReason === 'always_miss' ? '✗ CANNOT HIT' : '✗ OUT OF RANGE')));
+      verdictBadge = `<span class="clash-pill whiff" title="${esc(preview.missReasonLabel || missTxt)}">${esc(missTxt)}</span>`;
+    } else if (preview.hitBySideSwap) {
+      verdictBadge = '<span class="clash-pill hit" title="Connects via Cross-Up side swap">✓ HIT (CROSS-UP)</span>';
+    } else if (preview.hitByBeforeMove) {
+      verdictBadge = '<span class="clash-pill hit" title="Connects after Before movement">✓ HIT (AFTER MOVE)</span>';
+    } else {
+      verdictBadge = '<span class="clash-pill hit" title="Expected to connect at projected distance">✓ EXPECTED HIT</span>';
+    }
+
+    const exPill = exActive ? '<span class="clash-pill ex">EX +1</span>' : '';
+    const critPill = critFree
+      ? '<span class="clash-pill crit" title="Free Critical from active Boost">CRIT (Free)</span>'
+      : (critActive ? '<span class="clash-pill crit">CRIT</span>' : '');
+    const critToggle = canPreviewCrit
+      ? `<button type="button" class="clash-toggle crit-toggle ${critActive ? 'active' : ''}" onclick="EventBus.emit('OnToggleCriticalPreview', {})" title="Toggle Critical preview (C)">[C] Critical</button>`
       : '';
-    const whiffBadge = preview.willWhiff ? '<span class="clash-pill whiff">OUT OF RANGE</span>' : '';
     const optPill = hasOpt
-      ? `<button type="button" class="clash-toggle ${optActive ? 'active' : ''}" onclick="EventBus.emit('OnToggleOptionalBranch', {})">[Shift] Optional: ${esc(preview.optionalBranches[0].label)}</button>`
+      ? `<button type="button" class="clash-toggle ${optActive ? 'active' : ''}" onclick="EventBus.emit('OnToggleOptionalBranch', {})" title="Hold Shift or click to preview optional spend">[Shift] ${esc(preview.optionalBranches[0].label)}</button>`
       : '';
-    const exPill = exActive ? '<span class="clash-pill ex">EX (+1 All)</span>' : '';
 
     const pill = (k, v) => (typeof statPillHTML === 'function'
       ? statPillHTML(k, v, { showFullLabel: true, extraClass: 'stat-inline' })
       : `<b>${k.toUpperCase()} ${v}</b>`);
 
+    const distText = initialDist === postBeforeDist
+      ? `Dist ${postBeforeDist}`
+      : `Dist ${initialDist}→${postBeforeDist}`;
+    const distPart = `<span class="clash-detail-item clash-dist">${preview.usesEddie ? `Eddie→CPU Dist ${postBeforeDist}` : distText} · Rng ${esc(rangeText)}</span>`;
+
+    const moveBits = [];
+    if (preview.beforeMoveSummary) moveBits.push(`Before: ${preview.beforeMoveSummary}`);
+    if (preview.oppHitMoveSummary) moveBits.push(`Hit: ${preview.oppHitMoveSummary}`);
+    if (preview.afterMoveSummary) moveBits.push(`After: ${preview.afterMoveSummary}`);
+    const movePart = moveBits.length
+      ? `<span class="clash-detail-item clash-move">${esc(moveBits.join(' · '))}</span>`
+      : '';
+
+    const extraEffects = (preview.effectsSummary || []).filter((e) => !/^You [+-]\d+ HP$/.test(e) && !e.startsWith('Ignores '));
+    const effectsPart = extraEffects.length
+      ? `<span class="clash-detail-item clash-fx">${esc(extraEffects.slice(0, 3).join(' · '))}</span>`
+      : '';
+
+    let lifeHtml = '';
+    if (preview.hasStochasticVariance) {
+      lifeHtml = '<span class="clash-dmg">Proj. DMG: <b>?</b></span>';
+    } else if (preview.willWhiff) {
+      lifeHtml = `<span class="clash-dmg">CPU HP: <b>${oppLifeBefore}</b> <em class="clash-life-miss">(0 dmg)</em></span>`;
+    } else {
+      lifeHtml = `<span class="clash-dmg" title="${esc(preview.damageFormula || '')}">CPU HP: <b>${oppLifeBefore}→${oppLifeAfter}</b> <em class="clash-life-loss${preview.isPublicStateLethal ? ' lethal' : ''}">(-${oppLifeLoss})</em></span>`;
+    }
+    const selfLifeHtml = preview.selfLifeDelta
+      ? `<span class="clash-self-hp ${preview.selfLifeDelta > 0 ? 'heal' : 'dmg'}">You ${preview.selfLifeDelta > 0 ? '+' : ''}${preview.selfLifeDelta} HP</span>`
+      : '';
+    const guardBreakHtml = (preview.breaksVisibleGuard && oppGrdVal > 0)
+      ? '<span class="clash-pill guard-break">Breaks GRD</span>'
+      : '';
+
+    const hasDetailRow = !preview.hasStochasticVariance || moveBits.length > 0 || canPreviewCrit || hasOpt;
+    const detailRow = hasDetailRow
+      ? `<div class="clash-detail-row">
+          <div class="clash-detail-left">${!preview.hasStochasticVariance ? distPart : ''}${movePart}${effectsPart}</div>
+          ${(critToggle || optPill) ? `<div class="clash-detail-right">${critToggle}${optPill}</div>` : ''}
+        </div>`
+      : '';
+
     slot.innerHTML = `
-      <div class="clash-banner">
-        <div class="clash-side you">
-          <span class="clash-badge ${isInitiator ? 'striker' : 'defender'}">${isInitiator ? 'STRIKER (Wins Speed Ties)' : 'DEFENDER'}</span>
-          <span class="clash-stats">
-            ${pill('spd', s.spd)} ${pill('pow', s.pow)} ${pill('arm', s.arm)} ${pill('grd', s.grd)}
-            ${s.ignoreArmor ? '<em class="tag-ignore">Ignores ARM</em>' : ''}
-            ${s.ignoreGuard ? '<em class="tag-ignore">Ignores GRD</em>' : ''}
-          </span>
-          ${exPill}${varBadge}${whiffBadge}${lethalBadge}${optPill}
+      <div class="clash-banner${preview.willWhiff ? ' is-miss' : (preview.isPublicStateLethal ? ' is-lethal' : '')}">
+        <div class="clash-top-row">
+          <div class="clash-side you">
+            <span class="clash-badge ${isInitiator ? 'striker' : 'defender'}">${isInitiator ? 'STRIKER' : 'DEFENDER'}</span>
+            ${preview.cardName ? `<span class="clash-card-name">${esc(preview.cardName)}</span>` : ''}
+            ${exPill}${critPill}${verdictBadge}
+            <span class="clash-stats">
+              ${pill('rng', rangeText)} ${pill('spd', spdVal)} ${pill('pow', powVal)} ${pill('arm', armVal)} ${pill('grd', grdVal)}
+              ${s.ignoreArmor ? '<em class="tag-ignore">Ignores ARM</em>' : ''}
+              ${s.ignoreGuard ? '<em class="tag-ignore">Ignores GRD</em>' : ''}
+            </span>
+          </div>
+          <div class="clash-side opp">
+            <span class="clash-stats"><span class="clash-opp-lbl">OPP:</span> ${pill('arm', oppArmVal)} ${pill('grd', oppGrdVal)}${s.oppStunImmune ? ' · Stun Immune' : ''}${guardBreakHtml}</span>
+            ${oppBoosts.length ? `<span class="clash-boosts">Boosts: ${esc(oppBoosts.join(', '))}</span>` : ''}
+            ${lifeHtml}${selfLifeHtml}
+          </div>
         </div>
-        <div class="clash-vs">VS</div>
-        <div class="clash-side opp">
-          <span class="clash-stats"><span class="clash-opp-lbl">OPP:</span> ${pill('arm', s.oppVisibleArm)} ${pill('grd', s.oppVisibleGrd)}${s.oppStunImmune ? ' · Stun Immune' : ''}</span>
-          ${oppBoosts.length ? `<span class="clash-boosts">Boosts: ${esc(oppBoosts.join(', '))}</span>` : ''}
-          <span class="clash-dmg">Proj. DMG: <b>${preview.hasStochasticVariance ? '?' : preview.projectedDamage}</b></span>
-        </div>
+        ${detailRow}
       </div>
     `;
     syncStripState(slot, true);
@@ -19967,9 +20996,9 @@ const StrikePlaybackController = (() => {
           const prevStep = activeStepIdx >= 2 ? tl[activeStepIdx - 2] : null;
           const moved = prevStep && (prevStep.p1Pos !== step.p1Pos || prevStep.p2Pos !== step.p2Pos);
           if (step.phase === 'reveal') delay = 400;
-          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 380 : 280;
-          else if (step.phase === 'range' && step.hitLanded === false) delay = 360;
-          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 420 : 340;
+          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 440 : 280;
+          else if (step.phase === 'range' && step.hitLanded === false) delay = 400;
+          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 460 : 380;
           else if (step.phase === 'stunned') delay = 440;
         }
         timer = setTimeout(advance, delay);
@@ -20010,7 +21039,11 @@ const StrikePlaybackController = (() => {
     return Math.max(0, ((strikeInfo && strikeInfo.timeline) || []).length - 1);
   }
 
-  return { start, stop, skip, timelineBarHTML, getCurrentStepIdx };
+  function isPlaying() {
+    return !!activeStrikeInfo;
+  }
+
+  return { start, stop, skip, timelineBarHTML, getCurrentStepIdx, isPlaying };
 })();
 
 // ============================================================
@@ -21913,6 +22946,13 @@ const InputManager = (() => {
         G.actionExceed();
       }
       return;
+    }
+    if ((key === 'c' || key === 'C') && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat) {
+      if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.getActiveHover()) {
+        if (typeof ev.preventDefault === 'function') ev.preventDefault();
+        EventBus.emit('OnToggleCriticalPreview', {});
+        return;
+      }
     }
 
     if (isHumanTurn && G.mode === 'awaiting_action') {
@@ -27536,7 +28576,6 @@ const StandeeStage = (() => {
       f.choreoElapsed = (choreo.holdAtU != null) ? (choreo.holdAtU * f.choreoDuration) : 0;
       f.choreoTargetDistPx = distPx;
       f.wildSwingHazard = !!choreo.wildSwingHazard;
-      f.activeFrameKey = getFighterActiveFrameKey(f);
     }
     if (choreo.springPreset && typeof StandeeRigMath !== 'undefined') {
       const sp = choreo.springPreset;
@@ -27552,6 +28591,9 @@ const StandeeStage = (() => {
     }
     if (choreo.hitstopSec > 0 && !isReducedMotion()) {
       f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+    }
+    if (choreo.track !== 2 || !f.choreo || f.choreo.track === 2) {
+      f.activeFrameKey = getFighterActiveFrameKey(f);
     }
     if (choreo.flashWhiteMs > 0 && !isReducedMotion()) {
       f.flashDuration = choreo.flashWhiteMs / 1000;
@@ -27660,7 +28702,12 @@ const StandeeStage = (() => {
 
   function getFighterActiveFrameKey(f) {
     if (!f || !f.choreo) return 'idle';
-    const u = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+    const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+    // During hitstop freeze on impact (hit_attack), lock onto the active impact keyframe (u >= 0.25)
+    // rather than freezing on u=0 startup/windup!
+    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack')
+      ? Math.max(0.25, rawU)
+      : rawU;
     if (typeof StandeeRigMath !== 'undefined' && StandeeRigMath.resolveActiveFrameKey) {
       return StandeeRigMath.resolveActiveFrameKey(f.choreo, u);
     }
@@ -27872,7 +28919,7 @@ const StandeeStage = (() => {
   }
 
   function notifyBoardMove(info) {
-    if (!info || !info.pid) return;
+    if (!info || !info.pid || inStrikePlayback) return;
     const f = fighters[info.pid];
     if (!f || !f.active) return;
     syncDomMetrics();
@@ -27989,9 +29036,11 @@ const StandeeStage = (() => {
       if (!step || !si) return;
 
       let stepSwapped = !!step.sideSwapped;
+      let prevP1 = strikeSpaces.p1;
+      let prevP2 = strikeSpaces.p2;
       if (step.p1Pos != null && step.p2Pos != null) {
-        const prevP1 = strikeSpaces.p1;
-        const prevP2 = strikeSpaces.p2;
+        prevP1 = strikeSpaces.p1;
+        prevP2 = strikeSpaces.p2;
         strikeSpaces.p1 = step.p1Pos;
         strikeSpaces.p2 = step.p2Pos;
         const swapped = (prevP1 != null && prevP2 != null) && ((prevP1 < prevP2) !== (strikeSpaces.p1 < strikeSpaces.p2));
@@ -28001,8 +29050,11 @@ const StandeeStage = (() => {
         for (const pid of ['p1', 'p2']) {
           const f = fighters[pid];
           if (!f || !f.active) continue;
-          const nextX = spaceToX(pid, strikeSpaces[pid], strikeSpaces.p1, strikeSpaces.p2);
-          if (nextX != null && Math.abs(nextX - f.x) > 2) {
+          const prevSpace = pid === 'p1' ? prevP1 : prevP2;
+          const curSpace = strikeSpaces[pid];
+          const movedSpace = prevSpace != null && curSpace != null && prevSpace !== curSpace;
+          const nextX = spaceToX(pid, curSpace, strikeSpaces.p1, strikeSpaces.p2);
+          if (nextX != null && movedSpace) {
             f.startX = f.x;
             f.targetX = nextX;
             f.moveElapsed = 0;
@@ -28038,17 +29090,40 @@ const StandeeStage = (() => {
         att.zPriority = 4;
         if (def) def.zPriority = 3;
         if (stepSwapped) att.lastSideSwapped = true;
-        const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'before', {
-          sideSwapped: stepSwapped,
-          criticalPaid: !!(side && side.criticalPaid),
-          isEX: !!(side && side.isEX),
-          exceeded: att.exceeded,
-          rangeSpaces: distSpaces,
-          distanceToTargetPx: distPx,
-          reducedHitStop: isReducedMotion(),
-        });
-        startChoreography(att, choreo, { distanceToTargetPx: distPx });
-        if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        const prevActorSpace = actorId === 'p1' ? prevP1 : prevP2;
+        const curActorSpace = strikeSpaces[actorId];
+        const attMovedOnStep = !!((prevActorSpace != null && curActorSpace != null && prevActorSpace !== curActorSpace) || stepSwapped);
+        const cardKeyNorm = String((side && side.cardKey) || '').replace(/^gg_/, '');
+        const hasDedicatedBeforePose = (
+          cardKeyNorm === 'spiral_arrow' ||
+          cardKeyNorm === 'cannonball' ||
+          cardKeyNorm === 'dive_kick' ||
+          cardKeyNorm === 'razors_edge_slicer' ||
+          cardKeyNorm === 'gyro_drive_smasher' ||
+          cardKeyNorm === 'flying_power_bomb' ||
+          cardKeyNorm === 'siberian_blizzard' ||
+          cardKeyNorm === 'dive' ||
+          cardKeyNorm === 'tatsumaki_ryu' ||
+          cardKeyNorm === 'tatsumaki_ken' ||
+          cardKeyNorm === 'guren_senpukyaku' ||
+          cardKeyNorm === 'assault' ||
+          cardKeyNorm === 'axe_kick'
+        );
+        // Only play before-movement dash choreography if the attacker actually translates or uses a dedicated Before-phase card;
+        // otherwise keep their coiled Reveal windup pose (e.g. Sweep's sweep_windup or Cross's cross_strike) ready for Range/Hit!
+        if (attMovedOnStep || hasDedicatedBeforePose) {
+          const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'before', {
+            sideSwapped: stepSwapped,
+            criticalPaid: !!(side && side.criticalPaid),
+            isEX: !!(side && side.isEX),
+            exceeded: att.exceeded,
+            rangeSpaces: distSpaces,
+            distanceToTargetPx: distPx,
+            reducedHitStop: isReducedMotion(),
+          });
+          startChoreography(att, choreo, { distanceToTargetPx: distPx });
+          if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        }
       } else if (step.phase === 'range' && step.hitLanded === false && att && att.active) {
         att.zPriority = 4;
         const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'range', {
@@ -28075,6 +29150,10 @@ const StandeeStage = (() => {
         for (const pid of ['p1', 'p2']) {
           const f = fighters[pid];
           if (!f) continue;
+          if (f.choreo && f.choreo.phase === 'reveal') {
+            f.choreo = null;
+            f.choreoElapsed = 0;
+          }
           f.zPriority = 2;
           f.desaturateAmount = 0;
           f.wildSwingHazard = false;
@@ -28188,6 +29267,10 @@ const StandeeStage = (() => {
       for (const pid of ['p1', 'p2']) {
         const f = fighters[pid];
         if (!f) continue;
+        if (f.choreo && f.choreo.phase === 'reveal') {
+          f.choreo = null;
+          f.choreoElapsed = 0;
+        }
         f.zPriority = 2;
         f.desaturateAmount = 0;
         f.wildSwingHazard = false;
@@ -28296,10 +29379,14 @@ const StandeeStage = (() => {
       } else {
         f.choreoElapsed += dt;
         if (f.choreoElapsed >= f.choreoDuration) {
-          f.choreo = null;
-          f.choreoElapsed = 0;
-          f.desaturateAmount = 0;
-          f.wildSwingHazard = false;
+          if (inStrikePlayback && f.choreo.phase === 'reveal') {
+            f.choreoElapsed = f.choreoDuration;
+          } else {
+            f.choreo = null;
+            f.choreoElapsed = 0;
+            f.desaturateAmount = 0;
+            f.wildSwingHazard = false;
+          }
         }
       }
     }
@@ -28371,7 +29458,12 @@ const StandeeStage = (() => {
     knots[3].rotRad += breath2 * 0.012;
 
     if (f.choreo) {
-      const u = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+      const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+      // During hitstop freeze on impact (hit_attack / hit_defend), evaluate spine & clip envelope
+      // at peak active contact (u >= 0.28) so the fighter freezes in the full strike pose!
+      const u = (f.hitstopRemaining > 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend'))
+        ? Math.max(0.28, rawU)
+        : rawU;
       let env = 1.0;
       let stumble = 0;
       if (f.choreo.clipMode === 'attack_3clip' || f.choreo.clipMode === 'whiff_3clip') {
@@ -28401,7 +29493,8 @@ const StandeeStage = (() => {
 
     // Track 2 Additive Flinch ("Super Armor" Grit / Guard Brace on top of active windup)
     if (f.additiveChoreo) {
-      const au = f.additiveDuration > 0 ? Math.min(1, f.additiveElapsed / f.additiveDuration) : 1;
+      const rawAu = f.additiveDuration > 0 ? Math.min(1, f.additiveElapsed / f.additiveDuration) : 1;
+      const au = f.hitstopRemaining > 0 ? Math.max(0.5, rawAu) : rawAu;
       const aEnv = Math.sin(au * Math.PI);
       for (let k = 1; k <= 3; k++) {
         const srcKnot = k === 1 ? f.additiveChoreo.pelvis : (k === 2 ? f.additiveChoreo.waist : f.additiveChoreo.head);
@@ -28417,7 +29510,8 @@ const StandeeStage = (() => {
 
   function computeFighterLungeOffsetX(f) {
     if (!f.choreo || !f.choreoDuration || f.choreoDuration <= 0) return 0;
-    const u = Math.min(1, f.choreoElapsed / f.choreoDuration);
+    const rawU = Math.min(1, f.choreoElapsed / f.choreoDuration);
+    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack') ? Math.max(0.28, rawU) : rawU;
     if (f.choreo.dynamicLunge && typeof StandeeRigMath !== 'undefined' && StandeeRigMath.computeDynamicLungeOffset) {
       const isProj = !!f.choreo.projectile;
       const isWhiff = f.choreo.clipMode === 'whiff_3clip';
@@ -30525,15 +31619,43 @@ function boostHeadline(c) {
   return `<div class="card-headline boost-headline">Boost${tag}${cancelTag}</div>`;
 }
 
-// Renders the `.range-chip` (\u2713/\u2717) that shows whether a card's printed range
-// band covers the CURRENT distance. `inRange` is null when there's no distance
-// to compare against (e.g. this tile isn't shown in a strike/defend context) \u2014
-// in that case no chip is rendered at all, rather than a misleading one.
+// Renders the `.range-chip` (✓/✗) reflecting projected hit/miss from SimulateStrikePreview
+// (accounting for Before-movement, cross-ups, Eddie origin, character/boost range bonuses,
+// and visible opponent range immunities). Accepts boolean or semantic state strings.
 function rangeChipHTML(inRange) {
   if (inRange == null) return '';
-  return inRange
-    ? '<span class="range-chip in">in range \u2713</span>'
-    : '<span class="range-chip out">out of range \u2717</span>';
+  if (inRange === true || inRange === 'hit') {
+    return '<span class="range-chip in">in range \u2713</span>';
+  }
+  if (inRange === 'after_move') {
+    return '<span class="range-chip in move-hit" title="Connects after Before movement or Cross-Up">hits after move \u2713</span>';
+  }
+  if (inRange === 'immune') {
+    return '<span class="range-chip out" title="Opponent has visible Range Immunity at projected distance">immune \u2717</span>';
+  }
+  if (inRange === 'no_boost') {
+    return '<span class="range-chip out" title="Requires a Continuous Boost in play to hit">no boost \u2717</span>';
+  }
+  if (inRange === 'always_miss') {
+    return '<span class="range-chip out" title="Defense/utility card cannot hit">utility</span>';
+  }
+  return '<span class="range-chip out">out of range \u2717</span>';
+}
+
+function previewToRangeChip(preview, fallbackCard, dist) {
+  if (preview) {
+    if (preview.hasStochasticVariance) return null;
+    if (!preview.willWhiff) {
+      return (preview.hitByBeforeMove || preview.hitBySideSwap) ? 'after_move' : 'hit';
+    }
+    if (preview.missReason === 'range_immune') return 'immune';
+    if (preview.missReason === 'no_continuous_boost') return 'no_boost';
+    if (preview.missReason === 'always_miss') return 'always_miss';
+    return 'miss';
+  }
+  return (dist != null && fallbackCard && fallbackCard.range)
+    ? (dist >= fallbackCard.range[0] && dist <= fallbackCard.range[1])
+    : null;
 }
 
 // Hover attributes that light up a card's range band on the board (see
@@ -30635,9 +31757,13 @@ function cardTile(c, opts = {}) {
 // `dist`: current board distance, when known \u2014 drives the same range-chip/hover-band
 // treatment as cardTile() (see strike_select/defend_select below), using the base
 // card's printed range since pairing for EX doesn't change range, only pow/spd/arm/grd.
-function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine = null, player = null) {
+function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine = null, player = null, opts = {}) {
   const seen = new Set();
   const tiles = [];
+  const isInitiator = opts.isInitiator !== false;
+  const infoSet = (engine && typeof engine.getInformationSet === 'function' && player)
+    ? engine.getInformationSet(player.id || 'p1')
+    : null;
   for (let i = 0; i < hand.length; i++) {
     for (let j = i + 1; j < hand.length; j++) {
       if (hand[i].key === hand[j].key && !seen.has(hand[i].key)) {
@@ -30647,12 +31773,16 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine 
           continue;
         }
         const exCard = { ...a, name: a.name, pow: a.pow + 1, spd: a.spd + 1, arm: a.arm + 1, grd: a.grd + 1, isEX: true };
-        const inRange = (dist != null && a.range) ? (dist >= a.range[0] && dist <= a.range[1]) : null;
+        const exPreview = (infoSet && typeof SimulateStrikePreview !== 'undefined')
+          ? SimulateStrikePreview.run(infoSet, a, { isEX: true, isInitiator })
+          : null;
+        const rangeChip = previewToRangeChip(exPreview, a, dist);
         tiles.push(cardTile(exCard, {
           onclick: onClickFn(a.uid, b.uid),
           highlight,
           band: a.range,
-          rangeChip: inRange,
+          rangeChip,
+          lethalAura: !!(exPreview && exPreview.isPublicStateLethal),
           isEX: true,
         }));
       }
@@ -30937,7 +32067,7 @@ function lifeBar(g, who) {
       <div class="life-main">
         <div class="life-header">
           <span class="pname">${esc(label)} ${strikerBadge} ${player.exceeded ? '<span class="exceeded-badge">EXCEEDED</span>' : ''}</span>
-          <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : ''}</span>
+          <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-projected-life"></span><span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : '<span class="you-projected-life"></span>'}</span>
         </div>
         <div class="life-bar-track"><div class="life-bar-fill" style="width:${pct}%"></div>${who === 'ai' ? '<div class="opp-projected-dmg"></div>' : ''}</div>
       </div>
@@ -30999,12 +32129,12 @@ function handHTML(g, opts = {}) {
   let memoMap = null;
   if (typeof PreviewMemo !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
     const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
-    memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p);
+    memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p, { isInitiator: g.mode !== 'defend_select' });
   }
   const hasScroll = p.hand.length > 7 || !!opts.exTiles;
   return `<div class="hand-row${hasScroll ? ' hand-row-scroll' : ''}">${p.hand.map(c => {
-    const baseOpts = opts.tileOpts ? opts.tileOpts(c) : {};
     const memo = memoMap && memoMap.get(c.uid || c.key);
+    const baseOpts = opts.tileOpts ? opts.tileOpts(c, memo) : {};
     const lethalAura = !!(memo && memo.base && memo.base.isPublicStateLethal && !baseOpts.disabled);
     return cardTile(c, { ...baseOpts, lethalAura });
   }).join('')}${opts.exTiles || ''}</div>`;
@@ -31405,31 +32535,127 @@ function resolveCardDef(cardKeyOrName) {
   return null;
 }
 
+function previewDeltaBadgeHTML(liveVal, printedVal) {
+  if (typeof liveVal !== 'number' || typeof printedVal !== 'number' || liveVal === printedVal) return '';
+  const diff = liveVal - printedVal;
+  return `<span class="insp-pv-delta ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${diff}</span>`;
+}
+
+function previewVerdictTagHTML(preview) {
+  if (preview.hasStochasticVariance) {
+    return '<span class="insp-tag var">🎲 RANDOM</span>';
+  }
+  if (preview.isPublicStateLethal) {
+    return '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>';
+  }
+  if (preview.willWhiff) {
+    const shortTxt = preview.missReason === 'range_immune'
+      ? '✗ RANGE IMMUNE'
+      : (preview.missReason === 'no_continuous_boost'
+        ? '✗ NEEDS BOOST'
+        : (preview.missReason === 'self_cannot_hit'
+          ? '✗ CROSSED PAST'
+          : (preview.missReason === 'always_miss' ? '✗ CANNOT HIT' : '✗ OUT OF RANGE')));
+    return `<span class="insp-tag whiff" title="${esc(preview.missReasonLabel || shortTxt)}">${esc(shortTxt)}</span>`;
+  }
+  if (preview.hitBySideSwap) {
+    return '<span class="insp-tag in-range">✓ HIT (CROSS-UP)</span>';
+  }
+  if (preview.hitByBeforeMove) {
+    return '<span class="insp-tag in-range">✓ HIT (AFTER MOVE)</span>';
+  }
+  return '<span class="insp-tag in-range">✓ EXPECTED HIT</span>';
+}
+
 function inspectorCardViewHTML(g, card, rawCard, isEX) {
-  const displayCard = isEX && !card.isEX
+  const hoverState = (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.getActiveHover)
+    ? StrikePreviewController.getActiveHover()
+    : null;
+  const sameHovered = !!(hoverState && hoverState.card && hoverState.card.key === (rawCard || card).key);
+  const effectiveIsEX = sameHovered ? !!hoverState.isEX : !!(isEX || card.isEX);
+  const useOptionalBranch = sameHovered ? !!hoverState.useOptionalBranch : false;
+  const criticalPaid = sameHovered ? !!hoverState.criticalPaid : false;
+
+  const displayCard = effectiveIsEX && !card.isEX
     ? { ...card, isEX: true, pow: (card.pow || 0) + 1, spd: (card.spd || 0) + 1, arm: (card.arm || 0) + 1, grd: (card.grd || 0) + 1 }
     : card;
   let previewHTML = '';
   if (typeof SimulateStrikePreview !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
     const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
     const preview = SimulateStrikePreview.run(infoSet, rawCard || card, {
-      isEX: !!(isEX || displayCard.isEX),
+      isEX: effectiveIsEX,
       isInitiator: g.mode !== 'defend_select',
+      useOptionalBranch,
+      criticalPaid,
     });
     if (preview && preview.effectiveStats) {
       const s = preview.effectiveStats;
-      const hitLabel = preview.willWhiff ? '<span class="insp-tag whiff">OUT OF RANGE</span>' : '<span class="insp-tag in-range">IN RANGE</span>';
-      const lethalLabel = preview.isPublicStateLethal ? '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>' : '';
-      const dmgText = preview.hasStochasticVariance ? '?' : preview.projectedDamage;
-      previewHTML = `<div class="inspector-preview-box">
-        <div class="inspector-preview-head"><span>Strike Preview</span>${hitLabel}${lethalLabel}</div>
-        <div class="inspector-preview-stats">
-          ${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          <span class="insp-preview-meta">Sp <b>${preview.postBeforeSpace + 1}</b> · DMG <b>${dmgText}</b></span>
+      const rangeStr = (s.minRange != null && s.maxRange != null)
+        ? (s.minRange === s.maxRange ? String(s.minRange) : `${s.minRange}\u2013${s.maxRange}`)
+        : '\u2014';
+      const rangeDelta = previewDeltaBadgeHTML(s.maxRange, s.printedMaxRange);
+      const roleTag = `<span class="insp-pv-role">${preview.isInitiator ? 'Striker' : 'Defender'}</span>`;
+      const distText = preview.initialDist === preview.postBeforeDist
+        ? `Dist ${preview.postBeforeDist}`
+        : `Dist ${preview.initialDist}\u2192${preview.postBeforeDist}`;
+      const rangeDetail = preview.willWhiff
+        ? esc(preview.missReasonLabel || `Dist ${preview.postBeforeDist} vs Rng ${rangeStr}`)
+        : `${preview.usesEddie ? `Eddie\u2192CPU Dist ${preview.postBeforeDist}` : distText} vs Rng ${esc(rangeStr)}${preview.hitBySideSwap ? ' (Cross-Up)' : (preview.hitByBeforeMove ? ' (After Before move)' : '')}`;
+
+      const moveLines = [];
+      if (preview.beforeMoveSummary) moveLines.push(`Before: ${preview.beforeMoveSummary}`);
+      if (preview.oppHitMoveSummary) moveLines.push(`Hit: ${preview.oppHitMoveSummary}`);
+      if (preview.afterMoveSummary) moveLines.push(`After: ${preview.afterMoveSummary}`);
+
+      let lifeText;
+      if (preview.hasStochasticVariance) {
+        lifeText = '<b>?</b> (Random top of deck)';
+      } else if (preview.willWhiff) {
+        lifeText = `CPU <b>${preview.oppLifeBefore}</b> HP <span class="insp-pv-muted">(0 dmg)</span>`;
+      } else {
+        const lethalCls = preview.isPublicStateLethal ? ' is-lethal' : '';
+        lifeText = `CPU <b>${preview.oppLifeBefore} \u2192 ${preview.oppLifeAfter}</b> <span class="insp-pv-loss${lethalCls}">(-${preview.oppLifeLoss} HP)</span> <span class="insp-pv-formula">[${esc(preview.damageFormula)}]</span>`;
+      }
+      if (preview.breaksVisibleGuard && (s.oppVisibleGrd || 0) > 0) {
+        lifeText += ' <span class="insp-pv-gb">Breaks GRD</span>';
+      }
+      if (preview.selfLifeDelta) {
+        const sign = preview.selfLifeDelta > 0 ? '+' : '';
+        lifeText += ` \u00B7 You <b>${preview.selfLifeBefore}\u2192${preview.selfLifeAfter}</b> <span class="insp-pv-self ${preview.selfLifeDelta > 0 ? 'heal' : 'dmg'}">(${sign}${preview.selfLifeDelta} HP)</span>`;
+      }
+
+      const cleanEffects = (preview.effectsSummary || []).filter((e) => !/^You [+-]\d+ HP$/.test(e));
+      const toggles = [];
+      if (preview.criticalFree) {
+        toggles.push('<span class="insp-tag crit">CRIT (Free)</span>');
+      } else if (preview.canPreviewCritical) {
+        toggles.push(`<button type="button" class="clash-toggle crit-toggle${preview.criticalActive ? ' active' : ''}" onclick="EventBus.emit('OnToggleCriticalPreview', {})">[C] Critical</button>`);
+      }
+      if (preview.optionalBranches && preview.optionalBranches.length > 0) {
+        toggles.push(`<button type="button" class="clash-toggle${useOptionalBranch ? ' active' : ''}" onclick="EventBus.emit('OnToggleOptionalBranch', {})">[Shift] ${esc(preview.optionalBranches[0].label)}</button>`);
+      }
+
+      previewHTML = `<div class="inspector-preview-box${preview.willWhiff ? ' is-miss' : (preview.isPublicStateLethal ? ' is-lethal' : '')}">
+        <div class="inspector-preview-head">
+          <span>Strike Preview</span>
+          ${roleTag}
+          ${previewVerdictTagHTML(preview)}
         </div>
+        <div class="inspector-preview-stats">
+          <span class="insp-stat-wrap">${statPillHTML('rng', rangeStr, { showFullLabel: true, extraClass: 'stat-inline' })}${rangeDelta}</span>
+          <span class="insp-stat-wrap">${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.spd, s.printedSpd)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.pow, s.printedPow)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.arm, s.printedArm)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.grd, s.printedGrd)}</span>
+        </div>
+        <div class="insp-pv-rows">
+          <div class="insp-pv-row"><span class="insp-pv-k">Range</span><span class="insp-pv-v">${rangeDetail}</span></div>
+          ${moveLines.length ? `<div class="insp-pv-row"><span class="insp-pv-k">Move</span><span class="insp-pv-v">${esc(moveLines.join(' \u00B7 '))}</span></div>` : ''}
+          <div class="insp-pv-row"><span class="insp-pv-k">Life</span><span class="insp-pv-v">${lifeText}</span></div>
+          ${cleanEffects.length ? `<div class="insp-pv-row"><span class="insp-pv-k">Notes</span><span class="insp-pv-v">${esc(cleanEffects.join(' \u00B7 '))}</span></div>` : ''}
+        </div>
+        ${toggles.length ? `<div class="insp-pv-toggles">${toggles.join('')}</div>` : ''}
+        <div class="insp-pv-note">Based on visible board &amp; boosts (CPU card hidden).</div>
       </div>`;
     }
   }
@@ -32388,14 +33614,14 @@ function unifiedHandDockHTML(g) {
   }
 
   if (g.mode === 'strike_select') {
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p);
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p, { isInitiator: true });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-      tileOpts: (c) => ({
+      tileOpts: (c, memo) => ({
         onclick: `G.pickStrikeCard('${c.uid}')`,
         highlight: 'strike',
         band: c.range,
         hoverPreview: true,
-        rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
       }),
       exTiles,
     })}</div>`;
@@ -32403,19 +33629,19 @@ function unifiedHandDockHTML(g) {
 
   if (g.mode === 'defend_select') {
     const forcedUid = g.sel && g.sel.forcedUid;
-    const defendTileOpts = (c) => ({
+    const defendTileOpts = (c, memo) => ({
       onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
       highlight: 'strike',
       band: c.range,
       hoverPreview: true,
-      rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+      rangeChip: previewToRangeChip(memo && memo.base, c, dist),
     });
     if (forcedUid) {
       return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-        tileOpts: (c) => (c.uid === forcedUid ? defendTileOpts(c) : { disabled: true }),
+        tileOpts: (c, memo) => (c.uid === forcedUid ? defendTileOpts(c, memo) : { disabled: true }),
       })}</div>`;
     }
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
       tileOpts: defendTileOpts,
       exTiles,
@@ -32473,7 +33699,7 @@ function unifiedHandDockHTML(g) {
   }
   return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
     tileOpts: isMainAction
-      ? (c) => {
+      ? (c, memo) => {
           const sameKeyUids = dupMap.get(c.key) || [];
           const canPayUltra = c.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(p, c);
           const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
@@ -32483,6 +33709,7 @@ function unifiedHandDockHTML(g) {
             draggable: true,
             quickCommit: isQuickCommit,
             exOtherUid: otherUid,
+            rangeChip: canPayUltra ? previewToRangeChip(memo && memo.base, c, dist) : null,
             onclick: isQuickCommit ? null : `G.selectActionCard('${c.uid}')`,
           };
         }
@@ -32644,26 +33871,35 @@ function fullCardLightboxHTML(g) {
     });
     if (preview && preview.effectiveStats) {
       const s = preview.effectiveStats;
-      const dist = (human && ai) ? engine.range(human, ai) : null;
-      const hitBadge = preview.willWhiff
-        ? '<span class="insp-tag whiff">OUT OF RANGE</span>'
-        : '<span class="insp-tag in-range">IN RANGE</span>';
-      const lethalBadge = preview.isPublicStateLethal
-        ? '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>'
+      const rangeStr = (s.minRange != null && s.maxRange != null)
+        ? (s.minRange === s.maxRange ? String(s.minRange) : `${s.minRange}\u2013${s.maxRange}`)
+        : '\u2014';
+      const distLabel = preview.initialDist === preview.postBeforeDist
+        ? `Dist ${preview.postBeforeDist}`
+        : `Dist ${preview.initialDist}\u2192${preview.postBeforeDist}`;
+      const moveParts = [preview.beforeMoveSummary, preview.oppHitMoveSummary, preview.afterMoveSummary].filter(Boolean);
+      const lifeReadout = preview.hasStochasticVariance
+        ? 'Proj. DMG <b>?</b>'
+        : (preview.willWhiff
+          ? `CPU HP <b>${preview.oppLifeBefore}</b> (0 dmg)`
+          : `CPU HP <b>${preview.oppLifeBefore}\u2192${preview.oppLifeAfter}</b> <span class="insp-pv-loss${preview.isPublicStateLethal ? ' is-lethal' : ''}">(-${preview.oppLifeLoss})</span>`);
+      const selfReadout = preview.selfLifeDelta
+        ? ` \u00B7 You <b>${preview.selfLifeDelta > 0 ? '+' : ''}${preview.selfLifeDelta} HP</b>`
         : '';
-      const dmgText = preview.hasStochasticVariance ? '?' : preview.projectedDamage;
       liveStripHTML = `<div class="full-card-live-strip">
         <div class="full-card-live-top">
-          <span class="full-card-live-label">Live Board Context${dist != null ? ` · Dist ${dist}` : ''}</span>
-          <span class="full-card-live-tags">${hitBadge}${lethalBadge}</span>
+          <span class="full-card-live-label">Strike Preview \u00B7 ${preview.usesEddie ? `Eddie Dist ${preview.postBeforeDist}` : distLabel}</span>
+          <span class="full-card-live-tags">${previewVerdictTagHTML(preview)}</span>
         </div>
         <div class="full-card-live-stats">
+          ${statPillHTML('rng', rangeStr, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          <span class="full-card-live-dmg">Proj. DMG <b>${dmgText}</b></span>
+          <span class="full-card-live-dmg">${lifeReadout}${selfReadout}</span>
         </div>
+        ${moveParts.length ? `<div class="full-card-live-move">${esc(moveParts.join(' \u00B7 '))}</div>` : ''}
       </div>`;
     }
   }

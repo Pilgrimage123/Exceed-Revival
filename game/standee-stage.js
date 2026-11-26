@@ -561,7 +561,6 @@ const StandeeStage = (() => {
       f.choreoElapsed = (choreo.holdAtU != null) ? (choreo.holdAtU * f.choreoDuration) : 0;
       f.choreoTargetDistPx = distPx;
       f.wildSwingHazard = !!choreo.wildSwingHazard;
-      f.activeFrameKey = getFighterActiveFrameKey(f);
     }
     if (choreo.springPreset && typeof StandeeRigMath !== 'undefined') {
       const sp = choreo.springPreset;
@@ -577,6 +576,9 @@ const StandeeStage = (() => {
     }
     if (choreo.hitstopSec > 0 && !isReducedMotion()) {
       f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+    }
+    if (choreo.track !== 2 || !f.choreo || f.choreo.track === 2) {
+      f.activeFrameKey = getFighterActiveFrameKey(f);
     }
     if (choreo.flashWhiteMs > 0 && !isReducedMotion()) {
       f.flashDuration = choreo.flashWhiteMs / 1000;
@@ -685,7 +687,12 @@ const StandeeStage = (() => {
 
   function getFighterActiveFrameKey(f) {
     if (!f || !f.choreo) return 'idle';
-    const u = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+    const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+    // During hitstop freeze on impact (hit_attack), lock onto the active impact keyframe (u >= 0.25)
+    // rather than freezing on u=0 startup/windup!
+    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack')
+      ? Math.max(0.25, rawU)
+      : rawU;
     if (typeof StandeeRigMath !== 'undefined' && StandeeRigMath.resolveActiveFrameKey) {
       return StandeeRigMath.resolveActiveFrameKey(f.choreo, u);
     }
@@ -897,7 +904,7 @@ const StandeeStage = (() => {
   }
 
   function notifyBoardMove(info) {
-    if (!info || !info.pid) return;
+    if (!info || !info.pid || inStrikePlayback) return;
     const f = fighters[info.pid];
     if (!f || !f.active) return;
     syncDomMetrics();
@@ -1014,9 +1021,11 @@ const StandeeStage = (() => {
       if (!step || !si) return;
 
       let stepSwapped = !!step.sideSwapped;
+      let prevP1 = strikeSpaces.p1;
+      let prevP2 = strikeSpaces.p2;
       if (step.p1Pos != null && step.p2Pos != null) {
-        const prevP1 = strikeSpaces.p1;
-        const prevP2 = strikeSpaces.p2;
+        prevP1 = strikeSpaces.p1;
+        prevP2 = strikeSpaces.p2;
         strikeSpaces.p1 = step.p1Pos;
         strikeSpaces.p2 = step.p2Pos;
         const swapped = (prevP1 != null && prevP2 != null) && ((prevP1 < prevP2) !== (strikeSpaces.p1 < strikeSpaces.p2));
@@ -1026,8 +1035,11 @@ const StandeeStage = (() => {
         for (const pid of ['p1', 'p2']) {
           const f = fighters[pid];
           if (!f || !f.active) continue;
-          const nextX = spaceToX(pid, strikeSpaces[pid], strikeSpaces.p1, strikeSpaces.p2);
-          if (nextX != null && Math.abs(nextX - f.x) > 2) {
+          const prevSpace = pid === 'p1' ? prevP1 : prevP2;
+          const curSpace = strikeSpaces[pid];
+          const movedSpace = prevSpace != null && curSpace != null && prevSpace !== curSpace;
+          const nextX = spaceToX(pid, curSpace, strikeSpaces.p1, strikeSpaces.p2);
+          if (nextX != null && movedSpace) {
             f.startX = f.x;
             f.targetX = nextX;
             f.moveElapsed = 0;
@@ -1063,17 +1075,40 @@ const StandeeStage = (() => {
         att.zPriority = 4;
         if (def) def.zPriority = 3;
         if (stepSwapped) att.lastSideSwapped = true;
-        const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'before', {
-          sideSwapped: stepSwapped,
-          criticalPaid: !!(side && side.criticalPaid),
-          isEX: !!(side && side.isEX),
-          exceeded: att.exceeded,
-          rangeSpaces: distSpaces,
-          distanceToTargetPx: distPx,
-          reducedHitStop: isReducedMotion(),
-        });
-        startChoreography(att, choreo, { distanceToTargetPx: distPx });
-        if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        const prevActorSpace = actorId === 'p1' ? prevP1 : prevP2;
+        const curActorSpace = strikeSpaces[actorId];
+        const attMovedOnStep = !!((prevActorSpace != null && curActorSpace != null && prevActorSpace !== curActorSpace) || stepSwapped);
+        const cardKeyNorm = String((side && side.cardKey) || '').replace(/^gg_/, '');
+        const hasDedicatedBeforePose = (
+          cardKeyNorm === 'spiral_arrow' ||
+          cardKeyNorm === 'cannonball' ||
+          cardKeyNorm === 'dive_kick' ||
+          cardKeyNorm === 'razors_edge_slicer' ||
+          cardKeyNorm === 'gyro_drive_smasher' ||
+          cardKeyNorm === 'flying_power_bomb' ||
+          cardKeyNorm === 'siberian_blizzard' ||
+          cardKeyNorm === 'dive' ||
+          cardKeyNorm === 'tatsumaki_ryu' ||
+          cardKeyNorm === 'tatsumaki_ken' ||
+          cardKeyNorm === 'guren_senpukyaku' ||
+          cardKeyNorm === 'assault' ||
+          cardKeyNorm === 'axe_kick'
+        );
+        // Only play before-movement dash choreography if the attacker actually translates or uses a dedicated Before-phase card;
+        // otherwise keep their coiled Reveal windup pose (e.g. Sweep's sweep_windup or Cross's cross_strike) ready for Range/Hit!
+        if (attMovedOnStep || hasDedicatedBeforePose) {
+          const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'before', {
+            sideSwapped: stepSwapped,
+            criticalPaid: !!(side && side.criticalPaid),
+            isEX: !!(side && side.isEX),
+            exceeded: att.exceeded,
+            rangeSpaces: distSpaces,
+            distanceToTargetPx: distPx,
+            reducedHitStop: isReducedMotion(),
+          });
+          startChoreography(att, choreo, { distanceToTargetPx: distPx });
+          if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        }
       } else if (step.phase === 'range' && step.hitLanded === false && att && att.active) {
         att.zPriority = 4;
         const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'range', {
@@ -1100,6 +1135,10 @@ const StandeeStage = (() => {
         for (const pid of ['p1', 'p2']) {
           const f = fighters[pid];
           if (!f) continue;
+          if (f.choreo && f.choreo.phase === 'reveal') {
+            f.choreo = null;
+            f.choreoElapsed = 0;
+          }
           f.zPriority = 2;
           f.desaturateAmount = 0;
           f.wildSwingHazard = false;
@@ -1213,6 +1252,10 @@ const StandeeStage = (() => {
       for (const pid of ['p1', 'p2']) {
         const f = fighters[pid];
         if (!f) continue;
+        if (f.choreo && f.choreo.phase === 'reveal') {
+          f.choreo = null;
+          f.choreoElapsed = 0;
+        }
         f.zPriority = 2;
         f.desaturateAmount = 0;
         f.wildSwingHazard = false;
@@ -1321,10 +1364,14 @@ const StandeeStage = (() => {
       } else {
         f.choreoElapsed += dt;
         if (f.choreoElapsed >= f.choreoDuration) {
-          f.choreo = null;
-          f.choreoElapsed = 0;
-          f.desaturateAmount = 0;
-          f.wildSwingHazard = false;
+          if (inStrikePlayback && f.choreo.phase === 'reveal') {
+            f.choreoElapsed = f.choreoDuration;
+          } else {
+            f.choreo = null;
+            f.choreoElapsed = 0;
+            f.desaturateAmount = 0;
+            f.wildSwingHazard = false;
+          }
         }
       }
     }
@@ -1396,7 +1443,12 @@ const StandeeStage = (() => {
     knots[3].rotRad += breath2 * 0.012;
 
     if (f.choreo) {
-      const u = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+      const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
+      // During hitstop freeze on impact (hit_attack / hit_defend), evaluate spine & clip envelope
+      // at peak active contact (u >= 0.28) so the fighter freezes in the full strike pose!
+      const u = (f.hitstopRemaining > 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend'))
+        ? Math.max(0.28, rawU)
+        : rawU;
       let env = 1.0;
       let stumble = 0;
       if (f.choreo.clipMode === 'attack_3clip' || f.choreo.clipMode === 'whiff_3clip') {
@@ -1426,7 +1478,8 @@ const StandeeStage = (() => {
 
     // Track 2 Additive Flinch ("Super Armor" Grit / Guard Brace on top of active windup)
     if (f.additiveChoreo) {
-      const au = f.additiveDuration > 0 ? Math.min(1, f.additiveElapsed / f.additiveDuration) : 1;
+      const rawAu = f.additiveDuration > 0 ? Math.min(1, f.additiveElapsed / f.additiveDuration) : 1;
+      const au = f.hitstopRemaining > 0 ? Math.max(0.5, rawAu) : rawAu;
       const aEnv = Math.sin(au * Math.PI);
       for (let k = 1; k <= 3; k++) {
         const srcKnot = k === 1 ? f.additiveChoreo.pelvis : (k === 2 ? f.additiveChoreo.waist : f.additiveChoreo.head);
@@ -1442,7 +1495,8 @@ const StandeeStage = (() => {
 
   function computeFighterLungeOffsetX(f) {
     if (!f.choreo || !f.choreoDuration || f.choreoDuration <= 0) return 0;
-    const u = Math.min(1, f.choreoElapsed / f.choreoDuration);
+    const rawU = Math.min(1, f.choreoElapsed / f.choreoDuration);
+    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack') ? Math.max(0.28, rawU) : rawU;
     if (f.choreo.dynamicLunge && typeof StandeeRigMath !== 'undefined' && StandeeRigMath.computeDynamicLungeOffset) {
       const isProj = !!f.choreo.projectile;
       const isWhiff = f.choreo.clipMode === 'whiff_3clip';

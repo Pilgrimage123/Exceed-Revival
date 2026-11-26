@@ -45,6 +45,33 @@ Use when a fighter has a dedicated multi-pose sheet (`Idle`, `Advance/Dash`, `St
 
 ---
 
+## 2.5. Universal Rule: 100% VFX-Free Standee Frames & Procedural VFX Pipeline
+
+To guarantee visual fidelity, procedural scalability, and dynamic combat state progression across all 41 fighters, the engine enforces a strict separation between **physical fighter anatomy** and **fighting game VFX**:
+
+### 1. Zero Baked Fighting Game VFX on Standee Image Frames
+- Every standee frame asset (including idle stances, strike windups, active extensions like `sweep_active` or `cross_strike`, recovery frames, and retreat motions like `ryu_backdash` or `ken_backflip`) **must contain exclusively the fighter's clean anatomical body, clothing, and weapons**.
+- **Prohibited in Source Images**: Never bake painted energy auras, ki spheres, dragon flames, lightning bolts, energy trails, or static dust/smoke into standee JPG/PNG files.
+- **Rationale**:
+  1. **Reusability across Combat Outcomes**: An active strike frame is used for both clean hits and whiffs (`range` phase). Baked contact fire or impact flashes look absurd when an attack whiffs into empty air.
+  2. **Dynamic Range & IK Alignment**: Contact points vary continuously with defender distance (`distanceToTargetPx`, `ikReachPx`). Procedural contact arcs align exactly with the opponent; baked effects land in the wrong space.
+  3. **Directional Invariance & Flipping**: Fighters mirror horizontally depending on relative board position. Baked directional energy streaks invert unnaturally upon cross-up.
+  4. **Dynamic Escalation**: Baked VFX prevent the visual contrast between unboosted Normal attacks and awakened Exceeded attacks.
+
+### 2. Runtime Procedural Synthesis
+- All combat energy, projectile objects, and impact feedback are generated at runtime by:
+  - **`StandeeStage`**: Real-time WebGL2 contact smears (`sweep_arc`, `strike_slash`), 4-knot spine flexion, symplectic landing squash/stretch, afterimage ghosts (`renderAfterimages`), and floor dust rings.
+  - **`HitParticleEngine`**: Multi-tiered radial impact starbursts, directional slash sparks, lightning polyline arcs, and floating combat callouts (`#fx-overlay-root`).
+
+### 3. Normal vs. Exceeded State Escalation Rule
+- **Normal State**: Martial contact remains grounded and tactile. Attacks produce physical martial effects: crisp ground dust clouds (`physical_sweep_dust`, `dust`), sharp contact sparks (`clash_spark`), speed streaks, and neutral motion smears (`#d6c7b2`, `#cbd5e1`).
+- **Exceeded State**: Awakened fighters channel elemental energy. Procedural VFX escalate dynamically:
+  - **Ken**: Roaring dragon flame wheel on backflip (`ken_backflip_fire_wheel`), fiery breakdance sweep ribbon (`ken_flare_fire_sweep`), golden/crimson flame afterimages.
+  - **Ryu**: Electric-blue Ashi Barai ki crescent (`ryu_ashi_barai_ki_sweep`), glowing cyan afterimage trails (`#38bdf8`), surging ki spirals.
+  - **Universal**: Higher hitstop, intense camera shake, saturated afterimage cascades, and intensified particle burst counts.
+
+---
+
 ## 3. Concrete Pipeline & Runtime Architecture
 
 ### Phase 1: Offline Asset Matting & Anchor Calibration (`scripts/bake-standees.mjs`)

@@ -355,15 +355,43 @@ function boostHeadline(c) {
   return `<div class="card-headline boost-headline">Boost${tag}${cancelTag}</div>`;
 }
 
-// Renders the `.range-chip` (\u2713/\u2717) that shows whether a card's printed range
-// band covers the CURRENT distance. `inRange` is null when there's no distance
-// to compare against (e.g. this tile isn't shown in a strike/defend context) \u2014
-// in that case no chip is rendered at all, rather than a misleading one.
+// Renders the `.range-chip` (✓/✗) reflecting projected hit/miss from SimulateStrikePreview
+// (accounting for Before-movement, cross-ups, Eddie origin, character/boost range bonuses,
+// and visible opponent range immunities). Accepts boolean or semantic state strings.
 function rangeChipHTML(inRange) {
   if (inRange == null) return '';
-  return inRange
-    ? '<span class="range-chip in">in range \u2713</span>'
-    : '<span class="range-chip out">out of range \u2717</span>';
+  if (inRange === true || inRange === 'hit') {
+    return '<span class="range-chip in">in range \u2713</span>';
+  }
+  if (inRange === 'after_move') {
+    return '<span class="range-chip in move-hit" title="Connects after Before movement or Cross-Up">hits after move \u2713</span>';
+  }
+  if (inRange === 'immune') {
+    return '<span class="range-chip out" title="Opponent has visible Range Immunity at projected distance">immune \u2717</span>';
+  }
+  if (inRange === 'no_boost') {
+    return '<span class="range-chip out" title="Requires a Continuous Boost in play to hit">no boost \u2717</span>';
+  }
+  if (inRange === 'always_miss') {
+    return '<span class="range-chip out" title="Defense/utility card cannot hit">utility</span>';
+  }
+  return '<span class="range-chip out">out of range \u2717</span>';
+}
+
+function previewToRangeChip(preview, fallbackCard, dist) {
+  if (preview) {
+    if (preview.hasStochasticVariance) return null;
+    if (!preview.willWhiff) {
+      return (preview.hitByBeforeMove || preview.hitBySideSwap) ? 'after_move' : 'hit';
+    }
+    if (preview.missReason === 'range_immune') return 'immune';
+    if (preview.missReason === 'no_continuous_boost') return 'no_boost';
+    if (preview.missReason === 'always_miss') return 'always_miss';
+    return 'miss';
+  }
+  return (dist != null && fallbackCard && fallbackCard.range)
+    ? (dist >= fallbackCard.range[0] && dist <= fallbackCard.range[1])
+    : null;
 }
 
 // Hover attributes that light up a card's range band on the board (see
@@ -465,9 +493,13 @@ function cardTile(c, opts = {}) {
 // `dist`: current board distance, when known \u2014 drives the same range-chip/hover-band
 // treatment as cardTile() (see strike_select/defend_select below), using the base
 // card's printed range since pairing for EX doesn't change range, only pow/spd/arm/grd.
-function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine = null, player = null) {
+function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine = null, player = null, opts = {}) {
   const seen = new Set();
   const tiles = [];
+  const isInitiator = opts.isInitiator !== false;
+  const infoSet = (engine && typeof engine.getInformationSet === 'function' && player)
+    ? engine.getInformationSet(player.id || 'p1')
+    : null;
   for (let i = 0; i < hand.length; i++) {
     for (let j = i + 1; j < hand.length; j++) {
       if (hand[i].key === hand[j].key && !seen.has(hand[i].key)) {
@@ -477,12 +509,16 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine 
           continue;
         }
         const exCard = { ...a, name: a.name, pow: a.pow + 1, spd: a.spd + 1, arm: a.arm + 1, grd: a.grd + 1, isEX: true };
-        const inRange = (dist != null && a.range) ? (dist >= a.range[0] && dist <= a.range[1]) : null;
+        const exPreview = (infoSet && typeof SimulateStrikePreview !== 'undefined')
+          ? SimulateStrikePreview.run(infoSet, a, { isEX: true, isInitiator })
+          : null;
+        const rangeChip = previewToRangeChip(exPreview, a, dist);
         tiles.push(cardTile(exCard, {
           onclick: onClickFn(a.uid, b.uid),
           highlight,
           band: a.range,
-          rangeChip: inRange,
+          rangeChip,
+          lethalAura: !!(exPreview && exPreview.isPublicStateLethal),
           isEX: true,
         }));
       }
@@ -767,7 +803,7 @@ function lifeBar(g, who) {
       <div class="life-main">
         <div class="life-header">
           <span class="pname">${esc(label)} ${strikerBadge} ${player.exceeded ? '<span class="exceeded-badge">EXCEEDED</span>' : ''}</span>
-          <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : ''}</span>
+          <span class="life-num">${player.life}/${player.maxLife}${who === 'ai' ? '<span class="opp-projected-life"></span><span class="opp-public-lethal-skull" title="Lethal vs. current board state">☠ Public Lethal</span>' : '<span class="you-projected-life"></span>'}</span>
         </div>
         <div class="life-bar-track"><div class="life-bar-fill" style="width:${pct}%"></div>${who === 'ai' ? '<div class="opp-projected-dmg"></div>' : ''}</div>
       </div>
@@ -829,12 +865,12 @@ function handHTML(g, opts = {}) {
   let memoMap = null;
   if (typeof PreviewMemo !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
     const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
-    memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p);
+    memoMap = PreviewMemo.evaluateHand(infoSet, p.hand, g.engine, p, { isInitiator: g.mode !== 'defend_select' });
   }
   const hasScroll = p.hand.length > 7 || !!opts.exTiles;
   return `<div class="hand-row${hasScroll ? ' hand-row-scroll' : ''}">${p.hand.map(c => {
-    const baseOpts = opts.tileOpts ? opts.tileOpts(c) : {};
     const memo = memoMap && memoMap.get(c.uid || c.key);
+    const baseOpts = opts.tileOpts ? opts.tileOpts(c, memo) : {};
     const lethalAura = !!(memo && memo.base && memo.base.isPublicStateLethal && !baseOpts.disabled);
     return cardTile(c, { ...baseOpts, lethalAura });
   }).join('')}${opts.exTiles || ''}</div>`;
@@ -1235,31 +1271,127 @@ function resolveCardDef(cardKeyOrName) {
   return null;
 }
 
+function previewDeltaBadgeHTML(liveVal, printedVal) {
+  if (typeof liveVal !== 'number' || typeof printedVal !== 'number' || liveVal === printedVal) return '';
+  const diff = liveVal - printedVal;
+  return `<span class="insp-pv-delta ${diff > 0 ? 'up' : 'down'}">${diff > 0 ? '+' : ''}${diff}</span>`;
+}
+
+function previewVerdictTagHTML(preview) {
+  if (preview.hasStochasticVariance) {
+    return '<span class="insp-tag var">🎲 RANDOM</span>';
+  }
+  if (preview.isPublicStateLethal) {
+    return '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>';
+  }
+  if (preview.willWhiff) {
+    const shortTxt = preview.missReason === 'range_immune'
+      ? '✗ RANGE IMMUNE'
+      : (preview.missReason === 'no_continuous_boost'
+        ? '✗ NEEDS BOOST'
+        : (preview.missReason === 'self_cannot_hit'
+          ? '✗ CROSSED PAST'
+          : (preview.missReason === 'always_miss' ? '✗ CANNOT HIT' : '✗ OUT OF RANGE')));
+    return `<span class="insp-tag whiff" title="${esc(preview.missReasonLabel || shortTxt)}">${esc(shortTxt)}</span>`;
+  }
+  if (preview.hitBySideSwap) {
+    return '<span class="insp-tag in-range">✓ HIT (CROSS-UP)</span>';
+  }
+  if (preview.hitByBeforeMove) {
+    return '<span class="insp-tag in-range">✓ HIT (AFTER MOVE)</span>';
+  }
+  return '<span class="insp-tag in-range">✓ EXPECTED HIT</span>';
+}
+
 function inspectorCardViewHTML(g, card, rawCard, isEX) {
-  const displayCard = isEX && !card.isEX
+  const hoverState = (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.getActiveHover)
+    ? StrikePreviewController.getActiveHover()
+    : null;
+  const sameHovered = !!(hoverState && hoverState.card && hoverState.card.key === (rawCard || card).key);
+  const effectiveIsEX = sameHovered ? !!hoverState.isEX : !!(isEX || card.isEX);
+  const useOptionalBranch = sameHovered ? !!hoverState.useOptionalBranch : false;
+  const criticalPaid = sameHovered ? !!hoverState.criticalPaid : false;
+
+  const displayCard = effectiveIsEX && !card.isEX
     ? { ...card, isEX: true, pow: (card.pow || 0) + 1, spd: (card.spd || 0) + 1, arm: (card.arm || 0) + 1, grd: (card.grd || 0) + 1 }
     : card;
   let previewHTML = '';
   if (typeof SimulateStrikePreview !== 'undefined' && g && g.engine && typeof g.engine.getInformationSet === 'function') {
     const infoSet = g.engine.getInformationSet(g.humanId || 'p1');
     const preview = SimulateStrikePreview.run(infoSet, rawCard || card, {
-      isEX: !!(isEX || displayCard.isEX),
+      isEX: effectiveIsEX,
       isInitiator: g.mode !== 'defend_select',
+      useOptionalBranch,
+      criticalPaid,
     });
     if (preview && preview.effectiveStats) {
       const s = preview.effectiveStats;
-      const hitLabel = preview.willWhiff ? '<span class="insp-tag whiff">OUT OF RANGE</span>' : '<span class="insp-tag in-range">IN RANGE</span>';
-      const lethalLabel = preview.isPublicStateLethal ? '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>' : '';
-      const dmgText = preview.hasStochasticVariance ? '?' : preview.projectedDamage;
-      previewHTML = `<div class="inspector-preview-box">
-        <div class="inspector-preview-head"><span>Strike Preview</span>${hitLabel}${lethalLabel}</div>
-        <div class="inspector-preview-stats">
-          ${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}
-          ${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          <span class="insp-preview-meta">Sp <b>${preview.postBeforeSpace + 1}</b> · DMG <b>${dmgText}</b></span>
+      const rangeStr = (s.minRange != null && s.maxRange != null)
+        ? (s.minRange === s.maxRange ? String(s.minRange) : `${s.minRange}\u2013${s.maxRange}`)
+        : '\u2014';
+      const rangeDelta = previewDeltaBadgeHTML(s.maxRange, s.printedMaxRange);
+      const roleTag = `<span class="insp-pv-role">${preview.isInitiator ? 'Striker' : 'Defender'}</span>`;
+      const distText = preview.initialDist === preview.postBeforeDist
+        ? `Dist ${preview.postBeforeDist}`
+        : `Dist ${preview.initialDist}\u2192${preview.postBeforeDist}`;
+      const rangeDetail = preview.willWhiff
+        ? esc(preview.missReasonLabel || `Dist ${preview.postBeforeDist} vs Rng ${rangeStr}`)
+        : `${preview.usesEddie ? `Eddie\u2192CPU Dist ${preview.postBeforeDist}` : distText} vs Rng ${esc(rangeStr)}${preview.hitBySideSwap ? ' (Cross-Up)' : (preview.hitByBeforeMove ? ' (After Before move)' : '')}`;
+
+      const moveLines = [];
+      if (preview.beforeMoveSummary) moveLines.push(`Before: ${preview.beforeMoveSummary}`);
+      if (preview.oppHitMoveSummary) moveLines.push(`Hit: ${preview.oppHitMoveSummary}`);
+      if (preview.afterMoveSummary) moveLines.push(`After: ${preview.afterMoveSummary}`);
+
+      let lifeText;
+      if (preview.hasStochasticVariance) {
+        lifeText = '<b>?</b> (Random top of deck)';
+      } else if (preview.willWhiff) {
+        lifeText = `CPU <b>${preview.oppLifeBefore}</b> HP <span class="insp-pv-muted">(0 dmg)</span>`;
+      } else {
+        const lethalCls = preview.isPublicStateLethal ? ' is-lethal' : '';
+        lifeText = `CPU <b>${preview.oppLifeBefore} \u2192 ${preview.oppLifeAfter}</b> <span class="insp-pv-loss${lethalCls}">(-${preview.oppLifeLoss} HP)</span> <span class="insp-pv-formula">[${esc(preview.damageFormula)}]</span>`;
+      }
+      if (preview.breaksVisibleGuard && (s.oppVisibleGrd || 0) > 0) {
+        lifeText += ' <span class="insp-pv-gb">Breaks GRD</span>';
+      }
+      if (preview.selfLifeDelta) {
+        const sign = preview.selfLifeDelta > 0 ? '+' : '';
+        lifeText += ` \u00B7 You <b>${preview.selfLifeBefore}\u2192${preview.selfLifeAfter}</b> <span class="insp-pv-self ${preview.selfLifeDelta > 0 ? 'heal' : 'dmg'}">(${sign}${preview.selfLifeDelta} HP)</span>`;
+      }
+
+      const cleanEffects = (preview.effectsSummary || []).filter((e) => !/^You [+-]\d+ HP$/.test(e));
+      const toggles = [];
+      if (preview.criticalFree) {
+        toggles.push('<span class="insp-tag crit">CRIT (Free)</span>');
+      } else if (preview.canPreviewCritical) {
+        toggles.push(`<button type="button" class="clash-toggle crit-toggle${preview.criticalActive ? ' active' : ''}" onclick="EventBus.emit('OnToggleCriticalPreview', {})">[C] Critical</button>`);
+      }
+      if (preview.optionalBranches && preview.optionalBranches.length > 0) {
+        toggles.push(`<button type="button" class="clash-toggle${useOptionalBranch ? ' active' : ''}" onclick="EventBus.emit('OnToggleOptionalBranch', {})">[Shift] ${esc(preview.optionalBranches[0].label)}</button>`);
+      }
+
+      previewHTML = `<div class="inspector-preview-box${preview.willWhiff ? ' is-miss' : (preview.isPublicStateLethal ? ' is-lethal' : '')}">
+        <div class="inspector-preview-head">
+          <span>Strike Preview</span>
+          ${roleTag}
+          ${previewVerdictTagHTML(preview)}
         </div>
+        <div class="inspector-preview-stats">
+          <span class="insp-stat-wrap">${statPillHTML('rng', rangeStr, { showFullLabel: true, extraClass: 'stat-inline' })}${rangeDelta}</span>
+          <span class="insp-stat-wrap">${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.spd, s.printedSpd)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.pow, s.printedPow)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.arm, s.printedArm)}</span>
+          <span class="insp-stat-wrap">${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}${previewDeltaBadgeHTML(s.grd, s.printedGrd)}</span>
+        </div>
+        <div class="insp-pv-rows">
+          <div class="insp-pv-row"><span class="insp-pv-k">Range</span><span class="insp-pv-v">${rangeDetail}</span></div>
+          ${moveLines.length ? `<div class="insp-pv-row"><span class="insp-pv-k">Move</span><span class="insp-pv-v">${esc(moveLines.join(' \u00B7 '))}</span></div>` : ''}
+          <div class="insp-pv-row"><span class="insp-pv-k">Life</span><span class="insp-pv-v">${lifeText}</span></div>
+          ${cleanEffects.length ? `<div class="insp-pv-row"><span class="insp-pv-k">Notes</span><span class="insp-pv-v">${esc(cleanEffects.join(' \u00B7 '))}</span></div>` : ''}
+        </div>
+        ${toggles.length ? `<div class="insp-pv-toggles">${toggles.join('')}</div>` : ''}
+        <div class="insp-pv-note">Based on visible board &amp; boosts (CPU card hidden).</div>
       </div>`;
     }
   }
@@ -2218,14 +2350,14 @@ function unifiedHandDockHTML(g) {
   }
 
   if (g.mode === 'strike_select') {
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p);
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p, { isInitiator: true });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-      tileOpts: (c) => ({
+      tileOpts: (c, memo) => ({
         onclick: `G.pickStrikeCard('${c.uid}')`,
         highlight: 'strike',
         band: c.range,
         hoverPreview: true,
-        rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
       }),
       exTiles,
     })}</div>`;
@@ -2233,19 +2365,19 @@ function unifiedHandDockHTML(g) {
 
   if (g.mode === 'defend_select') {
     const forcedUid = g.sel && g.sel.forcedUid;
-    const defendTileOpts = (c) => ({
+    const defendTileOpts = (c, memo) => ({
       onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
       highlight: 'strike',
       band: c.range,
       hoverPreview: true,
-      rangeChip: c.range ? (dist >= c.range[0] && dist <= c.range[1]) : null,
+      rangeChip: previewToRangeChip(memo && memo.base, c, dist),
     });
     if (forcedUid) {
       return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-        tileOpts: (c) => (c.uid === forcedUid ? defendTileOpts(c) : { disabled: true }),
+        tileOpts: (c, memo) => (c.uid === forcedUid ? defendTileOpts(c, memo) : { disabled: true }),
       })}</div>`;
     }
-    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p);
+    const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
       tileOpts: defendTileOpts,
       exTiles,
@@ -2303,7 +2435,7 @@ function unifiedHandDockHTML(g) {
   }
   return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
     tileOpts: isMainAction
-      ? (c) => {
+      ? (c, memo) => {
           const sameKeyUids = dupMap.get(c.key) || [];
           const canPayUltra = c.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(p, c);
           const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
@@ -2313,6 +2445,7 @@ function unifiedHandDockHTML(g) {
             draggable: true,
             quickCommit: isQuickCommit,
             exOtherUid: otherUid,
+            rangeChip: canPayUltra ? previewToRangeChip(memo && memo.base, c, dist) : null,
             onclick: isQuickCommit ? null : `G.selectActionCard('${c.uid}')`,
           };
         }
@@ -2474,26 +2607,35 @@ function fullCardLightboxHTML(g) {
     });
     if (preview && preview.effectiveStats) {
       const s = preview.effectiveStats;
-      const dist = (human && ai) ? engine.range(human, ai) : null;
-      const hitBadge = preview.willWhiff
-        ? '<span class="insp-tag whiff">OUT OF RANGE</span>'
-        : '<span class="insp-tag in-range">IN RANGE</span>';
-      const lethalBadge = preview.isPublicStateLethal
-        ? '<span class="insp-tag lethal">☠ PUBLIC LETHAL</span>'
+      const rangeStr = (s.minRange != null && s.maxRange != null)
+        ? (s.minRange === s.maxRange ? String(s.minRange) : `${s.minRange}\u2013${s.maxRange}`)
+        : '\u2014';
+      const distLabel = preview.initialDist === preview.postBeforeDist
+        ? `Dist ${preview.postBeforeDist}`
+        : `Dist ${preview.initialDist}\u2192${preview.postBeforeDist}`;
+      const moveParts = [preview.beforeMoveSummary, preview.oppHitMoveSummary, preview.afterMoveSummary].filter(Boolean);
+      const lifeReadout = preview.hasStochasticVariance
+        ? 'Proj. DMG <b>?</b>'
+        : (preview.willWhiff
+          ? `CPU HP <b>${preview.oppLifeBefore}</b> (0 dmg)`
+          : `CPU HP <b>${preview.oppLifeBefore}\u2192${preview.oppLifeAfter}</b> <span class="insp-pv-loss${preview.isPublicStateLethal ? ' is-lethal' : ''}">(-${preview.oppLifeLoss})</span>`);
+      const selfReadout = preview.selfLifeDelta
+        ? ` \u00B7 You <b>${preview.selfLifeDelta > 0 ? '+' : ''}${preview.selfLifeDelta} HP</b>`
         : '';
-      const dmgText = preview.hasStochasticVariance ? '?' : preview.projectedDamage;
       liveStripHTML = `<div class="full-card-live-strip">
         <div class="full-card-live-top">
-          <span class="full-card-live-label">Live Board Context${dist != null ? ` · Dist ${dist}` : ''}</span>
-          <span class="full-card-live-tags">${hitBadge}${lethalBadge}</span>
+          <span class="full-card-live-label">Strike Preview \u00B7 ${preview.usesEddie ? `Eddie Dist ${preview.postBeforeDist}` : distLabel}</span>
+          <span class="full-card-live-tags">${previewVerdictTagHTML(preview)}</span>
         </div>
         <div class="full-card-live-stats">
+          ${statPillHTML('rng', rangeStr, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('spd', s.spd, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('pow', s.pow, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('arm', s.arm, { showFullLabel: true, extraClass: 'stat-inline' })}
           ${statPillHTML('grd', s.grd, { showFullLabel: true, extraClass: 'stat-inline' })}
-          <span class="full-card-live-dmg">Proj. DMG <b>${dmgText}</b></span>
+          <span class="full-card-live-dmg">${lifeReadout}${selfReadout}</span>
         </div>
+        ${moveParts.length ? `<div class="full-card-live-move">${esc(moveParts.join(' \u00B7 '))}</div>` : ''}
       </div>`;
     }
   }

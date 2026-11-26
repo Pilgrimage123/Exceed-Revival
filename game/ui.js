@@ -412,7 +412,8 @@ class GameController {
     this._pendingAiCallback = null;
     this._aiTimer = setTimeout(() => {
       this._aiTimer = null;
-      if (this.fxPlaying) {
+      const isPlaybackRunning = (typeof StrikePlaybackController !== 'undefined' && StrikePlaybackController.isPlaying && StrikePlaybackController.isPlaying());
+      if (this.fxPlaying || isPlaybackRunning) {
         this._pendingAiCallback = () => this.runAITurn();
         return;
       }
@@ -1534,10 +1535,25 @@ class GameController {
     const pauseAfter = (typeof UXSettings !== 'undefined' && !!UXSettings.get('pauseAfterStrike'));
     if (!pauseAfter) {
       this.beatIndex = Number.MAX_SAFE_INTEGER;
-      this.afterStrike(res.value);
-      if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerStrikeReveal) {
+      if (typeof StrikePlaybackController !== 'undefined' && typeof document !== 'undefined') {
+        if (this._aiTimer) {
+          clearTimeout(this._aiTimer);
+          this._aiTimer = null;
+        }
+        const shouldRunAiAfterPlayback = !this.engine.gameOver && this.engine.active === this.aiId;
+        StrikePlaybackController.start(this.engine.lastStrikeInfo, () => {
+          if (this._pendingAiCallback) {
+            const cb = this._pendingAiCallback;
+            this._pendingAiCallback = null;
+            cb();
+          } else if (shouldRunAiAfterPlayback && !this.engine.gameOver && this.mode === 'awaiting_action' && this.engine.active === this.aiId) {
+            this.scheduleAITurn(180);
+          }
+        });
+      } else if (typeof HitParticleEngine !== 'undefined' && HitParticleEngine.triggerStrikeReveal) {
         HitParticleEngine.triggerStrikeReveal(this.engine.lastStrikeInfo);
       }
+      this.afterStrike(res.value);
       return;
     }
     this.mode = 'strike_result';

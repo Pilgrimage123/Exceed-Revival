@@ -160,6 +160,13 @@ const InputManager = (() => {
       }
       return;
     }
+    if ((key === 'c' || key === 'C') && !ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.repeat) {
+      if (typeof StrikePreviewController !== 'undefined' && StrikePreviewController.getActiveHover()) {
+        if (typeof ev.preventDefault === 'function') ev.preventDefault();
+        EventBus.emit('OnToggleCriticalPreview', {});
+        return;
+      }
+    }
 
     if (isHumanTurn && G.mode === 'awaiting_action') {
       if (key === 's' || key === 'S') { G.startStrike(); return; }

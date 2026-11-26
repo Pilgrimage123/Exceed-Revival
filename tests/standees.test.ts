@@ -763,6 +763,162 @@ test('Universal procedural_exceed_only VFX policy and Multi-Frame Paradigm 2 Ryu
   assert.equal(res.kenCrossAfterEx.vfx.type, 'ken_backflip_fire_wheel');
 });
 
+test('Live Engine Strike triggers StrikePlaybackController even with pauseAfterStrike=false and locks onto active impact frame during hitstop', () => {
+  const ctx = loadGameSandbox();
+  const res = vm.runInContext(`(() => {
+    const events = [];
+    EventBus.on('OnStrikeReveal', (p) => events.push({ type: 'reveal', firstId: p.strikeInfo && p.strikeInfo.firstId }));
+    EventBus.on('OnStrikePhase', (p) => events.push({ type: 'phase', phase: p.phase, actor: p.step && p.step.actor }));
+    EventBus.on('OnStrikeHit', (p) => events.push({ type: 'hit', actor: p.actor, dmg: p.damage }));
+
+    // Ensure default pauseAfterStrike is false
+    UXSettings.set('pauseAfterStrike', false);
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const p1 = g.human(), p2 = g.ai();
+    p1.pos = 3; p2.pos = 5; // distance 2 -> in range for both Cross (1-2) and Sweep (1-3)
+    const sweepCard = { ...SimulateStrikePreview.resolveCardByKey('sweep'), uid: 'reg_sweep' };
+    const crossCard = { ...SimulateStrikePreview.resolveCardByKey('cross'), uid: 'reg_cross' };
+    p1.hand = [sweepCard];
+    p2.hand = [crossCard];
+
+    const gen = g.engine.resolveStrikeSteps({
+      initiator: 'p1',
+      attackerSel: { card: sweepCard, fromWildSwing: false },
+      defenderSel: { card: crossCard, fromWildSwing: false },
+      gaugePay: {},
+    });
+    g.driveStrikeGen(gen, undefined);
+
+    // Also verify hitstop active-frame lock: when hit_attack starts with hitstopSec > 0 (u >= 0.25),
+    // activeFrameKey immediately resolves to the impact pose ('sweep_active' / 'cross_strike')
+    const sweepHitChoreo = resolveStandeeChoreography('ryu', 'sweep', 'hit_attack', { damageDealt: 6 });
+    const crossHitChoreo = resolveStandeeChoreography('ken', 'cross', 'hit_attack', { damageDealt: 3 });
+    const p1HitstopFrame = StandeeRigMath.resolveActiveFrameKey(sweepHitChoreo, sweepHitChoreo.hitstopSec > 0 ? 0.25 : 0);
+    const p2HitstopFrame = StandeeRigMath.resolveActiveFrameKey(crossHitChoreo, crossHitChoreo.hitstopSec > 0 ? 0.25 : 0);
+
+    StrikePlaybackController.stop();
+    return {
+      pauseAfterStrike: UXSettings.get('pauseAfterStrike'),
+      events,
+      p1HitstopFrame,
+      p2HitstopFrame,
+    };
+  })()`, ctx);
+
+  assert.equal(res.pauseAfterStrike, false);
+  assert.ok(res.events.some((e: any) => e.type === 'reveal'), 'OnStrikeReveal must fire during live Strike even when pauseAfterStrike is false');
+  assert.ok(res.events.some((e: any) => e.type === 'phase' && e.phase === 'reveal'), 'OnStrikePhase reveal must fire during live Strike');
+  assert.equal(res.p1HitstopFrame, 'sweep_active', 'Sweep hit_attack locks onto sweep_active impact frame during hitstop');
+  assert.equal(res.p2HitstopFrame, 'cross_strike', 'Cross hit_attack locks onto cross_strike impact frame during hitstop');
+});
+
+test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreats, and procedural VFX in Normal vs Exceeded states', () => {
+  const ctx = loadGameSandbox();
+  const res = vm.runInContext(`(() => {
+    // 1. Reveal choreography: Sweep coils into sweep_windup, Cross coils into cross_strike
+    const ryuSweepReveal = resolveStandeeChoreography('ryu', 'sweep', 'reveal', {});
+    const kenSweepReveal = resolveStandeeChoreography('ken', 'sweep', 'reveal', {});
+    const ryuCrossReveal = resolveStandeeChoreography('ryu', 'cross', 'reveal', {});
+    const kenCrossReveal = resolveStandeeChoreography('ken', 'cross', 'reveal', {});
+
+    // 2. Hit attack: Sweep plays sweep_active with recovery, Ken has breakdance flare spin
+    const ryuSweepHitNorm = resolveStandeeChoreography('ryu', 'sweep', 'hit_attack', { exceeded: false });
+    const ryuSweepHitExc = resolveStandeeChoreography('ryu', 'sweep', 'hit_attack', { exceeded: true });
+    const kenSweepHitNorm = resolveStandeeChoreography('ken', 'sweep', 'hit_attack', { exceeded: false });
+    const kenSweepHitExc = resolveStandeeChoreography('ken', 'sweep', 'hit_attack', { exceeded: true });
+
+    // 3. Whiff / range: both play active leg extension or punch extension
+    const ryuSweepWhiff = resolveStandeeChoreography('ryu', 'sweep', 'range', { hitLanded: false });
+    const kenCrossWhiff = resolveStandeeChoreography('ken', 'cross', 'range', { hitLanded: false });
+
+    // 4. Cross hit & After retreat: Ken backflip somersault, Ryu backdash hop
+    const ryuCrossHit = resolveStandeeChoreography('ryu', 'cross', 'hit_attack', {});
+    const kenCrossHit = resolveStandeeChoreography('ken', 'cross', 'hit_attack', {});
+    const ryuCrossAfter = resolveStandeeChoreography('ryu', 'cross', 'after', {});
+    const kenCrossAfter = resolveStandeeChoreography('ken', 'cross', 'after', {});
+    const kenCrossAfterExc = resolveStandeeChoreography('ken', 'cross', 'after', { exceeded: true });
+
+    // Check frame sample at peak impact
+    const ryuSweepMidFrame = StandeeRigMath.resolveActiveFrameKey(ryuSweepHitNorm, 0.35);
+    const kenSweepMidFrame = StandeeRigMath.resolveActiveFrameKey(kenSweepHitNorm, 0.35);
+    const ryuCrossMidFrame = StandeeRigMath.resolveActiveFrameKey(ryuCrossHit, 0.35);
+    const kenCrossMidFrame = StandeeRigMath.resolveActiveFrameKey(kenCrossHit, 0.35);
+
+    // Check retreat frames
+    const ryuRetreatStart = StandeeRigMath.resolveActiveFrameKey(ryuCrossAfter, 0.2);
+    const kenRetreatStart = StandeeRigMath.resolveActiveFrameKey(kenCrossAfter, 0.2);
+
+    return {
+      ryuSweepReveal: { frameKey: ryuSweepReveal.frameKey, seq: ryuSweepReveal.frameSequence },
+      kenSweepReveal: { frameKey: kenSweepReveal.frameKey, seq: kenSweepReveal.frameSequence },
+      ryuCrossReveal: { frameKey: ryuCrossReveal.frameKey, seq: ryuCrossReveal.frameSequence },
+      kenCrossReveal: { frameKey: kenCrossReveal.frameKey, seq: kenCrossReveal.frameSequence },
+
+      ryuSweepHitNormVfx: ryuSweepHitNorm.vfx.type,
+      ryuSweepHitExcVfx: ryuSweepHitExc.vfx.type,
+      kenSweepHitNormVfx: kenSweepHitNorm.vfx.type,
+      kenSweepHitExcVfx: kenSweepHitExc.vfx.type,
+      kenSweepSpin: kenSweepHitNorm.wholeSpinRad,
+
+      ryuSweepWhiffPose: ryuSweepWhiff.poseKind,
+      ryuSweepWhiffFrame: ryuSweepWhiff.frameKey,
+      kenCrossWhiffPose: kenCrossWhiff.poseKind,
+      kenCrossWhiffFrame: kenCrossWhiff.frameKey,
+
+      ryuSweepMidFrame,
+      kenSweepMidFrame,
+      ryuCrossMidFrame,
+      kenCrossMidFrame,
+
+      ryuCrossAfterPose: ryuCrossAfter.poseKind,
+      kenCrossAfterPose: kenCrossAfter.poseKind,
+      kenCrossAfterSpin: kenCrossAfter.wholeSpinRad,
+      ryuRetreatStart,
+      kenRetreatStart,
+
+      kenCrossAfterNormVfx: kenCrossAfter.vfx.type,
+      kenCrossAfterExcVfx: kenCrossAfterExc.vfx.type,
+    };
+  })()`, ctx);
+
+  // Reveal frames
+  assert.equal(res.ryuSweepReveal.frameKey, 'sweep_windup');
+  assert.equal(res.kenSweepReveal.frameKey, 'sweep_windup');
+  assert.equal(res.ryuCrossReveal.frameKey, 'cross_strike');
+  assert.equal(res.kenCrossReveal.frameKey, 'cross_strike');
+
+  // Peak impact sampling
+  assert.equal(res.ryuSweepMidFrame, 'sweep_active');
+  assert.equal(res.kenSweepMidFrame, 'sweep_active');
+  assert.equal(res.ryuCrossMidFrame, 'cross_strike');
+  assert.equal(res.kenCrossMidFrame, 'cross_strike');
+
+  // Procedural VFX separation: physical dust in Normal, ki/fire in Exceeded
+  assert.equal(res.ryuSweepHitNormVfx, 'physical_sweep_dust');
+  assert.equal(res.ryuSweepHitExcVfx, 'ryu_ashi_barai_ki_sweep');
+  assert.equal(res.kenSweepHitNormVfx, 'physical_sweep_dust');
+  assert.equal(res.kenSweepHitExcVfx, 'ken_flare_fire_sweep');
+  assert.ok(Math.abs(res.kenSweepSpin) > 3, 'Ken sweep has 360 breakdance spin');
+
+  // Whiff frame sequences
+  assert.equal(res.ryuSweepWhiffPose, 'whiff_overextend');
+  assert.equal(res.ryuSweepWhiffFrame, 'sweep_active');
+  assert.equal(res.kenCrossWhiffPose, 'whiff_overextend');
+  assert.equal(res.kenCrossWhiffFrame, 'cross_strike');
+
+  // Cross After: Retreat 3 backdash / backflip
+  assert.equal(res.ryuCrossAfterPose, 'backdash_hop');
+  assert.equal(res.ryuRetreatStart, 'cross_retreat');
+  assert.equal(res.kenCrossAfterPose, 'backflip');
+  assert.equal(res.kenRetreatStart, 'cross_retreat');
+  assert.ok(Math.abs(res.kenCrossAfterSpin) > 3, 'Ken backflip somersault has 360 spin');
+  assert.equal(res.kenCrossAfterNormVfx, 'dust');
+  assert.equal(res.kenCrossAfterExcVfx, 'ken_backflip_fire_wheel');
+});
+
+
 
 
 

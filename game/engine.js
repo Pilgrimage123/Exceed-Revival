@@ -839,6 +839,11 @@ class Engine {
     ];
   }
 
+  canPayForce(player, cost, excludeUid = null) {
+    if (!player || cost <= 0) return true;
+    return this.pickExactForceCards(player, cost, excludeUid) != null;
+  }
+
   // Vega's Bloody High Claw boost: "your attacks are Critical" — a continuous
   // boost that makes EVERY attack card this player sets Critical for free
   // (no Gauge spent, no prompt). Checked by ui.js's maybeAskCritical/
@@ -3011,6 +3016,8 @@ class Engine {
         base.handKeys = mapZoneKeys(p.hand);
         base.knownDeckTop = Array.isArray(p.knownDeckTop) ? p.knownDeckTop.slice() : [];
         base.knownDeckBottom = Array.isArray(p.knownDeckBottom) ? p.knownDeckBottom.slice() : [];
+        base.canceledThisTurn = !!p.canceledThisTurn;
+        base.actionStrikeThisTurn = !!p.actionStrikeThisTurn;
       } else {
         base.revealedHand = p.revealedHand ? { ...p.revealedHand, keys: p.revealedHand.keys.slice() } : null;
         base.observations = p.aiObs ? p.aiObs.slice() : null;

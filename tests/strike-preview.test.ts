@@ -1463,6 +1463,354 @@ test('HitParticleEngine renders overhead Strike reveal card names with collision
   assert.ok(reveals.some((c: any) => c.html.includes('Sweep')));
 });
 
+test('Strike Preview rules parity: range bonuses, Before/Hit/After movement, immunities, Critical/Optional, Eddie, and life loss', () => {
+  const ctx = loadGameSandbox();
+  const res = vm.runInContext(`(() => {
+    // 1. Cross: deterministic 3 dmg (no false '?'), After: Retreat 3 runs on BOTH hit AND whiff
+    const e1 = new Engine('ryu', 'ken', () => 0.5);
+    e1.P('p1').pos = 4; e1.P('p2').pos = 5; e1.P('p2').life = 20;
+    const crossHit = SimulateStrikePreview.run(e1.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('cross'), {});
+    e1.P('p1').pos = 4; e1.P('p2').pos = 8; // dist 4, out of range 1-2
+    const crossWhiff = SimulateStrikePreview.run(e1.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('cross'), {});
+
+    // 2. Focus: deterministic 4 dmg (Draw 1 does NOT set hasStochasticVariance), Public Lethal at 4 HP
+    e1.P('p1').pos = 4; e1.P('p2').pos = 5; e1.P('p2').life = 4;
+    const focusLethal = SimulateStrikePreview.run(e1.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('focus'), {});
+
+    // 3. Dive at Dist 4: connects via Before Advance 3 (hitByBeforeMove), initialDist 4 -> postBeforeDist 1
+    e1.P('p1').pos = 1; e1.P('p2').pos = 5; e1.P('p2').life = 24;
+    const diveMoveHit = SimulateStrikePreview.run(e1.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('dive'), {});
+
+    // 4. Axl Low normalsRangeBonus (+2 max range) & Nu-13 Exceed attackRangeBonus (+4 max range)
+    const eAxl = new Engine('axl', 'ryu', () => 0.5);
+    eAxl.P('p1').pos = 1; eAxl.P('p2').pos = 4; // dist 3; gg_slash printed 1-2, Axl boosts to 1-4
+    const axlSlash = SimulateStrikePreview.run(eAxl.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('gg_slash'), {});
+
+    const eNu = new Engine('nu13', 'ryu', () => 0.5);
+    eNu.P('p1').exceeded = true; eNu.P('p1').pos = 0; eNu.P('p2').pos = 6; // dist 6; sweep printed 1-3, Nu-13 Exceed -> 1-7
+    const nuSweep = SimulateStrikePreview.run(eNu.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('sweep'), {});
+
+    // 5. Ken Knee Bash rangeMaxBonusIfInitiating (Striker vs Defender)
+    const eKen = new Engine('ken', 'ryu', () => 0.5);
+    eKen.P('p1').pos = 2; eKen.P('p2').pos = 5; // dist 3
+    const kneeStriker = SimulateStrikePreview.run(eKen.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('knee_bash'), { isInitiator: true });
+    const kneeDefender = SimulateStrikePreview.run(eKen.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('knee_bash'), { isInitiator: false });
+
+    // 6. Opponent visible boost rangeImmuneRanges (Cammy CQC boost gives Range 1 immunity)
+    const eImm = new Engine('ryu', 'cammy', () => 0.5);
+    eImm.P('p1').pos = 3; eImm.P('p2').pos = 4; // dist 1
+    eImm.P('p2').boostsInPlay.push({ card: SimulateStrikePreview.resolveCardByKey('cqc'), turnsUntilExpire: 1 });
+    const blockedByImmunity = SimulateStrikePreview.run(eImm.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('grasp'), {});
+
+    // 7. C. Viper Burst Time (noHitWithoutContinuousBoost) & Temple Massage (optionalForceSpendForPow)
+    const eCv = new Engine('cviper', 'ryu', () => 0.5);
+    eCv.P('p1').pos = 3; eCv.P('p2').pos = 5; // dist 2
+    eCv.P('p1').gauge = [SimulateStrikePreview.resolveCardByKey('cross'), SimulateStrikePreview.resolveCardByKey('cross'), SimulateStrikePreview.resolveCardByKey('cross'), SimulateStrikePreview.resolveCardByKey('cross')];
+    const burstNoBoost = SimulateStrikePreview.run(eCv.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('burst_time'), {});
+    eCv.P('p1').boostsInPlay.push({ card: SimulateStrikePreview.resolveCardByKey('focus'), turnsUntilExpire: 1 });
+    const burstWithBoost = SimulateStrikePreview.run(eCv.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('burst_time'), {});
+    eCv.P('p1').pos = 3; eCv.P('p2').pos = 4; // dist 1 for Temple Massage
+    eCv.P('p1').hand = [
+      SimulateStrikePreview.resolveCardByKey('temple_massage'),
+      SimulateStrikePreview.resolveCardByKey('cross'),
+      SimulateStrikePreview.resolveCardByKey('sweep'),
+    ];
+    const templeBase = SimulateStrikePreview.run(eCv.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('temple_massage'), { useOptionalBranch: false });
+    const templeOpt = SimulateStrikePreview.run(eCv.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('temple_massage'), { useOptionalBranch: true });
+
+    // 8. Ragna Gauntlet Hades (selfCannotHit on cross-up) & Ragna Innate life gain on hit
+    const eRag = new Engine('ragna', 'ryu', () => 0.5);
+    eRag.P('p1').life = 20; eRag.P('p1').pos = 3; eRag.P('p2').pos = 4; // Gauntlet Hades advances 2 -> crosses past CPU -> selfCannotHit
+    const ragnaCrossMiss = SimulateStrikePreview.run(eRag.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('ragna_gauntlet_hades'), {});
+    eRag.P('p1').pos = 3; eRag.P('p2').pos = 4;
+    const ragnaHealHit = SimulateStrikePreview.run(eRag.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('cross'), {});
+
+    // 9. Nagoriyuki Exceed Normal cleanup non-lethal self-damage
+    const eNago = new Engine('nagoriyuki', 'ryu', () => 0.5);
+    eNago.P('p1').exceeded = true; eNago.P('p1').life = 18; eNago.P('p1').pos = 3; eNago.P('p2').pos = 4;
+    const nagoNormal = SimulateStrikePreview.run(eNago.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('gg_slash'), {});
+
+    // 10. Iron Tager selfMoveCap (Dive Advance 3 -> capped to 2) & Jin opponentCannotMove boost
+    const eTag = new Engine('tager', 'jin', () => 0.5);
+    eTag.P('p1').pos = 1; eTag.P('p2').pos = 6;
+    const tagerDive = SimulateStrikePreview.run(eTag.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('dive'), {});
+    eTag.P('p2').boostsInPlay.push({ card: SimulateStrikePreview.resolveCardByKey('jin_dual_ice_strike'), turnsUntilExpire: 1 });
+    const tagerFrozen = SimulateStrikePreview.run(eTag.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('dive'), {});
+
+    // 11. Sol Badguy canceledThisTurn (+POW) & Tyrant Rave corner wall-bounce (+2 POW & oppPostHitSpace)
+    const eSol = new Engine('sol', 'ryu', () => 0.5);
+    eSol.P('p1').pos = 6; eSol.P('p2').pos = 7; // 1 space behind CPU -> Push 2 hits wall (+2 POW)
+    eSol.P('p1').gauge = [SimulateStrikePreview.resolveCardByKey('gg_slash'), SimulateStrikePreview.resolveCardByKey('gg_slash')];
+    const tyrantCorner = SimulateStrikePreview.run(eSol.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('tyrant_rave'), {});
+    eSol.P('p1').canceledThisTurn = true;
+    const tyrantCanceled = SimulateStrikePreview.run(eSol.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('tyrant_rave'), {});
+
+    // 12. Vega Bloody High Claw boost (rangeMaxBonus +1 & free Critical) + Ryu Critical Shoryuken (Close 1 turns miss into hit)
+    const eVega = new Engine('vega', 'ryu', () => 0.5);
+    eVega.P('p1').pos = 2; eVega.P('p2').pos = 5; // dist 3
+    eVega.P('p1').boostsInPlay.push({ card: SimulateStrikePreview.resolveCardByKey('bloody_high_claw'), turnsUntilExpire: null });
+    const vegaFreeCrit = SimulateStrikePreview.run(eVega.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('cross'), {});
+
+    const eRyuCrit = new Engine('ryu', 'ken', () => 0.5);
+    eRyuCrit.P('p1').pos = 2; eRyuCrit.P('p2').pos = 4; // dist 2; Shoryuken printed rng 1 -> misses without Crit, hits with Crit (Before: Close 1)
+    eRyuCrit.P('p1').gauge = [SimulateStrikePreview.resolveCardByKey('cross')];
+    const shoryuBase = SimulateStrikePreview.run(eRyuCrit.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('shoryuken_ryu'), { criticalPaid: false });
+    const shoryuCrit = SimulateStrikePreview.run(eRyuCrit.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('shoryuken_ryu'), { criticalPaid: true });
+
+    // 13. Zato-1 Eddie attack origin for Specials
+    const eZato = new Engine('zato1', 'ryu', () => 0.5);
+    eZato.P('p1').pos = 0; eZato.P('p1').eddiePos = 5; eZato.P('p2').pos = 6; // Zato dist 6, Eddie dist 1
+    const zatoEddie = SimulateStrikePreview.run(eZato.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('zato_pierce'), {});
+
+    // 14. Chun-Li Head Stomp (range: null, rangeIncludeIfSideSwapped: true)
+    const eChun = new Engine('chunli', 'ryu', () => 0.5);
+    eChun.P('p1').pos = 3; eChun.P('p2').pos = 4; // Advance 2 crosses past CPU -> hits via side swap
+    const headStomp = SimulateStrikePreview.run(eChun.getInformationSet('p1'), SimulateStrikePreview.resolveCardByKey('head_stomp_chunli'), {});
+
+    return {
+      crossHit, crossWhiff, focusLethal, diveMoveHit, axlSlash, nuSweep,
+      kneeStriker, kneeDefender, blockedByImmunity, burstNoBoost, burstWithBoost,
+      templeBase, templeOpt, ragnaCrossMiss, ragnaHealHit, nagoNormal,
+      tagerDive, tagerFrozen, tyrantCorner, tyrantCanceled,
+      vegaFreeCrit, shoryuBase, shoryuCrit, zatoEddie, headStomp,
+    };
+  })()`, ctx) as any;
+
+  // Cross
+  assert.equal(res.crossHit.hasStochasticVariance, false);
+  assert.equal(res.crossHit.willWhiff, false);
+  assert.equal(res.crossHit.projectedDamage, 3);
+  assert.equal(res.crossHit.oppLifeBefore, 20);
+  assert.equal(res.crossHit.oppLifeAfter, 17);
+  assert.equal(res.crossHit.oppLifeLoss, 3);
+  assert.equal(res.crossHit.postAfterSpace, 1);
+  assert.equal(res.crossWhiff.willWhiff, true);
+  assert.equal(res.crossWhiff.missReason, 'out_of_range');
+  assert.equal(res.crossWhiff.postAfterSpace, 1, 'Cross After: Retreat 3 must preview even on whiff');
+
+  // Focus
+  assert.equal(res.focusLethal.hasStochasticVariance, false, 'Draw 1 must not falsely flag Focus as stochastic');
+  assert.equal(res.focusLethal.projectedDamage, 4);
+  assert.equal(res.focusLethal.isPublicStateLethal, true);
+  assert.ok(res.focusLethal.effectsSummary.includes('Draw 1'));
+
+  // Dive Before-move hit
+  assert.equal(res.diveMoveHit.willWhiff, false);
+  assert.equal(res.diveMoveHit.hitByBeforeMove, true);
+  assert.equal(res.diveMoveHit.initialDist, 4);
+  assert.equal(res.diveMoveHit.postBeforeDist, 1);
+  assert.equal(res.diveMoveHit.postBeforeSpace, 4);
+  assert.ok(res.diveMoveHit.beforeMoveSummary && res.diveMoveHit.beforeMoveSummary.includes('Advance 3'));
+
+  // Axl & Nu-13 range bonuses
+  assert.equal(res.axlSlash.effectiveStats.printedMaxRange, 1);
+  assert.equal(res.axlSlash.effectiveStats.maxRange, 3, 'Axl Low normalsRangeBonus should add +2 max range (1 -> 3)');
+  assert.equal(res.axlSlash.willWhiff, false);
+  assert.equal(res.nuSweep.effectiveStats.maxRange, 7, 'Nu-13 Exceed attackRangeBonus should add +4 max range');
+  assert.equal(res.nuSweep.willWhiff, false);
+
+  // Ken Knee Bash initiating range bonus
+  assert.ok(res.kneeStriker.effectiveStats.maxRange > res.kneeDefender.effectiveStats.maxRange);
+  assert.equal(res.kneeStriker.willWhiff, false);
+  assert.equal(res.kneeDefender.willWhiff, true);
+
+  // Range immunity
+  assert.equal(res.blockedByImmunity.willWhiff, true);
+  assert.equal(res.blockedByImmunity.missReason, 'range_immune');
+  assert.equal(res.blockedByImmunity.projectedDamage, 0);
+
+  // C. Viper Burst Time & Temple Massage
+  assert.equal(res.burstNoBoost.willWhiff, true);
+  assert.equal(res.burstNoBoost.missReason, 'no_continuous_boost');
+  assert.equal(res.burstWithBoost.willWhiff, false);
+  assert.ok(res.templeOpt.effectiveStats.pow > res.templeBase.effectiveStats.pow);
+  assert.ok(res.templeOpt.projectedDamage > res.templeBase.projectedDamage);
+
+  // Ragna Gauntlet Hades & heal
+  assert.equal(res.ragnaCrossMiss.willWhiff, true);
+  assert.equal(res.ragnaCrossMiss.missReason, 'self_cannot_hit');
+  assert.ok(res.ragnaHealHit.selfLifeDelta > 0, 'Ragna hitting should preview self life gain');
+
+  // Nagoriyuki Exceed cleanup self-damage
+  assert.ok(res.nagoNormal.selfLifeDelta < 0, 'Nagoriyuki Exceed normal should preview cleanup self-damage');
+
+  // Iron Tager selfMoveCap & Jin opponentCannotMove
+  assert.equal(res.tagerDive.moveCappedByInnate, true);
+  assert.equal(res.tagerDive.postBeforeSpace, 3, 'Tager Dive Advance 3 must be capped to 2 (Sp 2 -> Sp 4)');
+  assert.equal(res.tagerFrozen.moveBlockedByBoost, true);
+  assert.equal(res.tagerFrozen.postBeforeSpace, 1, 'Jin opponentCannotMove boost must block Before movement');
+
+  // Sol Tyrant Rave corner bounce + canceledThisTurn
+  assert.equal(res.tyrantCorner.oppPostHitSpace, 8, 'Tyrant Rave should preview CPU pushed to corner Sp 9');
+  assert.equal(res.tyrantCorner.projectedDamage, 5, 'Tyrant Rave corner wall-bounce should be 3 base + 2 incomplete push = 5');
+  assert.ok(res.tyrantCanceled.projectedDamage > res.tyrantCorner.projectedDamage, 'Sol canceledThisTurn should add POW');
+
+  // Vega free critical + rangeMaxBonus, Ryu Critical Shoryuken
+  assert.equal(res.vegaFreeCrit.criticalFree, true);
+  assert.equal(res.vegaFreeCrit.criticalActive, true);
+  assert.equal(res.vegaFreeCrit.effectiveStats.maxRange, 3, 'Bloody High Claw boost adds +1 max range to Cross (1-2 -> 1-3)');
+  assert.equal(res.vegaFreeCrit.willWhiff, false);
+  assert.equal(res.shoryuBase.canPreviewCritical, true);
+  assert.equal(res.shoryuBase.willWhiff, true);
+  assert.equal(res.shoryuCrit.criticalActive, true);
+  assert.equal(res.shoryuCrit.willWhiff, false, 'Ryu Shoryuken Critical Before: Close 1 should make Dist 2 connect');
+
+  // Zato-1 Eddie origin
+  assert.equal(res.zatoEddie.usesEddie, true);
+  assert.equal(res.zatoEddie.attackOrigin, 5);
+  assert.equal(res.zatoEddie.postBeforeDist, 1);
+  assert.equal(res.zatoEddie.willWhiff, false);
+
+  // Chun-Li Head Stomp side-swap hit
+  assert.equal(res.headStomp.willWhiff, false);
+  assert.equal(res.headStomp.hitBySideSwap, true);
+  assert.ok(res.headStomp.hitboxSpaces.includes(4));
+});
+
+test('Differential parity: SimulateStrikePreview matches Engine.resolveStrikeSteps on hit/miss, life loss, and positions', () => {
+  const ctx = loadGameSandbox();
+  const cases = vm.runInContext(`(() => {
+    function checkCase(label, setupFn, cardKey, opts = {}) {
+      const e = new Engine(opts.p1Char || 'ryu', opts.p2Char || 'ken', () => 0.5);
+      setupFn(e);
+      const p1 = e.P('p1'), p2 = e.P('p2');
+      const card = { ...SimulateStrikePreview.resolveCardByKey(cardKey), uid: 'diff_p1' };
+      const preview = SimulateStrikePreview.run(e.getInformationSet('p1'), card, { isInitiator: true });
+
+      const defCard = {
+        key: '_dummy_whiff', name: 'Dummy', type: 'normal',
+        range: [8, 8], pow: 0, spd: 0, arm: 0, grd: 0, alwaysMiss: true,
+        text: '', boostText: '',
+      };
+      const oppLifeBefore = p2.life;
+      const selfLifeBefore = p1.life;
+      const gen = e.resolveStrikeSteps({
+        initiator: 'p1',
+        attackerSel: { card, fromWildSwing: false },
+        defenderSel: { card: defCard, fromWildSwing: false },
+        gaugePay: {},
+      });
+      let step = gen.next();
+      while (!step.done) {
+        step = gen.next(false);
+      }
+      const actualOppLoss = oppLifeBefore - p2.life;
+      const actualSelfDelta = p1.life - selfLifeBefore;
+      return {
+        label,
+        previewDmg: preview.oppLifeLoss,
+        actualOppLoss,
+        previewSelfDelta: preview.selfLifeDelta,
+        actualSelfDelta,
+        previewFinalPos: preview.postAfterSpace != null ? preview.postAfterSpace : preview.postBeforeSpace,
+        actualFinalPos: p1.pos,
+        previewOppPos: preview.oppPostHitSpace != null ? preview.oppPostHitSpace : preview.oppStartSpace,
+        actualOppPos: p2.pos,
+      };
+    }
+
+    return [
+      checkCase('Cross hit + After retreat', (e) => { e.P('p1').pos = 4; e.P('p2').pos = 5; e.P('p2').life = 20; }, 'cross'),
+      checkCase('Cross whiff + After retreat', (e) => { e.P('p1').pos = 4; e.P('p2').pos = 8; e.P('p2').life = 20; }, 'cross'),
+      checkCase('Focus hit + Draw', (e) => { e.P('p1').pos = 4; e.P('p2').pos = 5; e.P('p2').life = 20; }, 'focus'),
+      checkCase('Dive Before Advance hit', (e) => { e.P('p1').pos = 1; e.P('p2').pos = 5; e.P('p2').life = 20; }, 'dive'),
+      checkCase('Axl gg_slash range +2', (e) => { e.P('p1').pos = 1; e.P('p2').pos = 4; e.P('p2').life = 20; }, 'gg_slash', { p1Char: 'axl' }),
+      checkCase('Sol Tyrant Rave corner wall-bounce', (e) => {
+        e.P('p1').pos = 6; e.P('p2').pos = 7; e.P('p2').life = 20;
+        e.P('p1').gauge = [SimulateStrikePreview.resolveCardByKey('gg_slash'), SimulateStrikePreview.resolveCardByKey('gg_slash')];
+      }, 'tyrant_rave', { p1Char: 'sol' }),
+      checkCase('Nagoriyuki Exceed Normal cleanup damage', (e) => {
+        e.P('p1').exceeded = true; e.P('p1').pos = 3; e.P('p2').pos = 4; e.P('p1').life = 18; e.P('p2').life = 20;
+      }, 'gg_slash', { p1Char: 'nagoriyuki' }),
+    ];
+  })()`, ctx) as any[];
+
+  for (const c of cases) {
+    assert.equal(c.previewDmg, c.actualOppLoss, `${c.label}: projected oppLifeLoss (${c.previewDmg}) must match Engine (${c.actualOppLoss})`);
+    assert.equal(c.previewSelfDelta, c.actualSelfDelta, `${c.label}: projected selfLifeDelta (${c.previewSelfDelta}) must match Engine (${c.actualSelfDelta})`);
+    assert.equal(c.previewFinalPos, c.actualFinalPos, `${c.label}: projected final self pos (${c.previewFinalPos}) must match Engine (${c.actualFinalPos})`);
+    assert.equal(c.previewOppPos, c.actualOppPos, `${c.label}: projected final opp pos (${c.previewOppPos}) must match Engine (${c.actualOppPos})`);
+  }
+});
+
+test('Strike Preview UI surfaces: Clash Banner, Inspector, Lightbox, Hand chips, and [C] Critical shortcut stay synced', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    g.toggleRightRail();
+    const p1 = g.human(), p2 = g.ai();
+    p1.pos = 1; p2.pos = 5; p2.life = 24;
+    const dive = { ...SimulateStrikePreview.resolveCardByKey('dive'), uid: 'ui_dive' };
+    const shoryu = { ...SimulateStrikePreview.resolveCardByKey('shoryuken_ryu'), uid: 'ui_shoryu' };
+    p1.hand = [dive, shoryu];
+    p1.gauge = [SimulateStrikePreview.resolveCardByKey('cross')];
+    paint();
+    const dockHtml = document.getElementById('app').innerHTML;
+
+    // ClashSummaryBanner & Inspector for Dive (Before Advance 3 -> connects at Dist 1, CPU 24->19 (-5))
+    const bannerSlot = { innerHTML: '', parentElement: { classList: { add() {}, remove() {} } } };
+    const origGetById = document.getElementById;
+    document.getElementById = (id) => (id === 'clash-banner-slot' ? bannerSlot : origGetById(id));
+
+    g.onCardHover('ui_dive', false);
+    const diveBannerHtml = bannerSlot.innerHTML;
+    const diveInspectorHtml = document.getElementById('universal-inspector-slot').innerHTML;
+
+    // Hover Shoryuken at Dist 2 -> misses without Crit, pressing 'c' toggles Critical preview -> connects!
+    p1.pos = 2; p2.pos = 4;
+    g.onCardHover('ui_shoryu', false);
+    const shoryuBeforeCritBanner = bannerSlot.innerHTML;
+    const shoryuBeforeCritInsp = document.getElementById('universal-inspector-slot').innerHTML;
+
+    InputManager.handleKeyDown({ key: 'c', preventDefault: () => {} });
+    const shoryuAfterCritBanner = bannerSlot.innerHTML;
+    const shoryuAfterCritInsp = document.getElementById('universal-inspector-slot').innerHTML;
+
+    // Lightbox live strip for Dive
+    p1.pos = 1; p2.pos = 5;
+    g.cardModal = { card: dive, rawCard: dive, isEX: false, sourceLabel: 'In Hand' };
+    const lightboxHtml = fullCardLightboxHTML(g);
+    g.cardModal = null;
+
+    g.onCardHoverEnd();
+    document.getElementById = origGetById;
+
+    return {
+      dockHtml,
+      diveBannerHtml,
+      diveInspectorHtml,
+      shoryuBeforeCritBanner,
+      shoryuBeforeCritInsp,
+      shoryuAfterCritBanner,
+      shoryuAfterCritInsp,
+      lightboxHtml,
+    };
+  })()`, ctx) as any;
+
+  assert.ok(res.dockHtml.includes('hits after move ✓'), 'Hand tile for Dive at Dist 4 must show "hits after move ✓"');
+  assert.ok(res.diveBannerHtml.includes('stat-pill stat-rng'), 'Clash banner renders effective RNG pill');
+  assert.ok(res.diveBannerHtml.includes('HIT (AFTER MOVE)'), 'Clash banner flags Dive as HIT (AFTER MOVE)');
+  assert.ok(res.diveBannerHtml.includes('Dist 4→1'), 'Clash banner shows distance transition Dist 4→1');
+  assert.ok(res.diveBannerHtml.includes('Advance 3'), 'Clash banner shows Before movement summary');
+  assert.ok(res.diveBannerHtml.includes('24→19') && res.diveBannerHtml.includes('-5'), 'Clash banner shows CPU life loss 24→19 (-5)');
+  assert.equal(res.diveBannerHtml.includes('undefined') || res.diveBannerHtml.includes('NaN'), false);
+
+  assert.ok(res.diveInspectorHtml.includes('Strike Preview'));
+  assert.ok(res.diveInspectorHtml.includes('Advance 3'));
+  assert.ok(res.diveInspectorHtml.includes('24 → 19') && res.diveInspectorHtml.includes('-5 HP'));
+  assert.equal(res.diveInspectorHtml.includes('undefined') || res.diveInspectorHtml.includes('NaN'), false);
+
+  assert.ok(res.shoryuBeforeCritBanner.includes('OUT OF RANGE'));
+  assert.ok(res.shoryuBeforeCritBanner.includes('[C] Critical'));
+  assert.ok(res.shoryuAfterCritBanner.includes('CRIT') && res.shoryuAfterCritBanner.includes('HIT (AFTER MOVE)'), 'Pressing C toggles Critical preview and updates Clash Banner to hit');
+  assert.ok(res.shoryuAfterCritInsp.includes('HIT (AFTER MOVE)'), 'Pressing C syncs Universal Inspector preview');
+
+  assert.ok(res.lightboxHtml.includes('Dist 4→1') && res.lightboxHtml.includes('24→19'));
+  assert.equal(res.lightboxHtml.includes('undefined') || res.lightboxHtml.includes('NaN'), false);
+});
+
 
 
 

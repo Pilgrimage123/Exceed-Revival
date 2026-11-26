@@ -203,9 +203,9 @@ const StrikePlaybackController = (() => {
           const prevStep = activeStepIdx >= 2 ? tl[activeStepIdx - 2] : null;
           const moved = prevStep && (prevStep.p1Pos !== step.p1Pos || prevStep.p2Pos !== step.p2Pos);
           if (step.phase === 'reveal') delay = 400;
-          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 380 : 280;
-          else if (step.phase === 'range' && step.hitLanded === false) delay = 360;
-          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 420 : 340;
+          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 440 : 280;
+          else if (step.phase === 'range' && step.hitLanded === false) delay = 400;
+          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 460 : 380;
           else if (step.phase === 'stunned') delay = 440;
         }
         timer = setTimeout(advance, delay);
@@ -246,7 +246,11 @@ const StrikePlaybackController = (() => {
     return Math.max(0, ((strikeInfo && strikeInfo.timeline) || []).length - 1);
   }
 
-  return { start, stop, skip, timelineBarHTML, getCurrentStepIdx };
+  function isPlaying() {
+    return !!activeStrikeInfo;
+  }
+
+  return { start, stop, skip, timelineBarHTML, getCurrentStepIdx, isPlaying };
 })();
 
 // ============================================================
