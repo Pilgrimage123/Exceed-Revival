@@ -11,6 +11,13 @@ rules. Put new entries at the top. A one- or two-line bullet per change is
 enough; link to `HANDOFF.md`'s relevant section instead of duplicating
 detailed rationale that already lives there.
 
+## 2026-11-27 — Manifest-Locked Fighter Portrait Pipeline, Source Art Consolidation & Portrait QA Gate (`GLOSSARY.md`, `docs/adr/0010-*`, `docs/portrait-upload-guide.md`, `assets/portraits/*`, `scripts/import-portraits.mjs`, `tests/portraits.test.ts`)
+
+- Repaired Pipeline-Damaged Fighter Portraits (`ken`, `ky`, `jin`, `testament`, `giovanna`, `chunli`, `mbison`, `cviper`, `ino`, `vega`, `faust`, `nu13`) via `--restore-from adc29ad~1` and per-fighter `protectRects`/`extraSeeds` overrides in `assets/portraits/manifest.json`, then locked all **41/41** fighters as `status: "approved"`, `locked: true`.
+- Consolidated all 41 active **Source Art** files into `assets/portraits/raw/<key>.<ext>` (removing 3 superseded duplicates and leaving runtime standees/UI assets in `public/assets/aistudio/` untouched) and bootstrapped `assets/portraits/manifest.json` with per-fighter `status`, `locked` flag, `backdrop` controls (`mode`, `removeInteriorPockets`, `edgeDecontam`, `protectRects`, `extraSeeds`), and SHA-256 `fullHash`/`headshotHash` fields.
+- Upgraded `scripts/import-portraits.mjs` with fail-closed lock enforcement (`--unlock`, `--lock`, `--ingest`, `--mark-needs-source`, `--force-stage`), per-fighter `protectRects` & backdrop toggles in `removeBackdrop()`, a `Raw | Previous | New` diff contact sheet, and a pure-Node 41-fighter `--audit` report generator.
+- Added `tests/portraits.test.ts` to `npm test` enforcing 41/41 roster coverage, Source Art existence, valid JPEG headers/dimensions (`480w` Full Portraits, `480×600` Headshots), zero `NaN`/`undefined` base64 substrings, and zero hash drift on locked `approved` fighters; documented the model in `GLOSSARY.md`, `docs/adr/0010-manifest-locked-fighter-portrait-pipeline.md`, and `docs/portrait-upload-guide.md`.
+
 ## 2026-11-27 — Replace May Portrait & Headshot, Clean Enclosed White-Matte Backdrop Pockets Across All 41 Fighters & Re-Center Whole-Face Headshots (`scripts/import-portraits.mjs`, `game/portraits.js`, `docs/portrait-upload-guide.md`)
 
 - Replaced `may` in `FIGHTER_PHOTOS` (`480×714`) and `FIGHTER_HEADSHOTS` (`480×600` `4:5`) inside `game/portraits.js` with the newly uploaded artwork (`public/assets/aistudio/image_24bae0fe.png`, `1026×1533`), stripping both the outer subtle checkerboard and enclosed interior pockets inside the anchor curve and water/flame swirls while preserving the white skull emblem, teeth, inner shirt, and hoodie drawstrings.

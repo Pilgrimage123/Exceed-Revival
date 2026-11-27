@@ -1,20 +1,24 @@
 #!/usr/bin/env node
 /**
- * Automated Portrait Ingestion Pipeline for Exceed
- * ------------------------------------------------
- * Prepares raw, uncropped, inconsistently named fighter uploads (RGBA PNGs,
- * white-matte images, or baked-checkerboard PNGs) into:
- *   1. Full-card portraits (`480px` wide JPEG -> FIGHTER_PHOTOS)
- *   2. Auto face/upper-center cropped headshots (`480x600` 4:5 JPEG -> FIGHTER_HEADSHOTS)
- *   3. A side-by-side QA contact sheet (`3:4` Card | `4:5` Bust | `1:1` HUD | `5:6` Token)
+ * Manifest-Locked Portrait Ingestion & Audit Pipeline for Exceed Revival
+ * ----------------------------------------------------------------------
+ * Prepares raw, uncropped fighter Source Art into:
+ *   1. Full Portraits (`480px` wide JPEG -> FIGHTER_PHOTOS)
+ *   2. Face/upper-center Headshots (`480x600` 4:5 JPEG -> FIGHTER_HEADSHOTS)
+ *   3. Side-by-side `Raw | Previous | New` QA diff contact sheet
+ *   4. Pure-Node 41-fighter `--audit` comparison against any git ref
  *
  * Usage:
- *   node scripts/import-portraits.mjs --stage <manifest.json> [--out .playwright-cli/portrait-batch]
- *     manifest.json: [{ "key": "cammy", "src": "public/assets/aistudio/image_xxx.png", "crop": null }, ...]
- *     Then inspect processor.html + contact sheet via `playwright-cli`, extract `window.__PORTRAIT_RESULTS`
- *     to `<out>/results.json`, and run:
- *   node scripts/import-portraits.mjs --apply <out>/results.json
+ *   node scripts/import-portraits.mjs --ingest <key> <rawFilePath>
+ *   node scripts/import-portraits.mjs --unlock <k1,k2>
+ *   node scripts/import-portraits.mjs --stage [manifestPath] [--only k1,k2] [--force-stage] [--out .playwright-cli/portrait-batch] [--serve --port 3099]
+ *   node scripts/import-portraits.mjs --apply <results.json> [--unlock k1,k2]
+ *   node scripts/import-portraits.mjs --lock <k1,k2|all>
+ *   node scripts/import-portraits.mjs --mark-needs-source <k1,k2>
+ *   node scripts/import-portraits.mjs --audit [--out ../.scratch/portrait-audit] [--compare-ref adc29ad~1]
  */
+import crypto from 'crypto';
+import { execSync, spawn } from 'child_process';
 import fs from 'fs';
 import http from 'http';
 import path from 'path';
@@ -25,9 +29,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
 const PORTRAITS_FILE = path.join(ROOT, 'game', 'portraits.js');
+const DEFAULT_MANIFEST_FILE = path.join(ROOT, 'assets', 'portraits', 'manifest.json');
+const RAW_DIR = path.join(ROOT, 'assets', 'portraits', 'raw');
 
 function parseArgs(argv) {
-  const args = {};
+  const args = { _: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith('--')) {
@@ -39,9 +45,15 @@ function parseArgs(argv) {
         args[k] = next;
         i++;
       }
+    } else {
+      args._.push(a);
     }
   }
   return args;
+}
+
+function sha256(str) {
+  return crypto.createHash('sha256').update(str, 'utf8').digest('hex');
 }
 
 function mimeForPath(filePath) {
@@ -51,7 +63,71 @@ function mimeForPath(filePath) {
   return 'image/png';
 }
 
-function buildProcessorHTML(entries) {
+function loadPortraitsMaps(code) {
+  const ctx = {};
+  vm.runInNewContext(code + '\nthis.P=FIGHTER_PHOTOS;this.H=FIGHTER_HEADSHOTS;', ctx);
+  return { photos: ctx.P, headshots: ctx.H };
+}
+
+function loadManifest(manifestPath = DEFAULT_MANIFEST_FILE) {
+  return JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+}
+
+function saveManifest(manifest, manifestPath = DEFAULT_MANIFEST_FILE) {
+  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
+}
+
+function parseKeyList(val) {
+  if (!val || val === true) return [];
+  return String(val)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parseJpegDimensions(buf) {
+  if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) {
+    throw new Error('Invalid JPEG magic header');
+  }
+  let i = 2;
+  while (i + 3 < buf.length) {
+    if (buf[i] !== 0xff) {
+      i++;
+      continue;
+    }
+    const marker = buf[i + 1];
+    // Standalone markers
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) {
+      i += 2;
+      continue;
+    }
+    if (i + 4 > buf.length) break;
+    const segLen = buf.readUInt16BE(i + 2);
+    // SOF0..SOF3, SOF5..SOF7, SOF9..SOF11, SOF13..SOF15
+    if (
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf)
+    ) {
+      if (i + 9 <= buf.length) {
+        const height = buf.readUInt16BE(i + 5);
+        const width = buf.readUInt16BE(i + 7);
+        return { width, height };
+      }
+    }
+    i += 2 + segLen;
+  }
+  throw new Error('Could not find JPEG SOF dimensions');
+}
+
+function decodeDataUriJpeg(dataUri) {
+  const m = dataUri.match(/^data:image\/jpeg;base64,(.+)$/);
+  if (!m) throw new Error('Expected data:image/jpeg;base64,... URI');
+  return Buffer.from(m[1], 'base64');
+}
+
+function buildProcessorHTML(entries, currentMaps, autoSave = false) {
   const embedded = entries.map((entry) => {
     const abs = path.isAbsolute(entry.src) ? entry.src : path.join(ROOT, entry.src);
     if (!fs.existsSync(abs)) {
@@ -62,7 +138,15 @@ function buildProcessorHTML(entries) {
       key: entry.key,
       fullCrop: entry.fullCrop || null,
       crop: entry.crop || null,
+      backdrop: entry.backdrop || {
+        mode: 'auto',
+        removeInteriorPockets: true,
+        edgeDecontam: true,
+        protectRects: [],
+      },
       dataUrl: `data:${mimeForPath(abs)};base64,${b64}`,
+      prevFullUrl: currentMaps.photos[entry.key] || null,
+      prevHeadshotUrl: currentMaps.headshots[entry.key] || null,
     };
   });
 
@@ -89,7 +173,6 @@ function isCheckerPixel(data, w, h, x, y, requireAlternation = false) {
   if (Math.max(r, g, b) - Math.min(r, g, b) > 20) return false;
   const lum = r * 0.299 + g * 0.587 + b * 0.114;
   if (lum < 178) return false;
-  // Measure high-frequency neutral checkerboard alternation across axial + diagonal tile steps
   let minL = 255, maxL = 0, neutral = 0, total = 0;
   const pts = requireAlternation
     ? [
@@ -141,10 +224,34 @@ function detectBackdropMode(data, w, h) {
   return 'opaque-dark';
 }
 
-function removeBackdrop(imgData) {
+function buildProtectedMask(w, h, protectRects) {
+  const mask = new Uint8Array(w * h);
+  if (!Array.isArray(protectRects)) return mask;
+  for (const r of protectRects) {
+    const x0 = Math.max(0, Math.floor(r.x));
+    const y0 = Math.max(0, Math.floor(r.y));
+    const x1 = Math.min(w, Math.ceil(r.x + r.w));
+    const y1 = Math.min(h, Math.ceil(r.y + r.h));
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        mask[y * w + x] = 1;
+      }
+    }
+  }
+  return mask;
+}
+
+function removeBackdrop(imgData, opts = {}) {
   const { data, width: w, height: h } = imgData;
-  const mode = detectBackdropMode(data, w, h);
+  const reqMode = opts.mode || 'auto';
+  if (reqMode === 'none') return { imgData, mode: 'none' };
+
+  const mode = reqMode === 'auto' ? detectBackdropMode(data, w, h) : reqMode;
   if (mode === 'alpha' || mode === 'opaque-dark') return { imgData, mode };
+
+  const removeInteriorPockets = opts.removeInteriorPockets !== false;
+  const edgeDecontam = opts.edgeDecontam !== false;
+  const protectedMask = buildProtectedMask(w, h, opts.protectRects);
 
   let hasSubtleCheckerBorder = false;
   if (mode === 'white-matte') {
@@ -179,6 +286,7 @@ function removeBackdrop(imgData) {
   let head = 0, tail = 0;
 
   const isBgPixel = (p) => {
+    if (protectedMask[p]) return false;
     const i = p * 4;
     const r = data[i], g = data[i + 1], b = data[i + 2];
     const sat = Math.max(r, g, b) - Math.min(r, g, b);
@@ -191,7 +299,6 @@ function removeBackdrop(imgData) {
     }
     if (sat > 20) return false;
     const x = p % w, y = (p - x) / w;
-    // Strict luminance threshold + local checkerboard confirmation protects smooth grey/white cloth folds
     return lum >= 238 || (lum >= 186 && isCheckerPixel(data, w, h, x, y, false));
   };
 
@@ -203,17 +310,14 @@ function removeBackdrop(imgData) {
     }
   };
 
-  // Seed outer border
   for (let x = 0; x < w; x++) { trySeed(x, 0); trySeed(x, h - 1); }
   for (let y = 0; y < h; y++) { trySeed(0, y); trySeed(w - 1, y); }
 
-  // Seed enclosed interior pockets using genuine alternating checkerboard confirmation (safe on white cloth!)
-  if (mode === 'checkerboard') {
+  if (mode === 'checkerboard' && removeInteriorPockets) {
     for (let y = 12; y < h - 12; y += 12) {
       for (let x = 12; x < w - 12; x += 12) {
         const p = y * w + x;
-        if (!bg[p]) {
-          // Require BOTH a ~195-225 grey square and ~245-255 white square nearby in neutral hues
+        if (!bg[p] && !protectedMask[p]) {
           let hasGrey = false, hasWhite = false, colorPixel = false;
           for (let dy = -8; dy <= 8; dy += 4) {
             for (let dx = -8; dx <= 8; dx += 4) {
@@ -250,9 +354,40 @@ function removeBackdrop(imgData) {
     }
   }
 
-  // Enclosed interior checkerboard pocket cleanup for checkerboard-mode art (e.g. pockets framed by colored aura)
-  if (mode === 'checkerboard') {
+  if (Array.isArray(opts.extraSeeds) && opts.extraSeeds.length > 0) {
+    const isSeedBgPixel = (p) => {
+      if (protectedMask[p]) return false;
+      const i = p * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const sat = Math.max(r, g, b) - Math.min(r, g, b);
+      const lum = r * 0.299 + g * 0.587 + b * 0.114;
+      return sat <= 45 && lum >= 218;
+    };
+    const eq = new Int32Array(total);
+    for (const seed of opts.extraSeeds) {
+      const sx = Math.max(0, Math.min(w - 1, Math.round(seed.x)));
+      const sy = Math.max(0, Math.min(h - 1, Math.round(seed.y)));
+      const sp = sy * w + sx;
+      if (bg[sp] || !isSeedBgPixel(sp)) continue;
+      let eh = 0, et = 0;
+      bg[sp] = 1;
+      eq[et++] = sp;
+      while (eh < et) {
+        const cp = eq[eh++];
+        const cx = cp % w, cy = (cp - cx) / w;
+        for (const np of [cx > 0 ? cp - 1 : -1, cx + 1 < w ? cp + 1 : -1, cy > 0 ? cp - w : -1, cy + 1 < h ? cp + w : -1]) {
+          if (np >= 0 && !bg[np] && isSeedBgPixel(np)) {
+            bg[np] = 1;
+            eq[et++] = np;
+          }
+        }
+      }
+    }
+  }
+
+  if (mode === 'checkerboard' && removeInteriorPockets) {
     const isChkPx = (p) => {
+      if (protectedMask[p]) return false;
       const i = p * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const sat = Math.max(r, g, b) - Math.min(r, g, b);
@@ -297,14 +432,11 @@ function removeBackdrop(imgData) {
     }
   }
 
-  // Enclosed interior backdrop pocket removal for white-matte / subtle-checkerboard artwork.
-  // Flood-fills ONLY strict backdrop pixels so shaded cloth/chrome gradients are preserved right
-  // at the boundary, then requires either verified subtle-checkerboard border + alternation,
-  // a pure core with crisp dark/saturated aura borders, or a dark-hair top silhouette gap.
-  if (mode === 'white-matte') {
+  if (mode === 'white-matte' && removeInteriorPockets) {
     const minStrict = hasSubtleCheckerBorder ? 238 : 244;
     const maxStrictSat = hasSubtleCheckerBorder ? 6 : 7;
     const isStrictPocketPx = (p) => {
+      if (protectedMask[p]) return false;
       const i = p * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
       return Math.min(r, g, b) >= minStrict && (Math.max(r, g, b) - Math.min(r, g, b)) <= maxStrictSat;
@@ -363,7 +495,6 @@ function removeBackdrop(imgData) {
             visited[np] = 1;
             compQ[ct++] = np;
           } else {
-            // Sample 2px outward from strict boundary so cloth/chrome gradients are never swallowed
             const nx = np % w, ny = (np - nx) / w;
             const sx = Math.max(0, Math.min(w - 1, nx + (nx - cx) * 2));
             const sy = Math.max(0, Math.min(h - 1, ny + (ny - cy) * 2));
@@ -424,30 +555,31 @@ function removeBackdrop(imgData) {
     }
   }
 
-  // Compute 1px and 2px distance from background for clean halo removal & white-matte decontamination
   const dist = new Uint8Array(total);
-  for (let p = 0; p < total; p++) {
-    if (bg[p]) continue;
-    const x = p % w, y = (p - x) / w;
-    if (
-      (x > 0 && bg[p - 1]) ||
-      (x + 1 < w && bg[p + 1]) ||
-      (y > 0 && bg[p - w]) ||
-      (y + 1 < h && bg[p + w])
-    ) {
-      dist[p] = 1;
+  if (edgeDecontam) {
+    for (let p = 0; p < total; p++) {
+      if (bg[p]) continue;
+      const x = p % w, y = (p - x) / w;
+      if (
+        (x > 0 && bg[p - 1]) ||
+        (x + 1 < w && bg[p + 1]) ||
+        (y > 0 && bg[p - w]) ||
+        (y + 1 < h && bg[p + w])
+      ) {
+        dist[p] = 1;
+      }
     }
-  }
-  for (let p = 0; p < total; p++) {
-    if (bg[p] || dist[p] === 1) continue;
-    const x = p % w, y = (p - x) / w;
-    if (
-      (x > 0 && dist[p - 1] === 1) ||
-      (x + 1 < w && dist[p + 1] === 1) ||
-      (y > 0 && dist[p - w] === 1) ||
-      (y + 1 < h && dist[p + w] === 1)
-    ) {
-      dist[p] = 2;
+    for (let p = 0; p < total; p++) {
+      if (bg[p] || dist[p] === 1) continue;
+      const x = p % w, y = (p - x) / w;
+      if (
+        (x > 0 && dist[p - 1] === 1) ||
+        (x + 1 < w && dist[p + 1] === 1) ||
+        (y > 0 && dist[p - w] === 1) ||
+        (y + 1 < h && dist[p + w] === 1)
+      ) {
+        dist[p] = 2;
+      }
     }
   }
 
@@ -457,7 +589,7 @@ function removeBackdrop(imgData) {
       data[i + 3] = 0;
       continue;
     }
-    if (dist[p] === 0) continue;
+    if (!edgeDecontam || dist[p] === 0 || protectedMask[p]) continue;
     const r = data[i], g = data[i + 1], b = data[i + 2];
     const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
     const sat = mx - mn;
@@ -473,7 +605,6 @@ function removeBackdrop(imgData) {
           data[i + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 3] = Math.round(alpha * 255);
         } else if (mn >= 155 && !isWarmSkin) {
-          // Pale white-contaminated colored aura/flame edge: recover vivid color and fade alpha cleanly
           const alpha = Math.max(0.12, Math.min(1, 1 - (mn - 145) / 108));
           data[i] = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
@@ -582,10 +713,8 @@ function computeAutoHeadshotCrop(imgData) {
   }
 
   const cropW = Math.round(Math.min(w * 0.72, Math.max(w * 0.42, fgW * 0.56)));
-  const cropH = Math.round(cropW * 1.25); // 4:5 (480x600)
+  const cropH = Math.round(cropW * 1.25);
   const cropX = Math.max(0, Math.min(w - cropW, Math.round(bestCx - cropW / 2)));
-  // Anchor directly to detected face center bestCy (~34% down in 4:5 frame -> ~42.5% in 1:1 HUD)
-  // so swirling background aura/flames touching y=0 never push the face toward the bottom of HUD squares.
   const cropY = Math.max(0, Math.min(h - cropH, Math.round(bestCy - cropH * 0.34)));
 
   return { x: cropX, y: cropY, w: cropW, h: cropH, autoCenter: [bestCx, bestCy] };
@@ -637,7 +766,7 @@ async function loadImage(src) {
 
   const rowH = 260;
   const sheet = document.getElementById('contact-sheet');
-  sheet.width = 900;
+  sheet.width = 1320;
   sheet.height = Math.max(rowH, ENTRIES.length * rowH);
   const sctx = sheet.getContext('2d');
   sctx.fillStyle = '#08090e';
@@ -652,10 +781,10 @@ async function loadImage(src) {
     const wctx = work.getContext('2d');
     wctx.drawImage(img, 0, 0);
     const rawData = wctx.getImageData(0, 0, work.width, work.height);
-    const { imgData, mode } = removeBackdrop(rawData);
+    const { imgData, mode } = removeBackdrop(rawData, entry.backdrop);
     wctx.putImageData(imgData, 0, 0);
 
-    // 1. Full portrait (480px wide, optionally cropped via entry.fullCrop)
+    // 1. Full Portrait (480px wide)
     const fullCrop = entry.fullCrop || { x: 0, y: 0, w: work.width, h: work.height };
     const fullW = 480;
     const fullH = Math.round(fullW * (fullCrop.h / fullCrop.w));
@@ -668,7 +797,7 @@ async function loadImage(src) {
     const fullEnc = encodeSafeJpeg(fullCanvas);
     photos[entry.key] = fullEnc.url;
 
-    // 2. Headshot (480x600 4:5 auto-cropped unless explicit override provided)
+    // 2. Headshot (480x600 4:5)
     const crop = entry.crop || computeAutoHeadshotCrop(imgData);
     const hsCanvas = document.createElement('canvas');
     hsCanvas.width = 480;
@@ -679,24 +808,48 @@ async function loadImage(src) {
     const hsEnc = encodeSafeJpeg(hsCanvas);
     headshots[entry.key] = hsEnc.url;
 
-    // 3. Draw Contact Sheet row: Full 3:4 | Headshot 4:5 | HUD 1:1 (top slice) | Token 5:6
+    // 3. Render Raw | Prev Full | New Full (3:4) | Prev Headshot | New Headshot (4:5) | HUD (1:1) | Token (5:6)
     const ry = i * rowH + 16;
     sctx.fillStyle = '#9aa4bf';
-    sctx.font = 'bold 14px monospace';
+    sctx.font = 'bold 13px monospace';
     sctx.fillText(entry.key + ' [' + mode + ' crop=' + crop.x + ',' + crop.y + ',' + crop.w + 'x' + crop.h + ']', 16, ry);
-    // Card 3:4 (165x220)
-    sctx.drawImage(fullCanvas, 0, 0, fullW, Math.min(fullH, Math.round(fullW * 4 / 3)), 16, ry + 10, 165, 220);
-    // Headshot 4:5 (176x220)
-    sctx.drawImage(hsCanvas, 0, 0, 480, 600, 200, ry + 10, 176, 220);
+
+    // Raw Source (fit 150x220)
+    const rawRatio = Math.min(150 / img.width, 220 / img.height);
+    sctx.drawImage(img, 16, ry + 10, Math.round(img.width * rawRatio), Math.round(img.height * rawRatio));
+
+    // Prev Full
+    if (entry.prevFullUrl) {
+      const pf = await loadImage(entry.prevFullUrl);
+      sctx.drawImage(pf, 0, 0, pf.width, Math.min(pf.height, Math.round(pf.width * 4 / 3)), 184, ry + 10, 165, 220);
+    }
+    // New Full (3:4)
+    sctx.drawImage(fullCanvas, 0, 0, fullW, Math.min(fullH, Math.round(fullW * 4 / 3)), 365, ry + 10, 165, 220);
+
+    // Prev Headshot
+    if (entry.prevHeadshotUrl) {
+      const ph = await loadImage(entry.prevHeadshotUrl);
+      sctx.drawImage(ph, 0, 0, 480, 600, 550, ry + 10, 176, 220);
+    }
+    // New Headshot (4:5)
+    sctx.drawImage(hsCanvas, 0, 0, 480, 600, 742, ry + 10, 176, 220);
+
     // HUD 1:1 top slice (140x140)
-    sctx.drawImage(hsCanvas, 0, 0, 480, 480, 400, ry + 10, 140, 140);
+    sctx.drawImage(hsCanvas, 0, 0, 480, 480, 938, ry + 10, 140, 140);
     // Token 5:6 (150x180)
-    sctx.drawImage(hsCanvas, 0, 0, 480, 576, 565, ry + 10, 150, 180);
+    sctx.drawImage(hsCanvas, 0, 0, 480, 576, 1098, ry + 10, 150, 180);
 
     meta.push({ key: entry.key, mode, fullCrop, crop, fullQuality: fullEnc.quality, hsQuality: hsEnc.quality });
   }
 
   window.__PORTRAIT_RESULTS = { photos, headshots, meta };
+  if (${autoSave ? 'true' : 'false'}) {
+    await fetch('/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(window.__PORTRAIT_RESULTS),
+    });
+  }
   document.getElementById('status').textContent = 'ready:' + ENTRIES.length;
 })();
 </script>
@@ -704,9 +857,32 @@ async function loadImage(src) {
 </html>`;
 }
 
-function updatePortraitsFile(results) {
+function updatePortraitsFile(results, unlockKeys = new Set()) {
   const src = fs.readFileSync(PORTRAITS_FILE, 'utf8');
   let next = src;
+
+  const hasManifest = fs.existsSync(DEFAULT_MANIFEST_FILE);
+  const manifest = hasManifest ? loadManifest(DEFAULT_MANIFEST_FILE) : null;
+
+  const affectedKeys = new Set([
+    ...Object.keys(results.photos || {}),
+    ...Object.keys(results.headshots || {}),
+  ]);
+
+  if (manifest) {
+    const blocked = [];
+    for (const k of affectedKeys) {
+      const entry = manifest.fighters[k];
+      if (entry && entry.locked && !unlockKeys.has(k)) {
+        blocked.push(k);
+      }
+    }
+    if (blocked.length > 0) {
+      throw new Error(
+        `Refusing to overwrite locked fighter(s): ${blocked.join(', ')}. Pass --unlock ${blocked.join(',')} or run --unlock first.`
+      );
+    }
+  }
 
   const upsertMapEntries = (text, mapName, additions) => {
     if (!additions || !Object.keys(additions).length) return text;
@@ -739,18 +915,393 @@ function updatePortraitsFile(results) {
   next = upsertMapEntries(next, 'FIGHTER_HEADSHOTS', results.headshots);
   new vm.Script(next, { filename: 'portraits.js' });
   fs.writeFileSync(PORTRAITS_FILE, next, 'utf8');
+
+  if (manifest) {
+    const maps = loadPortraitsMaps(next);
+    for (const k of affectedKeys) {
+      if (!manifest.fighters[k]) continue;
+      if (unlockKeys.has(k)) {
+        manifest.fighters[k].locked = false;
+      }
+      if (maps.photos[k]) manifest.fighters[k].fullHash = sha256(maps.photos[k]);
+      if (maps.headshots[k]) manifest.fighters[k].headshotHash = sha256(maps.headshots[k]);
+    }
+    saveManifest(manifest, DEFAULT_MANIFEST_FILE);
+  }
+}
+
+function resolveStageEntries(manifestArg, onlyKeys, forceStage) {
+  const manifestPath =
+    manifestArg === true
+      ? DEFAULT_MANIFEST_FILE
+      : path.resolve(process.cwd(), String(manifestArg));
+  const raw = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+
+  if (Array.isArray(raw)) {
+    const filtered = onlyKeys.length ? raw.filter((e) => onlyKeys.includes(e.key)) : raw;
+    return { entries: filtered, skippedLocked: [] };
+  }
+
+  if (!raw || typeof raw !== 'object' || !raw.fighters) {
+    throw new Error(`Unrecognized manifest format in ${manifestPath}`);
+  }
+
+  const entries = [];
+  const skippedLocked = [];
+  const blockedLocked = [];
+
+  for (const [key, f] of Object.entries(raw.fighters)) {
+    if (onlyKeys.length && !onlyKeys.includes(key)) continue;
+    if (f.locked && !forceStage) {
+      if (onlyKeys.length) {
+        blockedLocked.push(key);
+      } else {
+        skippedLocked.push(key);
+      }
+      continue;
+    }
+    entries.push({
+      key,
+      src: f.sourcePath,
+      fullCrop: f.fullCrop || null,
+      crop: f.crop || null,
+      backdrop: f.backdrop || undefined,
+    });
+  }
+
+  if (blockedLocked.length > 0) {
+    throw new Error(
+      `Requested fighter(s) are locked: ${blockedLocked.join(', ')}. Run --unlock ${blockedLocked.join(',')} or pass --force-stage.`
+    );
+  }
+
+  return { entries, skippedLocked };
+}
+
+function runAudit(outDir, compareRef) {
+  fs.mkdirSync(path.join(outDir, 'head'), { recursive: true });
+  fs.mkdirSync(path.join(outDir, 'prev'), { recursive: true });
+
+  const headCode = fs.readFileSync(PORTRAITS_FILE, 'utf8');
+  const headMaps = loadPortraitsMaps(headCode);
+
+  let prevMaps = { photos: {}, headshots: {} };
+  let hasPrev = false;
+  if (compareRef) {
+    try {
+      const prevCode = execSync(`git show ${compareRef}:game/portraits.js`, {
+        cwd: ROOT,
+        encoding: 'utf8',
+        maxBuffer: 50 * 1024 * 1024,
+      });
+      prevMaps = loadPortraitsMaps(prevCode);
+      hasPrev = true;
+    } catch (err) {
+      console.warn(`Warning: could not load ${compareRef}:game/portraits.js (${err.message}). Continuing without comparison ref.`);
+    }
+  }
+
+  const manifest = fs.existsSync(DEFAULT_MANIFEST_FILE) ? loadManifest(DEFAULT_MANIFEST_FILE) : { fighters: {} };
+  const keys = Object.keys(headMaps.photos);
+  const report = {
+    generatedAt: new Date().toISOString(),
+    compareRef: hasPrev ? compareRef : null,
+    totalFighters: keys.length,
+    fighters: [],
+  };
+
+  for (const key of keys) {
+    const headFullBuf = decodeDataUriJpeg(headMaps.photos[key]);
+    const headHsBuf = decodeDataUriJpeg(headMaps.headshots[key]);
+    const headFullDim = parseJpegDimensions(headFullBuf);
+    const headHsDim = parseJpegDimensions(headHsBuf);
+
+    fs.writeFileSync(path.join(outDir, 'head', `${key}_full.jpg`), headFullBuf);
+    fs.writeFileSync(path.join(outDir, 'head', `${key}_headshot.jpg`), headHsBuf);
+
+    let prevFullBytes = null;
+    let prevHsBytes = null;
+    let fullChanged = null;
+    let headshotChanged = null;
+
+    if (hasPrev && prevMaps.photos[key] && prevMaps.headshots[key]) {
+      const prevFullBuf = decodeDataUriJpeg(prevMaps.photos[key]);
+      const prevHsBuf = decodeDataUriJpeg(prevMaps.headshots[key]);
+      prevFullBytes = prevFullBuf.length;
+      prevHsBytes = prevHsBuf.length;
+      fullChanged = sha256(headMaps.photos[key]) !== sha256(prevMaps.photos[key]);
+      headshotChanged = sha256(headMaps.headshots[key]) !== sha256(prevMaps.headshots[key]);
+      fs.writeFileSync(path.join(outDir, 'prev', `${key}_full.jpg`), prevFullBuf);
+      fs.writeFileSync(path.join(outDir, 'prev', `${key}_headshot.jpg`), prevHsBuf);
+    }
+
+    const mEntry = manifest.fighters[key];
+    const rawRel = mEntry ? path.relative(outDir, path.join(ROOT, mEntry.sourcePath)).replace(/\\/g, '/') : '';
+
+    report.fighters.push({
+      key,
+      status: mEntry ? mEntry.status : 'unknown',
+      locked: mEntry ? Boolean(mEntry.locked) : false,
+      rawRel,
+      headFull: { width: headFullDim.width, height: headFullDim.height, bytes: headFullBuf.length },
+      headHs: { width: headHsDim.width, height: headHsDim.height, bytes: headHsBuf.length },
+      prevFullBytes,
+      prevHsBytes,
+      fullDeltaBytes: prevFullBytes !== null ? headFullBuf.length - prevFullBytes : null,
+      hsDeltaBytes: prevHsBytes !== null ? headHsBuf.length - prevHsBytes : null,
+      fullChanged,
+      headshotChanged,
+    });
+  }
+
+  fs.writeFileSync(path.join(outDir, 'audit-report.json'), JSON.stringify(report, null, 2) + '\n', 'utf8');
+
+  const rowsHtml = report.fighters
+    .map((f) => {
+      const changedBadge =
+        f.fullChanged || f.headshotChanged
+          ? `<span class="badge changed">CHANGED (${f.fullChanged ? 'Full' : ''}${f.fullChanged && f.headshotChanged ? '+' : ''}${f.headshotChanged ? 'HS' : ''})</span>`
+          : `<span class="badge same">UNCHANGED</span>`;
+      const prevFullCell = f.prevFullBytes !== null
+        ? `<img src="prev/${f.key}_full.jpg" loading="lazy"><div class="meta">${(f.prevFullBytes / 1024).toFixed(1)} KB</div>`
+        : `<div class="meta">N/A</div>`;
+      const prevHsCell = f.prevHsBytes !== null
+        ? `<img src="prev/${f.key}_headshot.jpg" loading="lazy"><div class="meta">${(f.prevHsBytes / 1024).toFixed(1)} KB</div>`
+        : `<div class="meta">N/A</div>`;
+      return `
+      <div class="row">
+        <div class="row-head">
+          <strong>${f.key}</strong>
+          ${changedBadge}
+          <span class="meta">status=${f.status} | locked=${f.locked} | Full=${f.headFull.width}x${f.headFull.height} (${(f.headFull.bytes / 1024).toFixed(1)} KB${f.fullDeltaBytes !== null ? `, Δ${f.fullDeltaBytes >= 0 ? '+' : ''}${f.fullDeltaBytes}B` : ''}) | HS=${f.headHs.width}x${f.headHs.height} (${(f.headHs.bytes / 1024).toFixed(1)} KB${f.hsDeltaBytes !== null ? `, Δ${f.hsDeltaBytes >= 0 ? '+' : ''}${f.hsDeltaBytes}B` : ''})</span>
+        </div>
+        <div class="grid">
+          <div class="cell"><div class="lbl">Raw Source</div>${f.rawRel ? `<img src="${f.rawRel}" loading="lazy">` : 'Missing'}</div>
+          <div class="cell"><div class="lbl">Prev Full</div>${prevFullCell}</div>
+          <div class="cell"><div class="lbl">HEAD Full</div><img src="head/${f.key}_full.jpg" loading="lazy"></div>
+          <div class="cell"><div class="lbl">Prev Headshot</div>${prevHsCell}</div>
+          <div class="cell"><div class="lbl">HEAD Headshot</div><img src="head/${f.key}_headshot.jpg" loading="lazy"></div>
+        </div>
+      </div>`;
+    })
+    .join('\n');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Exceed Revival — 41-Fighter Portrait Audit</title>
+<style>
+  body { margin: 0; padding: 20px; background: #08090e; color: #e2e8f0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h1 { margin: 0 0 8px; font-size: 18px; }
+  .summary { color: #94a3b8; font-size: 13px; margin-bottom: 20px; }
+  .row { border: 1px solid #1e293b; border-radius: 8px; padding: 12px; margin-bottom: 16px; background: #0f172a; }
+  .row-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 10px; }
+  .badge { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .badge.changed { background: #7c2d12; color: #fed7aa; }
+  .badge.same { background: #1e293b; color: #94a3b8; }
+  .meta { font-size: 12px; color: #94a3b8; }
+  .grid { display: grid; grid-template-columns: repeat(5, minmax(140px, 1fr)); gap: 10px; align-items: start; }
+  .cell { background: #08090e; border: 1px solid #1e293b; border-radius: 6px; padding: 6px; text-align: center; }
+  .lbl { font-size: 11px; color: #cbd5e1; margin-bottom: 6px; }
+  img { max-width: 100%; max-height: 240px; object-fit: contain; display: block; margin: 0 auto; }
+</style>
+</head>
+<body>
+  <h1>41-Fighter Portrait Audit (${compareRef || 'HEAD only'} → HEAD)</h1>
+  <div class="summary">Generated ${report.generatedAt} • Changed Full: ${report.fighters.filter((f) => f.fullChanged).length} • Changed Headshots: ${report.fighters.filter((f) => f.headshotChanged).length}</div>
+  ${rowsHtml}
+</body>
+</html>`;
+
+  fs.writeFileSync(path.join(outDir, 'audit.html'), html, 'utf8');
+  console.log(`Audit complete: ${report.totalFighters} fighters -> ${path.relative(ROOT, path.join(outDir, 'audit.html'))}`);
 }
 
 const args = parseArgs(process.argv.slice(2));
-if (args.stage) {
-  const manifestPath = path.resolve(process.cwd(), String(args.stage));
+
+if (args.ingest) {
+  const key = String(args.ingest);
+  const rawSrc = args._[0];
+  if (!rawSrc) {
+    console.error('Usage: node scripts/import-portraits.mjs --ingest <key> <rawFilePath>');
+    process.exit(1);
+  }
+  const absSrc = path.resolve(process.cwd(), rawSrc);
+  if (!fs.existsSync(absSrc)) {
+    console.error(`Missing raw file: ${absSrc}`);
+    process.exit(1);
+  }
+  const ext = path.extname(absSrc).toLowerCase() || '.png';
+  fs.mkdirSync(RAW_DIR, { recursive: true });
+  const destAbs = path.join(RAW_DIR, `${key}${ext}`);
+  fs.copyFileSync(absSrc, destAbs);
+
+  const manifest = loadManifest(DEFAULT_MANIFEST_FILE);
+  const prev = manifest.fighters[key] || {
+    backdrop: { mode: 'auto', removeInteriorPockets: true, edgeDecontam: true, protectRects: [] },
+    fullCrop: null,
+    crop: null,
+    fullHash: '',
+    headshotHash: '',
+    notes: '',
+  };
+  manifest.fighters[key] = {
+    ...prev,
+    sourcePath: `assets/portraits/raw/${key}${ext}`,
+    status: 'unaudited',
+    locked: false,
+  };
+  saveManifest(manifest, DEFAULT_MANIFEST_FILE);
+  console.log(`Ingested ${key} -> assets/portraits/raw/${key}${ext} (status=unaudited, locked=false)`);
+} else if (args.unlock && !args.apply) {
+  const keys = parseKeyList(args.unlock);
+  if (!keys.length) {
+    console.error('Usage: node scripts/import-portraits.mjs --unlock <k1,k2>');
+    process.exit(1);
+  }
+  const manifest = loadManifest(DEFAULT_MANIFEST_FILE);
+  for (const k of keys) {
+    if (!manifest.fighters[k]) throw new Error(`Unknown fighter key: ${k}`);
+    manifest.fighters[k].locked = false;
+  }
+  saveManifest(manifest, DEFAULT_MANIFEST_FILE);
+  console.log(`Unlocked: ${keys.join(', ')}`);
+} else if (args.lock) {
+  const manifest = loadManifest(DEFAULT_MANIFEST_FILE);
+  const keys = args.lock === 'all' ? Object.keys(manifest.fighters) : parseKeyList(args.lock);
+  if (!keys.length) {
+    console.error('Usage: node scripts/import-portraits.mjs --lock <k1,k2|all>');
+    process.exit(1);
+  }
+  const maps = loadPortraitsMaps(fs.readFileSync(PORTRAITS_FILE, 'utf8'));
+  for (const k of keys) {
+    if (!manifest.fighters[k]) throw new Error(`Unknown fighter key: ${k}`);
+    if (!maps.photos[k] || !maps.headshots[k]) {
+      throw new Error(`Missing portrait data in game/portraits.js for ${k}`);
+    }
+    manifest.fighters[k].fullHash = sha256(maps.photos[k]);
+    manifest.fighters[k].headshotHash = sha256(maps.headshots[k]);
+    manifest.fighters[k].status = 'approved';
+    manifest.fighters[k].locked = true;
+  }
+  saveManifest(manifest, DEFAULT_MANIFEST_FILE);
+  console.log(`Locked (${keys.length}): ${keys.join(', ')}`);
+} else if (args['mark-needs-source']) {
+  const keys = parseKeyList(args['mark-needs-source']);
+  if (!keys.length) {
+    console.error('Usage: node scripts/import-portraits.mjs --mark-needs-source <k1,k2>');
+    process.exit(1);
+  }
+  const manifest = loadManifest(DEFAULT_MANIFEST_FILE);
+  for (const k of keys) {
+    if (!manifest.fighters[k]) throw new Error(`Unknown fighter key: ${k}`);
+    manifest.fighters[k].status = 'needs-source';
+    manifest.fighters[k].locked = false;
+  }
+  saveManifest(manifest, DEFAULT_MANIFEST_FILE);
+  console.log(`Marked needs-source: ${keys.join(', ')}`);
+} else if (args.audit) {
+  const outDir = path.resolve(process.cwd(), String(args.out || '../.scratch/portrait-audit'));
+  const compareRef = args['compare-ref'] ? String(args['compare-ref']) : 'adc29ad~1';
+  runAudit(outDir, compareRef);
+} else if (args['restore-from']) {
+  const gitRef = String(args['restore-from']);
+  const keys = parseKeyList(args.only);
+  const part = String(args.part || 'both');
+  if (!keys.length || !['full', 'headshot', 'both'].includes(part)) {
+    console.error('Usage: node scripts/import-portraits.mjs --restore-from <gitRef> --only <k1,k2> [--part full|headshot|both]');
+    process.exit(1);
+  }
+  const prevCode = execSync(`git show ${gitRef}:game/portraits.js`, {
+    cwd: ROOT,
+    encoding: 'utf8',
+    maxBuffer: 50 * 1024 * 1024,
+  });
+  const prevMaps = loadPortraitsMaps(prevCode);
+  const photos = {};
+  const headshots = {};
+  for (const k of keys) {
+    if (part === 'full' || part === 'both') {
+      if (!prevMaps.photos[k]) throw new Error(`Missing FIGHTER_PHOTOS.${k} at ${gitRef}`);
+      photos[k] = prevMaps.photos[k];
+    }
+    if (part === 'headshot' || part === 'both') {
+      if (!prevMaps.headshots[k]) throw new Error(`Missing FIGHTER_HEADSHOTS.${k} at ${gitRef}`);
+      headshots[k] = prevMaps.headshots[k];
+    }
+  }
+  const unlockKeys = new Set(parseKeyList(args.unlock));
+  updatePortraitsFile({ photos, headshots }, unlockKeys);
+  console.log(`Restored (${part}) from ${gitRef} for: ${keys.join(', ')}`);
+} else if (args.stage) {
+  const onlyKeys = parseKeyList(args.only);
+  const forceStage = Boolean(args['force-stage']);
+  const runHeadless = Boolean(args['run-headless']);
+  const { entries, skippedLocked } = resolveStageEntries(args.stage, onlyKeys, forceStage);
+  if (skippedLocked.length) {
+    console.log(`Skipped ${skippedLocked.length} locked fighter(s): ${skippedLocked.join(', ')}`);
+  }
+  if (!entries.length) {
+    console.log('No unlocked fighters to stage.');
+    process.exit(0);
+  }
   const outDir = path.resolve(process.cwd(), String(args.out || '.playwright-cli/portrait-batch'));
-  const entries = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   fs.mkdirSync(outDir, { recursive: true });
   const htmlPath = path.join(outDir, 'processor.html');
-  fs.writeFileSync(htmlPath, buildProcessorHTML(entries), 'utf8');
+  const currentMaps = loadPortraitsMaps(fs.readFileSync(PORTRAITS_FILE, 'utf8'));
+  fs.writeFileSync(htmlPath, buildProcessorHTML(entries, currentMaps, runHeadless), 'utf8');
   console.log(`Staged ${entries.length} portrait(s) at ${path.relative(ROOT, htmlPath)}`);
-  if (args.serve) {
+
+  if (runHeadless) {
+    const outJson = path.join(outDir, 'results.json');
+    if (fs.existsSync(outJson)) fs.unlinkSync(outJson);
+    const chromeCandidates = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    ];
+    const browserBin = chromeCandidates.find((p) => fs.existsSync(p));
+    if (!browserBin) {
+      throw new Error('No headless Chrome/Edge binary found.');
+    }
+
+    let browserProc = null;
+    let timeoutId = null;
+    const server = http.createServer((req, res) => {
+      if (req.method === 'POST' && req.url === '/save') {
+        const chunks = [];
+        req.on('data', (c) => chunks.push(c));
+        req.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf8');
+          fs.writeFileSync(outJson, body, 'utf8');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ saved: path.relative(ROOT, outJson) }));
+          clearTimeout(timeoutId);
+          console.log(`Headless processing complete -> ${path.relative(ROOT, outJson)}`);
+          if (browserProc && !browserProc.killed) browserProc.kill();
+          server.close(() => process.exit(0));
+        });
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(fs.readFileSync(htmlPath));
+    });
+
+    server.listen(0, '127.0.0.1', () => {
+      const addr = server.address();
+      const url = `http://127.0.0.1:${addr.port}/processor.html`;
+      browserProc = spawn(
+        browserBin,
+        ['--headless=new', '--disable-gpu', '--no-sandbox', '--virtual-time-budget=30000', url],
+        { stdio: 'ignore' }
+      );
+      timeoutId = setTimeout(() => {
+        console.error('Timed out waiting for headless portrait processing (45s).');
+        if (browserProc && !browserProc.killed) browserProc.kill();
+        server.close(() => process.exit(1));
+      }, 45000);
+    });
+  } else if (args.serve) {
     const port = Number(args.port || 3099);
     const server = http.createServer((req, res) => {
       if (req.method === 'POST' && req.url === '/save') {
@@ -775,9 +1326,19 @@ if (args.stage) {
 } else if (args.apply) {
   const resultsPath = path.resolve(process.cwd(), String(args.apply));
   const results = JSON.parse(fs.readFileSync(resultsPath, 'utf8'));
-  updatePortraitsFile(results);
+  const unlockKeys = new Set(parseKeyList(args.unlock));
+  updatePortraitsFile(results, unlockKeys);
   console.log(`Updated game/portraits.js (${Object.keys(results.photos || {}).length} full, ${Object.keys(results.headshots || {}).length} headshots).`);
 } else {
-  console.log('Usage:\n  node scripts/import-portraits.mjs --stage <manifest.json> [--out .playwright-cli/portrait-batch] [--serve --port 3099]\n  node scripts/import-portraits.mjs --apply <results.json>');
+  console.log(
+    'Usage:\n' +
+    '  node scripts/import-portraits.mjs --ingest <key> <rawFilePath>\n' +
+    '  node scripts/import-portraits.mjs --unlock <k1,k2>\n' +
+    '  node scripts/import-portraits.mjs --stage [manifestPath] [--only k1,k2] [--force-stage] [--out .playwright-cli/portrait-batch] [--serve --port 3099]\n' +
+    '  node scripts/import-portraits.mjs --apply <results.json> [--unlock k1,k2]\n' +
+    '  node scripts/import-portraits.mjs --lock <k1,k2|all>\n' +
+    '  node scripts/import-portraits.mjs --mark-needs-source <k1,k2>\n' +
+    '  node scripts/import-portraits.mjs --audit [--out ../.scratch/portrait-audit] [--compare-ref adc29ad~1]'
+  );
   process.exit(1);
 }

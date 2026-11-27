@@ -1,0 +1,755 @@
+{
+  "version": 1,
+  "fighters": {
+    "ryu": {
+      "sourcePath": "assets/portraits/raw/ryu.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "8bb3c1061d2e380a631d5229323f8573a1133cd97fb623840688f3c97c94e58f",
+      "headshotHash": "fa769b3bb6c369ae29031a2f3cbc416ab9b0e3c7424bad8f7e594262f8046f4e",
+      "notes": ""
+    },
+    "zangief": {
+      "sourcePath": "assets/portraits/raw/zangief.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c01f4ce701a733ca6eb25b7110d18acf3596b31618cadfa97b02114a55de9ae6",
+      "headshotHash": "71209eafaa845c5faf1185bba462ef10cd991aa570e22dc11d02d901abea7648",
+      "notes": ""
+    },
+    "chunli": {
+      "sourcePath": "assets/portraits/raw/chunli.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [
+          {
+            "x": 550,
+            "y": 375,
+            "w": 65,
+            "h": 90
+          }
+        ],
+        "extraSeeds": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "95b9b326cf7ff006ab5013dba2f4fcd3d5560c0f24dfeb9e349d87a7bfeca721",
+      "headshotHash": "95fcf9f14a0755608a072d11f354b8d6f92539fd41cb97766b33049bde04bbf6",
+      "notes": ""
+    },
+    "ken": {
+      "sourcePath": "assets/portraits/raw/ken.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c8c09158af5714a0dd8f1f35c267ac409c4d6425d23c9c477f6ff9ab12032c5a",
+      "headshotHash": "59eab856159ee76aa0861271c38b6ff4802d755c8e957f967c2cbb6ccd21629c",
+      "notes": ""
+    },
+    "axl": {
+      "sourcePath": "assets/portraits/raw/axl.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "b7169d879d56ef85178f560896fedd7bdb415c93f4cf361fe404573d0cd30fb3",
+      "headshotHash": "d77494ee37074069a28ee76fbdaad0f357ac553d4409ddea3fb89ebd4045142b",
+      "notes": ""
+    },
+    "giovanna": {
+      "sourcePath": "assets/portraits/raw/giovanna.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [
+          {
+            "x": 480,
+            "y": 520,
+            "w": 340,
+            "h": 460
+          }
+        ],
+        "extraSeeds": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "93cc8be0f3742193d0061fbd4bcaff30962465e815eeaf539b8cde3554a25b1c",
+      "headshotHash": "7c6fd84ac846f70d2698580c52ac8cd1be0c915ddc15bc1a9b2190dc994e392b",
+      "notes": ""
+    },
+    "cviper": {
+      "sourcePath": "assets/portraits/raw/cviper.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [],
+        "extraSeeds": [
+          {
+            "x": 713,
+            "y": 472
+          }
+        ]
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "8559649aabc686123eb096ac4db79bbef063d8ef2c23dfd9a2e6d3f532c5a186",
+      "headshotHash": "f090f1f21cb647f724472901ec424cfc374a4a2a74eb7bfe6a0b155e0ef0dc63",
+      "notes": ""
+    },
+    "cammy": {
+      "sourcePath": "assets/portraits/raw/cammy.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "05ae2f2b357f7db48e1cba48eab8a851dd7c003ebea53b5d65624cd478ec9cbb",
+      "headshotHash": "866dfd398d56072cc4232e79ab8f826d9578ac55c540e3f61fbaeca771dfc7cd",
+      "notes": ""
+    },
+    "vega": {
+      "sourcePath": "assets/portraits/raw/vega.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [],
+        "extraSeeds": [
+          {
+            "x": 670,
+            "y": 885
+          },
+          {
+            "x": 650,
+            "y": 900
+          }
+        ]
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "0c74d35e1b708256ee6629ca6435853144f70c87b40d21d85c2615dc702ca572",
+      "headshotHash": "f9fa2b80bdce1a75bf541ebae0eb78c4d7dcefed973311ce2b60643dff7ab361",
+      "notes": ""
+    },
+    "akuma": {
+      "sourcePath": "assets/portraits/raw/akuma.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "23a0ddc0b86bd54e42d299a577e017674af69cbfbd25b79690bed93fae4edeaa",
+      "headshotHash": "3035e0fdb7da7756d27fc421fbc5109493fdeb8088609e793441d6e3add88918",
+      "notes": ""
+    },
+    "testament": {
+      "sourcePath": "assets/portraits/raw/testament.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "6322431c70422d1166405155612232dd40ee6d466699ca1791deb8c2da328108",
+      "headshotHash": "b1e9ef1567fa0c77c51ee46b899bed5d7c84f82864b345ec2ffaf01ad7e1be58",
+      "notes": ""
+    },
+    "guile": {
+      "sourcePath": "assets/portraits/raw/guile.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "e16b04bbf1744e7fbe07333c669bbf54926e8073d36540a5dd313927dfa393ef",
+      "headshotHash": "17ea783c878e4f4e6521920d6fb2558371118dcea88dc727222b42afde019737",
+      "notes": ""
+    },
+    "may": {
+      "sourcePath": "assets/portraits/raw/may.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "9a09a0a020033bc90182181dbfc26210c52e4852c76ab2bb30294cf9bbb943c2",
+      "headshotHash": "fc3e7e16ca0730f5eb70740bd0eaa31c18c796507f0052a42d67fb3326a50aeb",
+      "notes": ""
+    },
+    "mbison": {
+      "sourcePath": "assets/portraits/raw/mbison.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [
+          {
+            "x": 405,
+            "y": 305,
+            "w": 70,
+            "h": 85
+          }
+        ],
+        "extraSeeds": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "b5c2735bbe0ce7d496a87da88b03720b466e4f472d83a0a09d1386f6aa119a8b",
+      "headshotHash": "80166a8e290995b70f30ceada4f96b6f747fd2e6c2acfa48b6e5221209c491ab",
+      "notes": ""
+    },
+    "ky": {
+      "sourcePath": "assets/portraits/raw/ky.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "3912db130b16fd089e027d48e547573d279953ddc8f306ea1abb4918cbb26c8c",
+      "headshotHash": "ed930a9f52164b10e7c4992032c1e6f1152679b78972b66581ac3ca7d2c98b2a",
+      "notes": ""
+    },
+    "sagat": {
+      "sourcePath": "assets/portraits/raw/sagat.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "98d329762ecd21332bbcabe532ba1abcfd4fee17f20b6fdce37cb898e3a52e3d",
+      "headshotHash": "cd4564a8b35a131d829be5f9d7b0e6b1dc79a5ec355cc61561abd6b915f10029",
+      "notes": ""
+    },
+    "millia": {
+      "sourcePath": "assets/portraits/raw/millia.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "1104e1dd248f81032170f2b9355cbe7ec2e801f266ccbf4f3263c7f53ee86aea",
+      "headshotHash": "389378a87e1bc067102839e83e6fc70cdb6cf7b206744dd2dd990de11c344c4d",
+      "notes": ""
+    },
+    "sol": {
+      "sourcePath": "assets/portraits/raw/sol.png",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "cced903d2c09356e62d0ac537f02c0456ce6588459683123751ae77e2e1fe59a",
+      "headshotHash": "ef7160fe2fcf7e52faaf7bba9102859f702f9b1d8fe80b85cb53f268eda1d3fb",
+      "notes": ""
+    },
+    "dan": {
+      "sourcePath": "assets/portraits/raw/dan.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "3493c6c118b8b93fffba7b3b63bf59f8fa2a27d05be30d39bac6bd8e30ee598a",
+      "headshotHash": "ccc92753eb21908ebb7d4c8f2e6be3d688a9628a1c3a7ff8ec82cdd91e3ca626",
+      "notes": ""
+    },
+    "potemkin": {
+      "sourcePath": "assets/portraits/raw/potemkin.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "a6325a54d7899e1a86298ee710eeb14c6dbad6a95f29379ee63e507fcade3edd",
+      "headshotHash": "be0b787540b84ba71204bc5aeb5503dc8f443e4c7bab25ca3a5e7ea203221c26",
+      "notes": ""
+    },
+    "ragna": {
+      "sourcePath": "assets/portraits/raw/ragna.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "9ca8ce939a8d3dcf979089a4ccf3a55b8261bfc712b0f39b022e75796ed6164a",
+      "headshotHash": "1cff8e7b20e2b807ef878259b581a26d57aa2f2e865f6fce9e6f1c17ba463da6",
+      "notes": ""
+    },
+    "jin": {
+      "sourcePath": "assets/portraits/raw/jin.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "6501100e6dbad64571e0377adc78511fdca24832f4a177b17b3bb87dc63e6bad",
+      "headshotHash": "c1bef2fc9d79d61b53c37f28af34570c5aad6f6659c04d2939a51c0f32083bd6",
+      "notes": ""
+    },
+    "noel": {
+      "sourcePath": "assets/portraits/raw/noel.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "d8cca799350a2852ee708b6e5ab0337f9f4c3485ccadababca470c1dfd60b0d7",
+      "headshotHash": "3a527187ae12c13c17aa19787103588b359d2c25bcc913fd60c3d743f254b0f3",
+      "notes": ""
+    },
+    "taokaka": {
+      "sourcePath": "assets/portraits/raw/taokaka.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "6f3514d3f1acc7751be82f64a55f26e5eb80725a6bbf2513c1598519fc22db33",
+      "headshotHash": "9f58f5dc2614ed07a8380fa1ee0ee804e279516126dc5bc2226cddc6eab3d8a5",
+      "notes": ""
+    },
+    "tager": {
+      "sourcePath": "assets/portraits/raw/tager.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "5fefbdd81db2885542871de0b8a7461601ad4e8fc017f505884af53eeef926a6",
+      "headshotHash": "8c90bde3108eb499317a1b4934fd360844884930813a17fa36290e1da9088784",
+      "notes": ""
+    },
+    "nu13": {
+      "sourcePath": "assets/portraits/raw/nu13.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [],
+        "extraSeeds": [
+          {
+            "x": 145,
+            "y": 455
+          },
+          {
+            "x": 165,
+            "y": 465
+          },
+          {
+            "x": 175,
+            "y": 615
+          },
+          {
+            "x": 185,
+            "y": 630
+          },
+          {
+            "x": 605,
+            "y": 510
+          },
+          {
+            "x": 625,
+            "y": 495
+          }
+        ]
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "3d52fae346176f275903a42d5783533f75849aedef949f9a93f5a18bf333a986",
+      "headshotHash": "a8313b98904f7549ba81d965e4234bd6ed2ae444412f1ad2cda88574e1ab5078",
+      "notes": ""
+    },
+    "bang": {
+      "sourcePath": "assets/portraits/raw/bang.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "42e157b227a4257f050ffb51f615aaf2103f72854f3bc1af7f7a8aa1b543edb9",
+      "headshotHash": "cf68f0fc3ec2a771d2d02cf7bb8aa63a61b291695b4312855213c1e7e95238ac",
+      "notes": ""
+    },
+    "hakumen": {
+      "sourcePath": "assets/portraits/raw/hakumen.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "f5dc846f505c1569257bd6799a5c551fb2d19b101d4b8cd299893ef3d4e95f3f",
+      "headshotHash": "cb6dda55a8ca1a6df1906a7ebefa9d07ca28b76c7a8fe507e92d74311b7e053c",
+      "notes": ""
+    },
+    "platinum": {
+      "sourcePath": "assets/portraits/raw/platinum.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "cea92dc989a5ce56655d0eb5acc654ddc2cbaef8bc9afe66f5a357793743c45a",
+      "headshotHash": "c089502c63af794037ffe7a1a97b6809dd10253d440cf65093c4016b803dd6fd",
+      "notes": ""
+    },
+    "leo": {
+      "sourcePath": "assets/portraits/raw/leo.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c75694d94001fbc9473723ee4bde5d09b84b47f597281e3dca163c2ae0b66ae7",
+      "headshotHash": "b1166d74b81a3704c22e26a1034db0e4606cf0dfed04538a988308e31795cb78",
+      "notes": ""
+    },
+    "chipp": {
+      "sourcePath": "assets/portraits/raw/chipp.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "7a4c4fb5c14f9282bdb4b4a8dead0cf77105c9ba1e3db6694694139ffe848d4e",
+      "headshotHash": "cba716d527afb14466421fdc7f9a8a3fed0fecb244b505fa916a8ca9ff02a2be",
+      "notes": ""
+    },
+    "anji": {
+      "sourcePath": "assets/portraits/raw/anji.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "556cc1d8edf7d2ce4d9f45083b755df475d3e5afe5fc6fcdcd58223dcafa30ce",
+      "headshotHash": "8a819b089b0206c75895dbde82f8501d300d2a563c1c655f6cf18a5ac4278bfc",
+      "notes": ""
+    },
+    "ramlethal": {
+      "sourcePath": "assets/portraits/raw/ramlethal.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "d65fdb8666f9d93fa78efb7c626a735b4cad8e6fdde696670aa9348ab9df625c",
+      "headshotHash": "6942022f671ef51793de0353c759c20c86cf8b254fde79d0999f5fb25b1fcf44",
+      "notes": ""
+    },
+    "nagoriyuki": {
+      "sourcePath": "assets/portraits/raw/nagoriyuki.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c3869459b615b42ab67668c76a042ac27aaa2ad6091029c2c03b21bda0dd3978",
+      "headshotHash": "7a8037a22ff4e99c6b91a6ebcb22af875afc1f55b63c9589b68d21ba9532f022",
+      "notes": ""
+    },
+    "baiken": {
+      "sourcePath": "assets/portraits/raw/baiken.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "42f5b39974c923718f2c70edfb81033278e78a6d7c927bc3824ad41679364644",
+      "headshotHash": "a9815370768b3d48f497a986dd7c03b4af271fa46e312c37bcb448df1df0859f",
+      "notes": ""
+    },
+    "faust": {
+      "sourcePath": "assets/portraits/raw/faust.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [],
+        "extraSeeds": [
+          {
+            "x": 186,
+            "y": 860
+          },
+          {
+            "x": 205,
+            "y": 880
+          },
+          {
+            "x": 212,
+            "y": 900
+          },
+          {
+            "x": 225,
+            "y": 880
+          }
+        ]
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c0fff0c75ce7ee4a0b325b4df6fe73bb806ac4d113df40968ac3d9c651ae1e68",
+      "headshotHash": "e2e88f307f10389b2503bc699af29726ca81e63799b5d5c6e94b43bee1d47c0e",
+      "notes": ""
+    },
+    "ino": {
+      "sourcePath": "assets/portraits/raw/ino.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": [],
+        "extraSeeds": [
+          {
+            "x": 560,
+            "y": 610
+          },
+          {
+            "x": 585,
+            "y": 625
+          }
+        ]
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "5c53edc18b363157bd66d3e0f5af6d0701dfbac881c5bf151759a0aaf0bb4f0d",
+      "headshotHash": "cf96346cb0c774b5ef76a379fb4a1506905b8095f7a8f19851b9891984ffa972",
+      "notes": ""
+    },
+    "jacko": {
+      "sourcePath": "assets/portraits/raw/jacko.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "7adf889afd5588fac4766e2cf2bf105774c74c20a322ac9639787e5c1425f1e5",
+      "headshotHash": "2f9523fc36e12aa8b5a6aa1854b922ce8ce25874f2539e44d2361da1dbfd5d42",
+      "notes": ""
+    },
+    "happychaos": {
+      "sourcePath": "assets/portraits/raw/happychaos.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "b12757a31eac6a40c6baee9c8205da78df58859bbe8e69c3c21ec944795e560f",
+      "headshotHash": "f2b69a624442d33e89ee70be63ad61f80b6ac41e0683065fefa1204b3421170d",
+      "notes": ""
+    },
+    "zato1": {
+      "sourcePath": "assets/portraits/raw/zato1.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "c054e13f7dce354c1aa5d0be88bdcbc007512ace345c09feb6332756a26039f4",
+      "headshotHash": "c13cfcbba45b8805ffaf7b8512bb3ff68cc94166158b7e17a3881ae8a11ab1bd",
+      "notes": ""
+    },
+    "goldlewis": {
+      "sourcePath": "assets/portraits/raw/goldlewis.jpg",
+      "status": "approved",
+      "locked": true,
+      "backdrop": {
+        "mode": "auto",
+        "removeInteriorPockets": true,
+        "edgeDecontam": true,
+        "protectRects": []
+      },
+      "fullCrop": null,
+      "crop": null,
+      "fullHash": "ed2874fc358fb64fa5a368b5c4e23f15f692070ac3440aa65238576c9427c0e7",
+      "headshotHash": "36a2858124f9ed096b7ea50f37cb1656122db74e106635a7b39cb49a3a9c442e",
+      "notes": ""
+    }
+  }
+}

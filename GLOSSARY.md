@@ -115,3 +115,31 @@ _Avoid_: FX item, log entry
 **Interaction Mode**:
 The single active human decision state currently awaiting input from the player, paired with its contextual help copy.
 _Avoid_: UI mode, modal flag
+
+**Source Art**:
+The raw, uncropped uploaded or generated fighter image archived before backdrop removal, cropping, or encoding.
+_Avoid_: Raw upload, input photo
+
+**Fighter Portrait**:
+The processed visual identity pair for a fighter, consisting of a **Full Portrait** and a `4:5` **Headshot** derived from **Source Art**.
+_Avoid_: Player portrait, avatar, thumbnail
+
+**Full Portrait**:
+The waist-up or full-figure processed fighter image used on Fighter Select cards and info panels.
+_Avoid_: Full photo, card image
+
+**Headshot**:
+The `4:5` face-centered processed fighter image used across HUD squares, Arena tokens, and zoomed Fighter Select views.
+_Avoid_: Face crop, bust, icon
+
+**Portrait Manifest**:
+The checked-in per-fighter recipe and approval-lock record governing how **Source Art** is transformed into **Fighter Portraits**.
+_Avoid_: Batch JSON, import config
+
+**Pipeline-Damaged**:
+A **Fighter Portrait** defect introduced by automated backdrop removal, cropping, or encoding while the underlying **Source Art** remains intact.
+_Avoid_: Broken cutout, bad export
+
+**Source-Damaged**:
+A defect inherent in the raw **Source Art** itself (such as anatomy flaws, style mismatch, or low resolution) that requires replacement artwork.
+_Avoid_: Bad art, ugly raw
