@@ -353,22 +353,22 @@ test('resolveStandeeChoreography distinguishes Ryu vs Ken across Cross backdash,
     };
   })()`, ctx);
 
-  // Cross After: Retreat 3 — Ryu disciplined 10px hop vs Ken -2pi 34px backflip
+  // Cross After: Retreat 3 — Ryu dynamic 28px tucked backdash hop vs Ken -2pi 48px high acrobatic backflip
   assert.equal(res.ryuCrossAfter.poseKind, 'backdash_hop');
-  assert.equal(res.ryuCrossAfter.hopHeight, 10);
+  assert.equal(res.ryuCrossAfter.hopHeight, 28);
   assert.equal(res.ryuCrossAfter.wholeSpinRad, 0);
 
   assert.equal(res.kenCrossAfter.poseKind, 'backflip');
-  assert.equal(res.kenCrossAfter.hopHeight, 34);
+  assert.equal(res.kenCrossAfter.hopHeight, 48);
   assert.ok(Math.abs(res.kenCrossAfter.wholeSpinRad + Math.PI * 2) < 1e-6);
 
   // Accessibility: reducedHitStop suppresses -2pi backflip spin
   assert.equal(res.kenCrossReduced.wholeSpinRad, 0);
 
   // Sweep: Ryu planted vs Ken lunging flare + 360 spin
-  assert.equal(res.ryuSweep.lungePx, 28);
+  assert.equal(res.ryuSweep.lungePx, 34);
   assert.equal(res.ryuSweep.wholeSpinRad, 0);
-  assert.equal(res.kenSweep.lungePx, 42);
+  assert.equal(res.kenSweep.lungePx, 46);
   assert.ok(res.kenSweep.wholeSpinRad > 6);
 
   // Hadoken / Metsu Hadoken projectiles
@@ -440,7 +440,7 @@ test('Dynamic Lunge-and-Return, 3-Clip Whiff Recovery, Kinetic Neutral Turns, an
 
   assert.equal(res.ryuPrepare.poseKind, 'ryu_headband_focus');
   assert.equal(res.kenBoost.poseKind, 'ken_flame_install');
-  assert.equal(res.wildReveal.durationSec, 0.40);
+  assert.equal(res.wildReveal.durationSec, 0.44);
   assert.equal(res.wildReveal.wildSwingHazard, true);
 
   assert.equal(res.ryuIdleNormal.poseKind, 'idle');
@@ -678,7 +678,7 @@ test('Universal procedural_exceed_only VFX policy and Multi-Frame Paradigm 2 Ryu
     // Evaluate crisp-cut frameSequence transitions across u in [0, 1]
     const ryuSweepFramesAt = [0.05, 0.35, 0.80, 0.95].map(u => StandeeRigMath.resolveActiveFrameKey(ryuSweepNorm, u));
     const kenCrossFramesAt = [0.05, 0.45, 0.85].map(u => StandeeRigMath.resolveActiveFrameKey(kenCrossNorm, u));
-    const kenAfterFramesAt = [0.20, 0.95].map(u => StandeeRigMath.resolveActiveFrameKey(kenCrossAfterNorm, u));
+    const kenAfterFramesAt = [0.20, 0.85, 0.95].map(u => StandeeRigMath.resolveActiveFrameKey(kenCrossAfterNorm, u));
 
     return {
       policies,
@@ -716,8 +716,8 @@ test('Universal procedural_exceed_only VFX policy and Multi-Frame Paradigm 2 Ryu
   ]);
 
   // Multi-frame registry for Ryu and Ken
-  assert.deepEqual(Array.from(res.ryuFrames), ['idle', 'sweep_windup', 'sweep_active', 'cross_strike', 'cross_retreat']);
-  assert.deepEqual(Array.from(res.kenFrames), ['idle', 'sweep_windup', 'sweep_active', 'cross_strike', 'cross_retreat']);
+  assert.deepEqual(Array.from(res.ryuFrames), ['idle', 'sweep_windup', 'sweep_active', 'cross_windup', 'cross_strike', 'cross_retreat']);
+  assert.deepEqual(Array.from(res.kenFrames), ['idle', 'sweep_windup', 'sweep_active', 'sweep_flare', 'cross_windup', 'cross_strike', 'cross_retreat']);
   assert.equal(res.ryuSweepActiveSpec.src, '/assets/aistudio/ryu_sweep.jpg');
   assert.ok(res.ryuSweepActiveSpec.uvSockets.leadFoot.normX > 0.80, 'Ryu sweep_active leadFoot UV tracks extended sweeping foot');
   assert.equal(res.kenCrossStrikeSpec.src, '/assets/aistudio/ken_cross.jpg');
@@ -729,8 +729,8 @@ test('Universal procedural_exceed_only VFX policy and Multi-Frame Paradigm 2 Ryu
 
   // Crisp-cut frame progression across Sweep, Cross Strike, and Cross Retreat
   assert.deepEqual(Array.from(res.ryuSweepFramesAt), ['sweep_windup', 'sweep_active', 'sweep_windup', 'idle']);
-  assert.deepEqual(Array.from(res.kenCrossFramesAt), ['idle', 'cross_strike', 'cross_retreat']);
-  assert.deepEqual(Array.from(res.kenAfterFramesAt), ['cross_retreat', 'idle']);
+  assert.deepEqual(Array.from(res.kenCrossFramesAt), ['cross_windup', 'cross_strike', 'cross_windup']);
+  assert.deepEqual(Array.from(res.kenAfterFramesAt), ['cross_retreat', 'sweep_flare', 'idle']);
 
   // Ken Sweep uses horizontal_flare spinPlane so he spins parallel to the floor instead of cartwheeling underground
   assert.equal(res.kenSweepNorm.spinPlane, 'horizontal_flare');
@@ -840,15 +840,17 @@ test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreat
     const kenCrossAfter = resolveStandeeChoreography('ken', 'cross', 'after', {});
     const kenCrossAfterExc = resolveStandeeChoreography('ken', 'cross', 'after', { exceeded: true });
 
-    // Check frame sample at peak impact
+    // Check frame sample at peak impact and Ken flare follow-through
     const ryuSweepMidFrame = StandeeRigMath.resolveActiveFrameKey(ryuSweepHitNorm, 0.35);
     const kenSweepMidFrame = StandeeRigMath.resolveActiveFrameKey(kenSweepHitNorm, 0.35);
+    const kenSweepFlareFrame = StandeeRigMath.resolveActiveFrameKey(kenSweepHitNorm, 0.62);
     const ryuCrossMidFrame = StandeeRigMath.resolveActiveFrameKey(ryuCrossHit, 0.35);
     const kenCrossMidFrame = StandeeRigMath.resolveActiveFrameKey(kenCrossHit, 0.35);
 
-    // Check retreat frames
-    const ryuRetreatStart = StandeeRigMath.resolveActiveFrameKey(ryuCrossAfter, 0.2);
-    const kenRetreatStart = StandeeRigMath.resolveActiveFrameKey(kenCrossAfter, 0.2);
+    // Check retreat frames (launch -> airborne -> landing)
+    const ryuRetreatStart = StandeeRigMath.resolveActiveFrameKey(ryuCrossAfter, 0.25);
+    const kenRetreatStart = StandeeRigMath.resolveActiveFrameKey(kenCrossAfter, 0.25);
+    const kenRetreatLand = StandeeRigMath.resolveActiveFrameKey(kenCrossAfter, 0.86);
 
     return {
       ryuSweepReveal: { frameKey: ryuSweepReveal.frameKey, seq: ryuSweepReveal.frameSequence },
@@ -861,6 +863,10 @@ test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreat
       kenSweepHitNormVfx: kenSweepHitNorm.vfx.type,
       kenSweepHitExcVfx: kenSweepHitExc.vfx.type,
       kenSweepSpin: kenSweepHitNorm.wholeSpinRad,
+      ryuSweepDur: ryuSweepHitNorm.durationSec,
+      kenSweepDur: kenSweepHitNorm.durationSec,
+      ryuCrossDur: ryuCrossHit.durationSec,
+      kenCrossDur: kenCrossHit.durationSec,
 
       ryuSweepWhiffPose: ryuSweepWhiff.poseKind,
       ryuSweepWhiffFrame: ryuSweepWhiff.frameKey,
@@ -869,6 +875,7 @@ test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreat
 
       ryuSweepMidFrame,
       kenSweepMidFrame,
+      kenSweepFlareFrame,
       ryuCrossMidFrame,
       kenCrossMidFrame,
 
@@ -877,23 +884,31 @@ test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreat
       kenCrossAfterSpin: kenCrossAfter.wholeSpinRad,
       ryuRetreatStart,
       kenRetreatStart,
+      kenRetreatLand,
 
       kenCrossAfterNormVfx: kenCrossAfter.vfx.type,
       kenCrossAfterExcVfx: kenCrossAfterExc.vfx.type,
     };
   })()`, ctx);
 
-  // Reveal frames
+  // Reveal frames: Sweep coils into sweep_windup, Cross coils into dedicated cross_windup
   assert.equal(res.ryuSweepReveal.frameKey, 'sweep_windup');
   assert.equal(res.kenSweepReveal.frameKey, 'sweep_windup');
-  assert.equal(res.ryuCrossReveal.frameKey, 'cross_strike');
-  assert.equal(res.kenCrossReveal.frameKey, 'cross_strike');
+  assert.equal(res.ryuCrossReveal.frameKey, 'cross_windup');
+  assert.equal(res.kenCrossReveal.frameKey, 'cross_windup');
 
-  // Peak impact sampling
+  // Peak impact and follow-through sampling
   assert.equal(res.ryuSweepMidFrame, 'sweep_active');
   assert.equal(res.kenSweepMidFrame, 'sweep_active');
+  assert.equal(res.kenSweepFlareFrame, 'sweep_flare');
   assert.equal(res.ryuCrossMidFrame, 'cross_strike');
   assert.equal(res.kenCrossMidFrame, 'cross_strike');
+
+  // Generous fluent durations
+  assert.ok(res.ryuSweepDur >= 0.60, 'Ryu sweep has generous fluent duration');
+  assert.ok(res.kenSweepDur >= 0.70, 'Ken flare sweep has generous fluent duration');
+  assert.ok(res.ryuCrossDur >= 0.50, 'Ryu cross has generous fluent duration');
+  assert.ok(res.kenCrossDur >= 0.50, 'Ken cross has generous fluent duration');
 
   // Procedural VFX separation: physical dust in Normal, ki/fire in Exceeded
   assert.equal(res.ryuSweepHitNormVfx, 'physical_sweep_dust');
@@ -908,14 +923,77 @@ test('Ryu & Ken Sweep and Cross animations execute full frame sequences, retreat
   assert.equal(res.kenCrossWhiffPose, 'whiff_overextend');
   assert.equal(res.kenCrossWhiffFrame, 'cross_strike');
 
-  // Cross After: Retreat 3 backdash / backflip
+  // Cross After: Retreat 3 backdash / backflip + acrobatic catch landing
   assert.equal(res.ryuCrossAfterPose, 'backdash_hop');
   assert.equal(res.ryuRetreatStart, 'cross_retreat');
   assert.equal(res.kenCrossAfterPose, 'backflip');
   assert.equal(res.kenRetreatStart, 'cross_retreat');
+  assert.equal(res.kenRetreatLand, 'sweep_flare');
   assert.ok(Math.abs(res.kenCrossAfterSpin) > 3, 'Ken backflip somersault has 360 spin');
   assert.equal(res.kenCrossAfterNormVfx, 'dust');
   assert.equal(res.kenCrossAfterExcVfx, 'ken_backflip_fire_wheel');
+});
+
+test('Ryu & Ken Sweep 3-space low-slide kinematics reach ankle contact across 470px while preserving other standees', () => {
+  const ctx = loadGameSandbox();
+  const res = vm.runInContext(`(() => {
+    const ryuSweepR1 = resolveStandeeChoreography('ryu', 'sweep', 'hit_attack', { rangeSpaces: 1, distanceToTargetPx: 157, damageDealt: 6 });
+    const ryuSweepR3 = resolveStandeeChoreography('ryu', 'sweep', 'hit_attack', { rangeSpaces: 3, distanceToTargetPx: 471, damageDealt: 6 });
+    const kenSweepR3 = resolveStandeeChoreography('ken', 'sweep', 'hit_attack', { rangeSpaces: 3, distanceToTargetPx: 471, damageDealt: 6 });
+    const ryuSweepWhiffR4 = resolveStandeeChoreography('ryu', 'sweep', 'range', { hitLanded: false, rangeSpaces: 4, distanceToTargetPx: 628 });
+    const cammySweepR3 = resolveStandeeChoreography('cammy', 'sweep', 'hit_attack', { rangeSpaces: 3, distanceToTargetPx: 471, damageDealt: 6 });
+
+    const ryuSlideOpts = { ...ryuSweepR3.slideReach, fighterWidthPx: 148, spaceWidthPx: 157 };
+    const kenSlideOpts = { ...kenSweepR3.slideReach, fighterWidthPx: 148, spaceWidthPx: 157 };
+    const ryuWhiffOpts = { ...ryuSweepWhiffR4.slideReach, fighterWidthPx: 148, spaceWidthPx: 157 };
+
+    return {
+      ryuDurR1: ryuSweepR1.durationSec,
+      ryuDurR3: ryuSweepR3.durationSec,
+      kenDurR3: kenSweepR3.durationSec,
+      ryuStyle: ryuSweepR3.slideReach && ryuSweepR3.slideReach.style,
+      kenStyle: kenSweepR3.slideReach && kenSweepR3.slideReach.style,
+      cammyHasSlide: !!(cammySweepR3.slideReach && cammySweepR3.slideReach.enabled),
+      ryuHitstopMatch: ryuSweepR3.slideReach.peakU === ryuSweepR3.hitstopTriggerU,
+      kenHitstopMatch: kenSweepR3.slideReach.peakU === kenSweepR3.hitstopTriggerU,
+      ryuPeakR1: StandeeRigMath.computeDynamicLungeOffset(ryuSweepR1.slideReach.peakU, ryuSweepR1.lungePx, 157, false, false, ryuSlideOpts),
+      ryuPeakR3: StandeeRigMath.computeDynamicLungeOffset(ryuSweepR3.slideReach.peakU, ryuSweepR3.lungePx, 471, false, false, ryuSlideOpts),
+      ryuEndR3: StandeeRigMath.computeDynamicLungeOffset(1.0, ryuSweepR3.lungePx, 471, false, false, ryuSlideOpts),
+      kenPeakR3: StandeeRigMath.computeDynamicLungeOffset(kenSweepR3.slideReach.peakU, kenSweepR3.lungePx, 471, false, false, kenSlideOpts),
+      kenFlareHoldR3: StandeeRigMath.computeDynamicLungeOffset(0.60, kenSweepR3.lungePx, 471, false, false, kenSlideOpts),
+      ryuRetractAt60: StandeeRigMath.computeDynamicLungeOffset(0.60, ryuSweepR3.lungePx, 471, false, false, ryuSlideOpts),
+      ryuWhiffPeakR4: StandeeRigMath.computeDynamicLungeOffset(ryuSweepWhiffR4.slideReach.peakU, ryuSweepWhiffR4.lungePx, 628, false, true, ryuWhiffOpts),
+      cammyPeakR3: StandeeRigMath.computeDynamicLungeOffset(0.24, cammySweepR3.lungePx, 471, false, false, cammySweepR3.slideReach),
+    };
+  })()`, ctx);
+
+  // Distinct Ryu vs Ken 3-space Sweep styles; other standees untouched
+  assert.equal(res.ryuStyle, 'karate_heel_slide');
+  assert.equal(res.kenStyle, 'breakdance_flare_slide');
+  assert.equal(res.cammyHasSlide, false, 'Non-Ryu/Ken standees preserve standard lunge profile');
+
+  // Peak contact synchronizes directly with hitstopTriggerU
+  assert.equal(res.ryuHitstopMatch, true);
+  assert.equal(res.kenHitstopMatch, true);
+
+  // Range 3 reaches ankle contact (~385px on 471px gap) while Range 1 stays compact (~71px)
+  assert.ok(res.ryuPeakR1 >= 55 && res.ryuPeakR1 <= 110, 'Range 1 stays compact without overlapping');
+  assert.ok(res.ryuPeakR3 >= 350 && res.ryuPeakR3 <= 410, 'Ryu Range 3 Sweep slides all the way to ankle contact');
+  assert.ok(res.kenPeakR3 >= 355 && res.kenPeakR3 <= 415, 'Ken Range 3 Sweep slides all the way to ankle contact');
+  assert.equal(res.ryuEndR3, 0, 'Sweep slide glides smoothly back to home space at u=1.0');
+
+  // Ken holds closer to contact zone during his 360 breakdance flare (u=0.60) while Ryu is already pulling back
+  assert.ok(res.kenFlareHoldR3 > res.ryuRetractAt60 + 25, 'Ken pivots his breakdance flare at the contact zone while Ryu retracts earlier');
+
+  // Range 4 whiff commits ~2.5 spaces visibly short of Range 4 target (628px)
+  assert.ok(res.ryuWhiffPeakR4 >= 320 && res.ryuWhiffPeakR4 <= 460, 'Range 4 Sweep whiff demonstrates 3-space threat while stopping short');
+
+  // Duration scales slightly longer at Range 3 for readable low-slide pacing
+  assert.ok(res.ryuDurR3 > res.ryuDurR1, 'Range 3 Sweep gets extra duration headroom over Range 1');
+  assert.ok(res.kenDurR3 >= 0.90, 'Ken Range 3 Sweep gives full flare slide generous pacing');
+
+  // Non-Ryu/Ken standees stay under the standard 210px reach bridge cap
+  assert.ok(res.cammyPeakR3 < 260, 'Other standees keep legacy dynamic lunge cap');
 });
 
 

@@ -53,6 +53,17 @@ const FIGHTER_STANDEES = {
           head: { normX: 0.37, h: 0.76 },
         },
       },
+      cross_windup: {
+        src: '/assets/aistudio/ryu_cross_windup.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.90, h: 0.58 },
+          rearHand: { normX: 0.42, h: 0.60 },
+          leadFoot: { normX: 0.74, h: 0.08 },
+          rearFoot: { normX: 0.11, h: 0.07 },
+          chest: { normX: 0.52, h: 0.69 },
+          head: { normX: 0.66, h: 0.85 },
+        },
+      },
       cross_strike: {
         src: '/assets/aistudio/ryu_cross.jpg',
         uvSockets: {
@@ -67,12 +78,12 @@ const FIGHTER_STANDEES = {
       cross_retreat: {
         src: '/assets/aistudio/ryu_backdash.jpg',
         uvSockets: {
-          leadHand: { normX: 0.86, h: 0.78 },
-          rearHand: { normX: 0.54, h: 0.78 },
-          leadFoot: { normX: 0.65, h: 0.10 },
-          rearFoot: { normX: 0.14, h: 0.07 },
-          chest: { normX: 0.48, h: 0.72 },
-          head: { normX: 0.53, h: 0.90 },
+          leadHand: { normX: 0.69, h: 0.78 },
+          rearHand: { normX: 0.52, h: 0.78 },
+          leadFoot: { normX: 0.63, h: 0.22 },
+          rearFoot: { normX: 0.12, h: 0.08 },
+          chest: { normX: 0.51, h: 0.72 },
+          head: { normX: 0.54, h: 0.90 },
         },
       },
     },
@@ -120,6 +131,28 @@ const FIGHTER_STANDEES = {
           rearFoot: { normX: 0.49, h: 0.28 },
           chest: { normX: 0.32, h: 0.63 },
           head: { normX: 0.18, h: 0.73 },
+        },
+      },
+      sweep_flare: {
+        src: '/assets/aistudio/ken_sweep_flare.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.58, h: 0.16 },
+          rearHand: { normX: 0.58, h: 0.81 },
+          leadFoot: { normX: 0.86, h: 0.20 },
+          rearFoot: { normX: 0.10, h: 0.26 },
+          chest: { normX: 0.55, h: 0.57 },
+          head: { normX: 0.71, h: 0.66 },
+        },
+      },
+      cross_windup: {
+        src: '/assets/aistudio/ken_cross_windup.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.83, h: 0.54 },
+          rearHand: { normX: 0.20, h: 0.52 },
+          leadFoot: { normX: 0.82, h: 0.08 },
+          rearFoot: { normX: 0.14, h: 0.07 },
+          chest: { normX: 0.49, h: 0.70 },
+          head: { normX: 0.50, h: 0.89 },
         },
       },
       cross_strike: {
@@ -1100,12 +1133,49 @@ const StandeeRigMath = (() => {
   // Given distanceToTargetPx > 0, computes the forward lunge translation so the fighter's
   // attacking limb closes the physical gap across Range 1..3 during Startup->Active,
   // then returns smoothly to their grid space during Recovery.
-  function computeDynamicLungeOffset(u, baseLungePx, distanceToTargetPx = 0, isProjectile = false, isWhiff = false) {
+  function computeDynamicLungeOffset(u, baseLungePx, distanceToTargetPx = 0, isProjectile = false, isWhiff = false, slideReach = null) {
     const t = clamp(u, 0, 1);
     const base = baseLungePx || 0;
     if (base <= 0 && (isProjectile || distanceToTargetPx <= 0)) {
       return base * Math.sin(Math.min(1, t * 1.35) * Math.PI);
     }
+
+    // Opt-in uncapped low-slide contact profile (exclusively Ryu & Ken Sweep so Range 1-3 reaches opponent's ankles)
+    if (!isProjectile && slideReach && slideReach.enabled) {
+      const fighterW = Math.max(84, slideReach.fighterWidthPx || 148);
+      const clearanceRatio = slideReach.clearanceRatio != null ? slideReach.clearanceRatio : 0.58;
+      const clearancePx = Math.max(62, fighterW * clearanceRatio);
+      const spacePx = Math.max(76, slideReach.spaceWidthPx || 145);
+      const maxContactPx = Math.max(520, spacePx * 3.45);
+      let peakLunge = Math.max(0, base);
+      if (distanceToTargetPx > 0) {
+        const contactGap = Math.max(0, distanceToTargetPx - clearancePx);
+        if (isWhiff) {
+          const whiffMaxSpaces = slideReach.whiffMaxSpaces != null ? slideReach.whiffMaxSpaces : 2.55;
+          const safeShortGap = Math.max(0, distanceToTargetPx - fighterW * 0.92);
+          peakLunge = Math.max(peakLunge, Math.min(safeShortGap, spacePx * whiffMaxSpaces));
+        } else {
+          peakLunge = Math.max(peakLunge, Math.min(maxContactPx, contactGap));
+        }
+      }
+      const peakU = clamp(slideReach.peakU != null ? slideReach.peakU : 0.18, 0.08, 0.40);
+      const holdEndU = clamp(slideReach.holdEndU != null ? slideReach.holdEndU : 0.52, peakU + 0.05, 0.85);
+      const returnEndU = clamp(slideReach.returnEndU != null ? slideReach.returnEndU : 0.95, holdEndU + 0.08, 1.0);
+      const holdDrift = slideReach.holdDrift != null ? slideReach.holdDrift : 0.04;
+      if (t < peakU) {
+        return peakLunge * quinticEase(t / peakU);
+      }
+      if (t < holdEndU) {
+        const holdT = (t - peakU) / (holdEndU - peakU);
+        return peakLunge * (1 - holdDrift * holdT);
+      }
+      if (t < returnEndU) {
+        const rec = (t - holdEndU) / (returnEndU - holdEndU);
+        return peakLunge * (1 - holdDrift) * (1 - quinticEase(rec));
+      }
+      return 0;
+    }
+
     let peakLunge = base;
     if (!isProjectile && distanceToTargetPx > 0) {
       const contactGap = Math.max(0, distanceToTargetPx - 64);
@@ -1326,22 +1396,24 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
           poseKind: 'backflip',
           frameKey: 'cross_retreat',
           frameSequence: [
-            { at: 0.0, frameKey: 'cross_retreat' },
-            { at: 0.86, frameKey: 'idle' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.10, frameKey: 'cross_retreat' },
+            { at: 0.82, frameKey: 'sweep_flare' },
+            { at: 0.93, frameKey: 'idle' },
           ],
-          durationSec: 0.44,
-          hopHeight: 34,
-          airWindow: [0.15, 0.85],
+          durationSec: 0.68,
+          hopHeight: 48,
+          airWindow: [0.10, 0.84],
           wholeSpinRad: -Math.PI * 2,
           spinPlane: 'xy',
-          spinWindow: [0.15, 0.82],
-          pelvis: { dx: -6, dy: 2, rotRad: -0.1, scaleX: 0.94 },
-          waist: { dx: -8, dy: 4, rotRad: -0.16, scaleX: 0.9 },
-          head: { dx: -10, dy: 4, rotRad: -0.22, scaleX: 0.9 },
-          springPreset: { scaleX: 0.88, scaleY: 0.86, stiffness: 340, damping: 18, landingScaleX: 1.20, landingScaleY: 0.82 },
+          spinWindow: [0.10, 0.84],
+          pelvis: { dx: -8, dy: 2, rotRad: -0.10, scaleX: 0.95 },
+          waist: { dx: -10, dy: 4, rotRad: -0.16, scaleX: 0.92 },
+          head: { dx: -10, dy: 4, rotRad: -0.20, scaleX: 0.94 },
+          springPreset: { scaleX: 0.88, scaleY: 1.14, stiffness: 350, damping: 20, landingScaleX: 1.20, landingScaleY: 0.82 },
           afterimage: isExceeded
-            ? { count: 4, spacingMs: 20, alpha: 0.42, color: '#ff5f38' }
-            : { count: 3, spacingMs: 24, alpha: 0.28, color: '#cbd5e1' },
+            ? { count: 6, spacingMs: 28, alpha: 0.46, color: '#ff5f38' }
+            : { count: 4, spacingMs: 32, alpha: 0.28, color: '#cbd5e1' },
           vfx: isExceeded
             ? { type: 'ken_backflip_fire_wheel', color: '#ff5f38', accent: '#fde047', isExceeded: true }
             : { type: 'dust', color: '#fbbf24', isExceeded: false },
@@ -1354,20 +1426,21 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         frameKey: isRyu ? 'cross_retreat' : 'idle',
         frameSequence: isRyu
           ? [
-            { at: 0.0, frameKey: 'cross_retreat' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.09, frameKey: 'cross_retreat' },
             { at: 0.84, frameKey: 'idle' },
           ]
           : null,
-        durationSec: 0.34,
-        hopHeight: reduced ? 12 : 10,
-        airWindow: [0.18, 0.82],
-        pelvis: { dx: -6, dy: 2, rotRad: 0.04, scaleX: 1 },
-        waist: { dx: 8, dy: 1, rotRad: 0.06, scaleX: 1 },
-        head: { dx: 10, dy: 0, rotRad: 0.04, scaleX: 1 },
-        springPreset: { scaleX: 1.06, scaleY: 0.94, stiffness: 420, damping: 26 },
+        durationSec: 0.60,
+        hopHeight: reduced ? 14 : 28,
+        airWindow: [0.09, 0.84],
+        pelvis: { dx: -8, dy: 2, rotRad: 0.05, scaleX: 1 },
+        waist: { dx: 8, dy: 2, rotRad: 0.07, scaleX: 1 },
+        head: { dx: 10, dy: 0, rotRad: 0.05, scaleX: 1 },
+        springPreset: { scaleX: 0.92, scaleY: 1.10, stiffness: 390, damping: 24, landingScaleX: 1.14, landingScaleY: 0.88 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 24, alpha: 0.36, color: primaryTrailColor }
-          : { count: 2, spacingMs: 32, alpha: 0.20, color: '#94a3b8' },
+          ? { count: 5, spacingMs: 28, alpha: 0.40, color: primaryTrailColor }
+          : { count: 3, spacingMs: 36, alpha: 0.24, color: '#94a3b8' },
         vfx: (isRyu && isExceeded)
           ? { type: 'ryu_backdash_ki_wake', color: '#38bdf8', accent: '#ffffff', isExceeded: true }
           : { type: 'dust', color: '#94a3b8', isExceeded: false },
@@ -1545,19 +1618,13 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
       poseKind: fromWildSwing
         ? 'wild_swing_gamble'
         : (isZangiefIronWallCard ? 'zangief_iron_wall_lock' : (isZangief && criticalPaid ? 'zangief_red_armor_coil' : 'windup')),
-      frameKey: isRyuOrKenSweep ? 'sweep_windup' : (isRyuOrKenCross ? 'cross_strike' : 'idle'),
+      frameKey: isRyuOrKenSweep ? 'sweep_windup' : (isRyuOrKenCross ? 'cross_windup' : 'idle'),
       frameSequence: isRyuOrKenSweep
-        ? [
-          { at: 0.0, frameKey: 'idle' },
-          { at: 0.14, frameKey: 'sweep_windup' },
-        ]
+        ? [{ at: 0.0, frameKey: 'sweep_windup' }]
         : (isRyuOrKenCross
-          ? [
-            { at: 0.0, frameKey: 'idle' },
-            { at: 0.24, frameKey: 'cross_strike' },
-          ]
+          ? [{ at: 0.0, frameKey: 'cross_windup' }]
           : null),
-      durationSec: 0.40,
+      durationSec: 0.44,
       ironWallChains: isZangiefIronWallCard,
       pelvis: { dx: isFaster ? -5 : -3, dy: isRyuOrKenSweep ? 11 : (isFaster ? 9 : 6), rotRad: fromWildSwing ? 0.08 : -0.05, scaleX: isZangief ? 1.07 : 1.03 },
       waist: { dx: isFaster ? -8 : -4, dy: isRyuOrKenSweep ? 9 : (isFaster ? 7 : 5), rotRad: fromWildSwing ? 0.14 : -0.09, scaleX: isZangief ? 1.09 : 1.04 },
@@ -1944,33 +2011,64 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
     }
     const isRyuOrKenSweepWhiff = (isRyu || isKen) && cKey === 'sweep';
     const isRyuOrKenCrossWhiff = (isRyu || isKen) && cKey === 'cross';
+    const sweepWhiffSlide = isRyuOrKenSweepWhiff
+      ? {
+        enabled: true,
+        style: isKen ? 'breakdance_flare_slide' : 'karate_heel_slide',
+        peakU: isKen ? 0.20 : 0.21,
+        holdEndU: isKen ? 0.56 : 0.46,
+        returnEndU: 0.94,
+        holdDrift: 0.06,
+        clearanceRatio: isKen ? 0.56 : 0.58,
+        whiffMaxSpaces: isKen ? 2.60 : 2.55,
+      }
+      : null;
     return {
       ...base,
       clipMode: 'whiff_3clip',
       poseKind: 'whiff_overextend',
       frameKey: isRyuOrKenSweepWhiff ? 'sweep_active' : (isRyuOrKenCrossWhiff ? 'cross_strike' : 'idle'),
       frameSequence: isRyuOrKenSweepWhiff
-        ? [
-          { at: 0.0, frameKey: 'sweep_windup' },
-          { at: 0.16, frameKey: 'sweep_active' },
-          { at: 0.56, frameKey: 'sweep_windup' },
-          { at: 0.84, frameKey: 'idle' },
-        ]
+        ? (isKen
+          ? [
+            { at: 0.0, frameKey: 'sweep_windup' },
+            { at: 0.10, frameKey: 'sweep_active' },
+            { at: 0.50, frameKey: 'sweep_flare' },
+            { at: 0.76, frameKey: 'sweep_windup' },
+            { at: 0.90, frameKey: 'idle' },
+          ]
+          : [
+            { at: 0.0, frameKey: 'sweep_windup' },
+            { at: 0.11, frameKey: 'sweep_active' },
+            { at: 0.58, frameKey: 'sweep_windup' },
+            { at: 0.86, frameKey: 'idle' },
+          ])
         : (isRyuOrKenCrossWhiff
           ? [
-            { at: 0.0, frameKey: 'cross_strike' },
-            { at: 0.62, frameKey: 'idle' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.15, frameKey: 'cross_strike' },
+            { at: 0.62, frameKey: 'cross_windup' },
+            { at: 0.86, frameKey: 'idle' },
           ]
           : null),
-      durationSec: 0.36,
-      lungePx: 36,
+      durationSec: isRyuOrKenSweepWhiff ? (isKen ? 0.76 : 0.70) : (isRyuOrKenCrossWhiff ? 0.58 : 0.44),
+      lungePx: isRyuOrKenSweepWhiff ? 44 : 38,
       dynamicLunge: true,
-      ikReachPx: StandeeRigMath.computeIkReachPx(distanceToTargetPx, rangeSpaces, 24),
-      pelvis: { dx: 12, dy: isRyuOrKenSweepWhiff ? 12 : 5, rotRad: 0.08, scaleX: 1.02 },
-      waist: { dx: 22, dy: isRyuOrKenSweepWhiff ? 10 : 5, rotRad: 0.14, scaleX: 1.06 },
-      head: { dx: 26, dy: isRyuOrKenSweepWhiff ? 8 : 6, rotRad: 0.18, scaleX: 1 },
-      springPreset: { scaleX: 1.08, scaleY: 0.92, stiffness: 320, damping: 18 },
-      vfx: { type: 'whiff_dust', color: '#94a3b8' },
+      slideReach: sweepWhiffSlide,
+      wholeSpinRad: (isRyuOrKenSweepWhiff && isKen && !reduced) ? Math.PI * 2 : 0,
+      spinPlane: (isRyuOrKenSweepWhiff && isKen) ? 'horizontal_flare' : 'xy',
+      spinWindow: [0.50, 0.78],
+      ikReachPx: StandeeRigMath.computeIkReachPx(distanceToTargetPx, rangeSpaces, 26),
+      pelvis: { dx: 12, dy: isRyuOrKenSweepWhiff ? 14 : 5, rotRad: 0.08, scaleX: 1.04 },
+      waist: { dx: 22, dy: isRyuOrKenSweepWhiff ? 11 : 5, rotRad: 0.14, scaleX: 1.06 },
+      head: { dx: 26, dy: isRyuOrKenSweepWhiff ? 9 : 6, rotRad: 0.18, scaleX: 1 },
+      springPreset: { scaleX: 1.12, scaleY: 0.88, stiffness: 320, damping: 18 },
+      afterimage: isRyuOrKenSweepWhiff
+        ? { count: isKen ? 4 : 3, spacingMs: 32, alpha: 0.22, color: '#cbd5e1' }
+        : null,
+      vfx: isRyuOrKenSweepWhiff
+        ? { type: 'physical_sweep_dust', color: '#cbd5e1', accent: '#f8fafc', isExceeded: false, followSlide: true, style: isKen ? 'breakdance_flare_slide' : 'karate_heel_slide' }
+        : { type: 'whiff_dust', color: '#94a3b8' },
     };
   }
 
@@ -2513,28 +2611,41 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         };
       }
       if (isKen) {
+        const rangeExtraSec = Math.min(2, Math.max(0, rangeSpaces - 1)) * 0.08;
         return {
           ...attackBase,
           poseKind: 'ken_flare_sweep',
           frameKey: 'sweep_active',
           frameSequence: [
             { at: 0.0, frameKey: 'sweep_windup' },
-            { at: 0.16, frameKey: 'sweep_active' },
-            { at: 0.72, frameKey: 'sweep_windup' },
-            { at: 0.90, frameKey: 'idle' },
+            { at: 0.09, frameKey: 'sweep_active' },
+            { at: 0.48, frameKey: 'sweep_flare' },
+            { at: 0.78, frameKey: 'sweep_windup' },
+            { at: 0.92, frameKey: 'idle' },
           ],
-          durationSec: 0.44,
-          lungePx: 42,
+          hitstopTriggerU: 0.17,
+          durationSec: +(0.78 + rangeExtraSec).toFixed(2),
+          lungePx: 46,
+          slideReach: {
+            enabled: true,
+            style: 'breakdance_flare_slide',
+            peakU: 0.17,
+            holdEndU: 0.68,
+            returnEndU: 0.96,
+            holdDrift: 0.06,
+            clearanceRatio: 0.56,
+            whiffMaxSpaces: 2.60,
+          },
           wholeSpinRad: reduced ? 0 : Math.PI * 2,
           spinPlane: 'horizontal_flare',
-          spinWindow: [0.68, 0.94],
+          spinWindow: [0.48, 0.78],
           pelvis: { dx: 14 + ikReach * 0.65, dy: 14, rotRad: -0.14, scaleX: 1.18 },
           waist: { dx: 6 + ikReach * 0.3, dy: 12, rotRad: -0.22, scaleX: 1.12 },
           head: { dx: -8, dy: 12, rotRad: -0.18, scaleX: 1 },
-          springPreset: { scaleX: 1.20, scaleY: 0.80, stiffness: 360, damping: 18 },
+          springPreset: { scaleX: 1.22, scaleY: 0.78, stiffness: 340, damping: 18 },
           afterimage: isExceeded
-            ? { count: 4, spacingMs: 18, alpha: 0.42, color: '#ff5f38' }
-            : { count: 2, spacingMs: 24, alpha: 0.22, color: '#cbd5e1' },
+            ? { count: rangeSpaces >= 2 ? 7 : 5, spacingMs: 24, alpha: 0.44, color: '#ff5f38' }
+            : { count: rangeSpaces >= 2 ? 5 : 3, spacingMs: 28, alpha: 0.24, color: '#cbd5e1' },
           vfx: isExceeded
             ? {
               type: 'ken_flare_fire_sweep',
@@ -2543,6 +2654,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
               accent: '#fde047',
               reachPx: smearReach,
               isExceeded: true,
+              followSlide: true,
+              style: 'breakdance_flare_slide',
             }
             : {
               type: 'physical_sweep_dust',
@@ -2551,30 +2664,44 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
               accent: '#f8fafc',
               reachPx: smearReach,
               isExceeded: false,
+              followSlide: true,
+              style: 'breakdance_flare_slide',
             },
           hitstopSec: hitstop,
           shake,
         };
       }
+      const ryuRangeExtraSec = Math.min(2, Math.max(0, rangeSpaces - 1)) * 0.08;
       return {
         ...attackBase,
         poseKind: 'ryu_cr_hk_sweep',
         frameKey: 'sweep_active',
         frameSequence: [
           { at: 0.0, frameKey: 'sweep_windup' },
-          { at: 0.16, frameKey: 'sweep_active' },
-          { at: 0.74, frameKey: 'sweep_windup' },
-          { at: 0.92, frameKey: 'idle' },
+          { at: 0.10, frameKey: 'sweep_active' },
+          { at: 0.62, frameKey: 'sweep_windup' },
+          { at: 0.88, frameKey: 'idle' },
         ],
-        durationSec: 0.40,
-        lungePx: 28,
+        hitstopTriggerU: 0.18,
+        durationSec: +(0.68 + ryuRangeExtraSec).toFixed(2),
+        lungePx: 34,
+        slideReach: {
+          enabled: true,
+          style: 'karate_heel_slide',
+          peakU: 0.18,
+          holdEndU: 0.50,
+          returnEndU: 0.94,
+          holdDrift: 0.03,
+          clearanceRatio: 0.58,
+          whiffMaxSpaces: 2.55,
+        },
         pelvis: { dx: 12 + ikReach * 0.65, dy: 14, rotRad: -0.05, scaleX: 1.18 },
         waist: { dx: 8 + ikReach * 0.3, dy: 10, rotRad: -0.07, scaleX: 1.08 },
         head: { dx: 4, dy: 8, rotRad: 0.02, scaleX: 1 },
-        springPreset: { scaleX: 1.16, scaleY: 0.85, stiffness: 360, damping: 20 },
+        springPreset: { scaleX: 1.18, scaleY: 0.83, stiffness: 340, damping: 19 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 20, alpha: 0.36, color: '#38bdf8' }
-          : null,
+          ? { count: rangeSpaces >= 2 ? 6 : 4, spacingMs: 26, alpha: 0.38, color: '#38bdf8' }
+          : { count: rangeSpaces >= 2 ? 4 : 2, spacingMs: 32, alpha: 0.20, color: '#cbd5e1' },
         vfx: isExceeded
           ? {
             type: 'ryu_ashi_barai_ki_sweep',
@@ -2583,6 +2710,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
             accent: '#ffffff',
             reachPx: smearReach,
             isExceeded: true,
+            followSlide: true,
+            style: 'karate_heel_slide',
           }
           : {
             type: 'physical_sweep_dust',
@@ -2591,6 +2720,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
             accent: '#ffffff',
             reachPx: smearReach,
             isExceeded: false,
+            followSlide: true,
+            style: 'karate_heel_slide',
           },
         hitstopSec: hitstop,
         shake,
@@ -2603,7 +2734,7 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         return {
           ...attackBase,
           poseKind: 'cammy_spin_knuckle_backfist',
-          durationSec: 0.30,
+          durationSec: 0.36,
           lungePx: 26,
           pelvis: { dx: 8 + ikReach * 0.3, dy: 3, rotRad: 0.08, scaleX: 1.06 },
           waist: { dx: 20 + ikReach * 0.55, dy: 2, rotRad: 0.16, scaleX: 1.10 },
@@ -2619,7 +2750,7 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         return {
           ...attackBase,
           poseKind: 'zangief_heavy_chest_chop',
-          durationSec: 0.34,
+          durationSec: 0.40,
           lungePx: 22,
           pelvis: { dx: 8 + ikReach * 0.3, dy: 6, rotRad: 0.06, scaleX: 1.12 },
           waist: { dx: 22 + ikReach * 0.55, dy: 4, rotRad: 0.18, scaleX: 1.18 },
@@ -2635,19 +2766,20 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         poseKind: isKen ? 'ken_backfist_tag' : 'ryu_cr_mk_poke',
         frameKey: 'cross_strike',
         frameSequence: [
-          { at: 0.0, frameKey: 'idle' },
-          { at: 0.12, frameKey: 'cross_strike' },
-          { at: 0.80, frameKey: 'cross_retreat' },
+          { at: 0.0, frameKey: 'cross_windup' },
+          { at: 0.15, frameKey: 'cross_strike' },
+          { at: 0.76, frameKey: 'cross_windup' },
         ],
-        durationSec: 0.32,
-        lungePx: isKen ? 22 : 18,
-        pelvis: { dx: 8 + ikReach * 0.35, dy: isKen ? 2 : 5, rotRad: 0.05, scaleX: 1.06 },
-        waist: { dx: (isKen ? 20 : 16) + ikReach * 0.55, dy: isKen ? 2 : 3, rotRad: 0.14, scaleX: 1.08 },
+        hitstopTriggerU: 0.17,
+        durationSec: isKen ? 0.58 : 0.56,
+        lungePx: isKen ? 28 : 24,
+        pelvis: { dx: 8 + ikReach * 0.35, dy: isKen ? 2 : 5, rotRad: 0.06, scaleX: 1.07 },
+        waist: { dx: (isKen ? 22 : 18) + ikReach * 0.55, dy: isKen ? 2 : 3, rotRad: 0.15, scaleX: 1.09 },
         head: { dx: 18, dy: 2, rotRad: 0.08, scaleX: 1 },
-        springPreset: { scaleX: 1.14, scaleY: 0.90, stiffness: 410, damping: 24 },
+        springPreset: { scaleX: 1.15, scaleY: 0.89, stiffness: 380, damping: 22 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 18, alpha: 0.38, color: isKen ? '#ff5f38' : '#38bdf8' }
-          : (isKen ? { count: 2, spacingMs: 22, alpha: 0.22, color: '#cbd5e1' } : null),
+          ? { count: 4, spacingMs: 24, alpha: 0.38, color: isKen ? '#ff5f38' : '#38bdf8' }
+          : (isKen ? { count: 2, spacingMs: 30, alpha: 0.22, color: '#cbd5e1' } : null),
         vfx: isExceeded
           ? {
             type: isKen ? 'ken_crimson_cross_whip' : 'ryu_denjin_cross_lance',

@@ -134,6 +134,27 @@ Turning static full-body standee illustrations (`ryu_standee.jpg`, `ken_standee.
 - **What to Avoid Next Time**:
   - Never apply an XY-plane full-body rotation (`wholeSpinRad`) to a low grounded pose without either sufficient `hopHeight` clearance or `spinPlane: 'horizontal_flare'`.
 
+### Pitfall 13: Blurry `300×150` Initial Canvas, Hitstop `u` Rewind Flicker, and Empty `after` Steps Stomping Active Attacks
+- **What Happened**:
+  1. `mount()` in `game/standee-stage.js` called `resize()` **before** setting `mounted = true`, while `resize()` returned early if `!mounted`. Until a window resize occurred, both WebGL2 and VFX canvases stayed at the HTML default `300×150` backing buffer stretched across the full viewport, visibly blurring standees.
+  2. Applying `hitstopRemaining` at `choreoElapsed = 0` while temporarily clamping `u = Math.max(0.25, rawU)` during hitstop caused a backward rewind the instant hitstop expired: `u` jumped `0.25 → 0.00 → 0.16`, flickering `sweep_active → sweep_windup → sweep_active` and snapping the lunge backward mid-hit.
+  3. Unconditionally calling `startChoreography(att, afterChoreo)` on `step.phase === 'after'` stomped and cut off `Sweep`'s active leg extension and Ken's `360°` breakdance flare follow-through because `Sweep` has no `After:` movement effect and returned a generic `idle` recovery pose.
+  4. Showing `cross_strike` (fully extended punch) during `reveal` left no anticipation-to-impact snap when `Cross` actually fired.
+- **What We Learned to Do**:
+  - Remove the `!mounted` early-return from `resize()` and re-check backing buffer size inside `syncDomMetrics()` so canvases always render at native HiDPI (`viewport × dpr`).
+  - Use **Contact-Triggered Monotonic Hitstop (`pendingHitstopSec` + `hitstopTriggerU`)**: advance startup cleanly (`0 → hitstopTriggerU`), freeze at the exact impact frame (`choreoElapsed = hitstopTriggerU * duration`), and resume monotonically forward (`hitstopTriggerU → 1.0`) when hitstop expires.
+  - On `step.phase === 'after'`, only trigger a new choreography if the fighter actually moved spaces or has a dedicated non-recovery `after` pose (`Cross` `After: Retreat 3`), and sync `f.moveDuration` to `choreo.durationSec * 0.90` so airborne retreats land cleanly on their destination tile.
+  - Author dedicated VFX-free anticipation & follow-through frames (`ryu_cross_windup.jpg`, `ken_cross_windup.jpg`, airborne `ryu_backdash.jpg`, `ken_sweep_flare.jpg`) so every multi-frame Strike flows smoothly from coiled anticipation → crisp contact → follow-through → recovery.
+
+### Pitfall 14: Fixed `210px` Lunge Caps & Origin-Anchored VFX on 3-Space `Sweep` Strikes
+- **What Happened**:
+  1. `StandeeRigMath.computeDynamicLungeOffset` capped `reachBridge` at `210 px` (`86 px` on whiff). On a `1440 px` viewport where 1 board space is `~157 px`, a Range 3 `Sweep` (`~471 px` separation) stopped more than 1.5 spaces short of the opponent, visually kicking empty air instead of reaching 3 spaces.
+  2. Sweep VFX (`physical_sweep_dust`, `ryu_ashi_barai_ki_sweep`, `ken_flare_fire_sweep`) were anchored statically to the starting tile `v.x` instead of following the sliding fighter, stranding dust clouds and Ken's `360°` breakdance flare ring 3 spaces behind the actual impact.
+  3. Because `computeDynamicLungeOffset` peaked at `u = 0.24` while contact hitstop froze at `u = 0.17–0.18`, the impact freeze frame locked slightly before full ankle contact.
+- **What We Learned to Do**:
+  - Add an opt-in **`slideReach`** kinematics profile for Ryu & Ken `Sweep` (`karate_heel_slide` for Ryu, `breakdance_flare_slide` for Ken) that computes uncapped ankle-contact lunge distance (`distanceToTargetPx - fighterWidth * clearanceRatio`) and aligns `peakU` directly with `hitstopTriggerU` (`0.18` Ryu / `0.17` Ken), while holding Ken at the contact zone (`holdEndU: 0.68`) so his `360°` `sweep_flare` spins right under the opponent's ankles before whipping back home.
+  - Use **Dual-Anchor Floor Skid VFX (`originX` + live `followPid` + `maxSlideX`)**: draw continuous heel-skid dust streaks (Normal) or Denjin lightning / scorching fire ribbons (Exceeded) from `originX → maxSlideX` across all traversed spaces while centering the contact sweep crescent / breakdance fire vortex on the live sliding fighter `v.x`.
+
 ---
 
 ## 3. Quick Reference Checklist for Future Standee Additions

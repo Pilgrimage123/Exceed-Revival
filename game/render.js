@@ -440,8 +440,9 @@ function cardTile(c, opts = {}) {
   const escInspectId = esc(inspectId);
   const escUid = esc(c.uid || '');
   const exBadge = isEX ? '<span class="ex-chip">EX</span>' : '';
-  const exActionBtn = (opts.quickCommit && opts.exOtherUid && !isEX)
-    ? `<button type="button" class="card-ex-btn" title="Pair duplicate cards for EX Strike (+1 All Stats)" aria-label="EX Strike with ${esc(c.name)}" onclick="event.stopPropagation(); G.quickCommitEx('${escUid}', '${esc(opts.exOtherUid)}')">EX</button>`
+  const exClickHandler = opts.exOnClick || `G.quickCommitEx('${escUid}', '${esc(opts.exOtherUid)}')`;
+  const exActionBtn = ((opts.quickCommit || opts.exOnClick) && opts.exOtherUid && !isEX && !opts.disabled)
+    ? `<button type="button" class="card-ex-btn" title="Pair duplicate cards for EX Strike (+1 All Stats)" aria-label="EX Strike with ${esc(c.name)}" onmouseenter="event.stopPropagation(); G && G.onCardHover('${escUid}', true)" onmouseleave="G && G.onCardHover('${escUid}', false)" onclick="event.stopPropagation(); ${exClickHandler}">EX</button>`
     : '';
   const gaugeBadge = opts.fromSource === 'gauge' ? '<span class="card-source-badge gauge-source-badge">GAUGE</span>' : '';
   const dragAttrs = opts.draggable
@@ -500,11 +501,16 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine 
   const infoSet = (engine && typeof engine.getInformationSet === 'function' && player)
     ? engine.getInformationSet(player.id || 'p1')
     : null;
+  const onlyKey = opts.onlyKey || null;
   for (let i = 0; i < hand.length; i++) {
     for (let j = i + 1; j < hand.length; j++) {
       if (hand[i].key === hand[j].key && !seen.has(hand[i].key)) {
+        if (onlyKey && hand[i].key !== onlyKey) continue;
         seen.add(hand[i].key);
         const a = hand[i], b = hand[j];
+        if (engine && player && typeof engine.isValidStrikeCard === 'function' && !engine.isValidStrikeCard(player, a)) {
+          continue;
+        }
         if (engine && player && a.type === 'ultra' && typeof engine.canPayUltra === 'function' && !engine.canPayUltra(player, a)) {
           continue;
         }
@@ -1361,6 +1367,9 @@ function inspectorCardViewHTML(g, card, rawCard, isEX) {
 
       const cleanEffects = (preview.effectsSummary || []).filter((e) => !/^You [+-]\d+ HP$/.test(e));
       const toggles = [];
+      if (preview.canPreviewEX) {
+        toggles.push(`<button type="button" class="clash-toggle ex-toggle${preview.isEX ? ' active' : ''}" onclick="EventBus.emit('OnToggleEXMode', {})">[E] EX +1</button>`);
+      }
       if (preview.criticalFree) {
         toggles.push('<span class="insp-tag crit">CRIT (Free)</span>');
       } else if (preview.canPreviewCritical) {
@@ -1661,6 +1670,11 @@ function promptCardModPreviewHTML(g) {
       if (crit.ignoreArmor) tags.push('Ignores Armor');
       if (crit.ignoreGuard) tags.push('Ignores Guard');
       if (crit.stunImmune) tags.push('Stun Immune');
+      const ultraCost = (card.type === 'ultra' && !(typeof engine.gaugeCostsAreFree === 'function' && engine.gaugeCostsAreFree(p)))
+        ? (card.gaugeCost || 0) : 0;
+      if (ultraCost > 0 && (engine.gaugeCount(p) - 1) < ultraCost) {
+        tags.push('Warning: Paying 1 Gauge leaves too little Gauge for this Ultra (will Wild Swing)');
+      }
       if (card.criticalText) {
         bodyNoteHTML = `<div class="prompt-mod-crit">${boldCardKeywords(esc(card.criticalText))}</div>`;
       }
@@ -2094,12 +2108,14 @@ function actionPromptBarHTML(g) {
     }
     const selCard = g.selectedActionCardUid ? p.hand.find(c => c.uid === g.selectedActionCardUid) : null;
     if (selCard) {
-      const hasEXPair = p.hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(p, selCard));
+      const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, selCard);
+      const canPayUltra = selCard.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, selCard);
+      const hasEXPair = validStrike && canPayUltra && p.hand.filter(c => c.key === selCard.key).length >= 2;
       return `<div class="precommit-bar">
         <span>Selected: <b>${esc(selCard.name)}</b></span>
-        <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')">Play as Strike</button>
+        <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')" ${validStrike ? '' : 'disabled'}>Play as Strike</button>
         ${hasEXPair ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('ex')">EX Strike (+1 All)</button>` : ''}
-        <button type="button" class="big-btn" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>
+        ${selCard.boost ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>` : ''}
         <button type="button" class="cancel-btn" onclick="G.cancelActionCard()">Cancel</button>
       </div>`;
     }
@@ -2145,14 +2161,25 @@ function actionPromptBarHTML(g) {
     </div>`;
   }
   if (g.mode === 'defend_select') {
+    const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
     const forcedUid = g.sel && g.sel.forcedUid;
+    const forcedCard = forcedUid ? p.hand.find(c => c.uid === forcedUid) : null;
+    const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
     const cpuWildSwung = !!(g.pendingAiAttack && g.pendingAiAttack.fromWildSwing);
     const wildSwingNote = cpuWildSwung ? ' (Wild Swing)' : '';
     const faceUpNote = (g.pendingAiAttack && g.pendingAiAttack.faceUp)
       ? ` — face up: <b>${esc(g.pendingAiAttack.card.name)}</b>` : '';
-    if (forcedUid) {
+    if (forcedWildSwing) {
       return `<div class="action-prompt-row">
-        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Must defend with <b>${esc(g.sel.forcedName)}</b>.</span>
+        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! CPU's Focus forces a <b>Wild Swing</b>.</span>
+        <button type="button" class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing</button>
+      </div>`;
+    }
+    if (forcedKey || forcedUid) {
+      const matchCount = forcedKey ? p.hand.filter(c => c.key === forcedKey).length : 1;
+      const exHint = matchCount >= 2 ? ' (or EX with both copies)' : '';
+      return `<div class="action-prompt-row">
+        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Must defend with <b>${esc(g.sel.forcedName)}</b>${exHint}.</span>
       </div>`;
     }
     return `<div class="action-prompt-row">
@@ -2349,31 +2376,71 @@ function unifiedHandDockHTML(g) {
   }
 
   if (g.mode === 'strike_select') {
+    const dupMap = new Map();
+    for (const c of p.hand) {
+      if (!dupMap.has(c.key)) dupMap.set(c.key, []);
+      dupMap.get(c.key).push(c.uid);
+    }
     const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p, { isInitiator: true });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-      tileOpts: (c, memo) => ({
-        onclick: `G.pickStrikeCard('${c.uid}')`,
-        highlight: 'strike',
-        band: c.range,
-        hoverPreview: true,
-        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
-      }),
+      tileOpts: (c, memo) => {
+        const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
+        if (!validStrike) return { disabled: true };
+        const canPayUltra = c.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, c);
+        const sameKeyUids = dupMap.get(c.key) || [];
+        const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+        return {
+          onclick: `G.pickStrikeCard('${c.uid}')`,
+          highlight: 'strike',
+          band: c.range,
+          hoverPreview: true,
+          exOtherUid: otherUid,
+          exOnClick: otherUid ? `G.pickExStrike('${c.uid}','${otherUid}')` : null,
+          rangeChip: previewToRangeChip(memo && memo.base, c, dist),
+        };
+      },
       exTiles,
     })}</div>`;
   }
 
   if (g.mode === 'defend_select') {
-    const forcedUid = g.sel && g.sel.forcedUid;
-    const defendTileOpts = (c, memo) => ({
-      onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
-      highlight: 'strike',
-      band: c.range,
-      hoverPreview: true,
-      rangeChip: previewToRangeChip(memo && memo.base, c, dist),
-    });
-    if (forcedUid) {
+    const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
+    if (forcedWildSwing) {
       return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-        tileOpts: (c, memo) => (c.uid === forcedUid ? defendTileOpts(c, memo) : { disabled: true }),
+        tileOpts: () => ({ disabled: true }),
+      })}</div>`;
+    }
+    const dupMap = new Map();
+    for (const c of p.hand) {
+      if (!dupMap.has(c.key)) dupMap.set(c.key, []);
+      dupMap.get(c.key).push(c.uid);
+    }
+    const forcedUid = g.sel && g.sel.forcedUid;
+    const forcedCard = forcedUid ? p.hand.find(c => c.uid === forcedUid) : null;
+    const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
+    const defendTileOpts = (c, memo) => {
+      const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
+      if (!validStrike) return { disabled: true };
+      const canPayUltra = c.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, c);
+      const sameKeyUids = dupMap.get(c.key) || [];
+      const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+      return {
+        onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
+        highlight: 'strike',
+        band: c.range,
+        hoverPreview: true,
+        exOtherUid: otherUid,
+        exOnClick: otherUid ? `G.humanDefend({type:'ex', uid1:'${c.uid}', uid2:'${otherUid}'})` : null,
+        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
+      };
+    };
+    if (forcedKey || forcedUid) {
+      const exTiles = forcedKey
+        ? exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false, onlyKey: forcedKey })
+        : '';
+      return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+        tileOpts: (c, memo) => ((forcedKey ? c.key === forcedKey : c.uid === forcedUid) ? defendTileOpts(c, memo) : { disabled: true }),
+        exTiles,
       })}</div>`;
     }
     const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false });
@@ -2436,15 +2503,16 @@ function unifiedHandDockHTML(g) {
     tileOpts: isMainAction
       ? (c, memo) => {
           const sameKeyUids = dupMap.get(c.key) || [];
+          const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
           const canPayUltra = c.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(p, c);
-          const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+          const otherUid = (sameKeyUids.length >= 2 && validStrike && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
           return {
             selected: !isQuickCommit && g.selectedActionCardUid === c.uid,
             hoverPreview: true,
             draggable: true,
             quickCommit: isQuickCommit,
             exOtherUid: otherUid,
-            rangeChip: canPayUltra ? previewToRangeChip(memo && memo.base, c, dist) : null,
+            rangeChip: (validStrike && canPayUltra) ? previewToRangeChip(memo && memo.base, c, dist) : null,
             onclick: isQuickCommit ? null : `G.selectActionCard('${c.uid}')`,
           };
         }
@@ -2641,20 +2709,34 @@ function fullCardLightboxHTML(g) {
 
   const actions = [];
   if (inHand && human && engine && !engine.gameOver) {
+    const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(human, rawCard);
     const canPayUltra = displayCard.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(human, rawCard);
+    const canStrikeCard = validStrike && canPayUltra;
     const hasDup = human.hand.filter(c => c.key === rawCard.key).length >= 2;
     if (g.mode === 'awaiting_action' && isMyTurn) {
-      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canPayUltra ? '' : 'disabled'}>⚔ Play as Strike</button>`);
+      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Play as Strike</button>`);
       if (rawCard.boost) {
         actions.push(`<button type="button" class="full-card-action-btn boost-btn" onclick="G.modalPlayCard('boost')">⬆ Play as Boost</button>`);
       }
-      if (hasDup && canPayUltra) {
+      if (hasDup && canStrikeCard) {
         actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ EX Strike</button>`);
       }
-    } else if (g.mode === 'strike_select' || g.mode === 'defend_select') {
-      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canPayUltra ? '' : 'disabled'}>⚔ Select Strike</button>`);
-      if (hasDup && canPayUltra) {
+    } else if (g.mode === 'strike_select') {
+      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Select Strike</button>`);
+      if (hasDup && canStrikeCard) {
         actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ Select EX</button>`);
+      }
+    } else if (g.mode === 'defend_select') {
+      const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
+      const forcedUid = g.sel && g.sel.forcedUid;
+      const forcedCard = forcedUid ? human.hand.find(c => c.uid === forcedUid) : null;
+      const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
+      const allowedByConstraint = !forcedWildSwing && (!forcedKey || rawCard.key === forcedKey);
+      if (allowedByConstraint) {
+        actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Select Strike</button>`);
+        if (hasDup && canStrikeCard) {
+          actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ Select EX</button>`);
+        }
       }
     } else if (g.mode === 'boost_select' && rawCard.boost) {
       actions.push(`<button type="button" class="full-card-action-btn boost-btn" onclick="G.modalPlayCard('boost')">⬆ Select Boost</button>`);

@@ -1812,6 +1812,187 @@ test('Strike Preview UI surfaces: Clash Banner, Inspector, Lightbox, Hand chips,
   assert.equal(res.lightboxHtml.includes('undefined') || res.lightboxHtml.includes('NaN'), false);
 });
 
+test('EX attacks are offered consistently across strike_select, defend_select, and Focus Reading, and stack cleanly with Critical', () => {
+  const { ctx } = createTrackedSandbox();
+  const res = vm.runInContext(`(() => {
+    const g = new GameController('ryu', 'ken', 'champion');
+    G = g;
+    g.confirmMulligan();
+    const p1 = g.human(), p2 = g.ai();
+    p1.pos = 2; p2.pos = 4; // dist 2 (Hadoken hits at range 2-3)
+    const hadoBase = SimulateStrikePreview.resolveCardByKey('hadoken_ryu');
+    const crossBase = SimulateStrikePreview.resolveCardByKey('cross');
+    const sweepBase = SimulateStrikePreview.resolveCardByKey('sweep');
+    const ultraBase = CHARACTERS.ryu.specials.find(c => c.type === 'ultra');
+
+    // 1. Preview toggles: [E] EX +1 and [C] Critical both available on duplicate Hadoken with Gauge, and stack cleanly
+    p1.hand = [
+      { ...hadoBase, uid: 'h1' },
+      { ...hadoBase, uid: 'h2' },
+      { ...sweepBase, uid: 's1' },
+    ];
+    p1.gauge = [{ ...crossBase, uid: 'g1' }];
+    const bannerSlot = { innerHTML: '', parentElement: { classList: { add() {}, remove() {} } } };
+    const origGetById = document.getElementById;
+    document.getElementById = (id) => (id === 'clash-banner-slot' ? bannerSlot : origGetById(id));
+
+    g.onCardHover('h1', false);
+    const hadoBaseBanner = bannerSlot.innerHTML;
+    EventBus.emit('OnToggleEXMode', {});
+    EventBus.emit('OnToggleCriticalPreview', {});
+    const hadoExCritBanner = bannerSlot.innerHTML;
+
+    // Singleton Sweep must NOT allow bogus EX preview toggle via E
+    g.onCardHover('s1', false);
+    const sweepHasExToggle = bannerSlot.innerHTML.includes('[E] EX +1');
+    EventBus.emit('OnToggleEXMode', {});
+    const sweepExActiveAfterE = !!(StrikePreviewController.getActiveHover() && StrikePreviewController.getActiveHover().isEX);
+    g.onCardHoverEnd();
+    document.getElementById = origGetById;
+
+    // 2. strike_select renders inline EX button on duplicate hand cards
+    g.mode = 'strike_select';
+    paint();
+    const strikeSelectHtml = document.getElementById('app').innerHTML;
+
+    // 3. Committing EX in strike_select prompts Critical on Hadoken (EX) and resolves BOTH EX (+1 all) and Critical (+2 SPD)
+    p2.hand = [{ ...sweepBase, uid: 'ai_sw' }];
+    g.pickExStrike('h1', 'h2');
+    const critPromptMode = g.mode;
+    paint();
+    const critPromptHtml = document.getElementById('app').innerHTML;
+    g.resolveCriticalChoice(true);
+    const lastSide = g.engine.lastStrikeInfo && g.engine.lastStrikeInfo.sides && g.engine.lastStrikeInfo.sides.p1;
+    // Check that the EX card returned to gauge/discard/deck is unwrapped (no stale isEX or compound uid)
+    const allZonesAfterEx = [...p1.hand, ...p1.discard, ...p1.gauge, ...p1.deck, ...p1.sealedCards];
+    const leakedExCards = allZonesAfterEx.filter(c => c && (c.isEX || String(c.uid || '').includes('+')));
+
+    // 4. defend_select with Focus Reading naming Cross when player holds 2 copies allows EX defense AND prompts Critical
+    p1.hand = [
+      { ...crossBase, uid: 'cr1' },
+      { ...crossBase, uid: 'cr2' },
+      { ...sweepBase, uid: 'sw_other' },
+    ];
+    p1.gauge = [{ ...sweepBase, uid: 'g_def' }];
+    g.pendingAiAttack = { card: { ...sweepBase, uid: 'ai_atk' }, fromWildSwing: false, criticalPaid: false };
+    g.engine.setReading(p2, 'cross');
+    g.setupDefendConstraints(p2, p1);
+    g.mode = 'defend_select';
+    paint();
+    const readingDefendHtml = document.getElementById('app').innerHTML;
+
+    // Illegal non-forced card is ignored
+    g.humanDefend({ type: 'hand', uid: 'sw_other' });
+    const stillDefendingAfterIllegal = g.mode === 'defend_select';
+
+    // EX defense with both forced copies is accepted and prompts Critical
+    g.humanDefend({ type: 'ex', uid1: 'cr1', uid2: 'cr2' });
+    const defCritPromptMode = g.mode;
+    if (g.mode === 'critical_choice') g.resolveCriticalChoice(true);
+    const defSide = g.engine.lastStrikeInfo && g.engine.lastStrikeInfo.sides && g.engine.lastStrikeInfo.sides.p1;
+    const allZonesAfterDef = [...p1.hand, ...p1.discard, ...p1.gauge, ...p1.deck, ...p1.sealedCards];
+    const leakedDefExCards = allZonesAfterDef.filter(c => c && (c.isEX || String(c.uid || '').includes('+')));
+
+    // 5. Ultra + Critical exact-gauge warning in critical_choice prompt
+    p1.gauge = [{ ...crossBase, uid: 'ug1' }, { ...crossBase, uid: 'ug2' }, { ...crossBase, uid: 'ug3' }];
+    g.mode = 'critical_choice';
+    g.sel = { card: { ...ultraBase, uid: 'u1', isEX: true, pow: ultraBase.pow + 1, spd: ultraBase.spd + 1, arm: ultraBase.arm + 1, grd: ultraBase.grd + 1 }, hideCardName: false };
+    paint();
+    const ultraCritWarnHtml = document.getElementById('app').innerHTML;
+
+    // 6. forcedWildSwingOnly disables hand & EX buttons in defend_select
+    g.mode = 'defend_select';
+    g.sel = { forcedWildSwingOnly: true };
+    p1.hand = [{ ...crossBase, uid: 'fw1' }, { ...crossBase, uid: 'fw2' }];
+    paint();
+    const forcedWildHtml = document.getElementById('app').innerHTML;
+
+    // 7. Exceeded Nagoriyuki invalid Specials must NOT offer EX buttons or EX tiles
+    const gNago = new GameController('nagoriyuki', 'ryu', 'champion');
+    G = gNago;
+    gNago.confirmMulligan();
+    const pNago = gNago.human();
+    pNago.exceeded = true;
+    const nagoSpec = CHARACTERS.nagoriyuki.specials.find(c => c.type === 'special');
+    pNago.hand = [
+      { ...nagoSpec, uid: 'ns1' },
+      { ...nagoSpec, uid: 'ns2' },
+      { ...crossBase, uid: 'nc1' },
+      { ...crossBase, uid: 'nc2' },
+    ];
+    gNago.mode = 'awaiting_action';
+    paint();
+    const nagoAwaitHtml = document.getElementById('app').innerHTML;
+    gNago.mode = 'strike_select';
+    paint();
+    const nagoStrikeHtml = document.getElementById('app').innerHTML;
+
+    return {
+      hadoBaseBanner,
+      hadoExCritBanner,
+      sweepHasExToggle,
+      sweepExActiveAfterE,
+      strikeSelectHtml,
+      critPromptMode,
+      critPromptHtml,
+      lastSide,
+      hadoBaseSpd: hadoBase.spd,
+      hadoBasePow: hadoBase.pow,
+      leakedExCount: leakedExCards.length,
+      readingDefendHtml,
+      stillDefendingAfterIllegal,
+      defCritPromptMode,
+      defSide,
+      leakedDefExCount: leakedDefExCards.length,
+      ultraCritWarnHtml,
+      forcedWildHtml,
+      nagoAwaitHtml,
+      nagoStrikeHtml,
+    };
+  })()`, ctx) as any;
+
+  // 1. Preview toggles
+  assert.ok(res.hadoBaseBanner.includes('[E] EX +1'), 'Duplicate Hadoken hover must show [E] EX +1 toggle');
+  assert.ok(res.hadoBaseBanner.includes('[C] Critical'), 'Street Fighter Hadoken with Gauge must show [C] Critical toggle');
+  assert.ok(res.hadoExCritBanner.includes('EX +1') && res.hadoExCritBanner.includes('CRIT'), 'EX and Critical preview toggles must stack simultaneously');
+  assert.equal(res.sweepHasExToggle, false, 'Singleton card must not offer [E] EX +1 toggle');
+  assert.equal(res.sweepExActiveAfterE, false, 'Pressing E on singleton card must not activate EX preview');
+
+  // 2 & 3. strike_select inline EX + Critical resolution + cleanup unwrapping
+  assert.ok(res.strikeSelectHtml.includes(`G.pickExStrike('h1','h2')`), 'strike_select must render inline EX button on duplicate hand cards');
+  assert.equal(res.critPromptMode, 'critical_choice', 'Committing EX as Ryu with Gauge must prompt for Critical');
+  assert.ok(res.critPromptHtml.includes('Hadoken (EX)'), 'Critical prompt must display the EX card name');
+  assert.equal(res.lastSide.isEX, true, 'Resolved strike must retain EX flag');
+  assert.equal(res.lastSide.criticalPaid, true, 'Resolved EX strike must also apply paid Critical');
+  assert.equal(res.lastSide.live.pow, res.hadoBasePow + 1, 'EX Hadoken POW must include +1 EX bonus');
+  assert.equal(res.lastSide.live.spd, res.hadoBaseSpd + 3, 'EX + Critical Hadoken SPD must include +1 EX and +2 Critical');
+  assert.equal(res.leakedExCount, 0, 'Cleaned-up EX card must be unwrapped back to _baseCard with no stale isEX/compound uid');
+
+  // 4. Focus Reading allows EX defense with duplicate copies of named card
+  assert.ok(res.readingDefendHtml.includes(`G.humanDefend({type:'ex', uid1:'cr1', uid2:'cr2'})`), 'Focus Reading defend_select must offer EX when holding 2 copies of named card');
+  assert.ok(res.readingDefendHtml.includes('(or EX with both copies)'), 'Focus Reading prompt should indicate EX is legal with 2 copies');
+  assert.equal(res.stillDefendingAfterIllegal, true, 'Focus Reading must still reject non-forced cards');
+  assert.equal(res.defCritPromptMode, 'critical_choice', 'EX defense under Focus Reading must still prompt Critical');
+  assert.equal(res.defSide.isEX, true, 'Focus Reading EX defense must resolve as EX');
+  assert.equal(res.defSide.criticalPaid, true, 'Focus Reading EX defense must also apply paid Critical');
+  assert.equal(res.leakedDefExCount, 0, 'Defending EX card cleanup must unwrap _baseCard');
+
+  // 5. Ultra + Critical warning
+  assert.ok(res.ultraCritWarnHtml.includes('will Wild Swing'), 'Exact-Gauge Ultra Critical prompt must warn about Ultra invalidation');
+
+  // 6. forcedWildSwingOnly disables hand & EX
+  assert.equal(res.forcedWildHtml.includes('card-ex-btn'), false, 'forcedWildSwingOnly must not render EX buttons');
+  assert.equal(res.forcedWildHtml.includes('ex-tile'), false, 'forcedWildSwingOnly must not render EX pair tiles');
+  assert.ok(res.forcedWildHtml.includes('forces a <b>Wild Swing</b>'), 'forcedWildSwingOnly must explain forced Wild Swing');
+
+  // 7. Exceeded Nagoriyuki invalid Specials gated out of EX while valid Normals still offer EX
+  assert.equal(res.nagoAwaitHtml.includes(`G.quickCommitEx('ns1'`), false, 'Exceeded Nagoriyuki must not offer inline EX on invalid Specials');
+  assert.ok(res.nagoAwaitHtml.includes(`G.quickCommitEx('nc1', 'nc2')`), 'Exceeded Nagoriyuki must still offer inline EX on valid Normals');
+  assert.equal(res.nagoStrikeHtml.includes(`G.pickExStrike('ns1'`), false, 'strike_select must not offer EX on invalid Specials');
+  assert.ok(res.nagoStrikeHtml.includes(`G.pickExStrike('nc1','nc2')`), 'strike_select must still offer EX on valid Normals');
+});
+
+
 
 
 

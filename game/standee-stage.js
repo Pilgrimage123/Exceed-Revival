@@ -47,6 +47,8 @@ const StandeeStage = (() => {
   let dimmerTarget = 0;
   let boardBounds = null;
   let spaceRects = []; // index 0..8 -> { left, top, width, height, cx, groundY }
+  let domMetricsDirty = true;
+  let lastDomSyncMs = 0;
   let inStrikePlayback = false;
   let strikeSpaces = { p1: null, p2: null };
   let lastKnownActors = new Set();
@@ -133,6 +135,8 @@ const StandeeStage = (() => {
       additiveElapsed: 0,
       additiveDuration: 0,
       hitstopRemaining: 0,
+      pendingHitstopSec: 0,
+      hitstopTriggerU: 0.16,
       flashRemaining: 0,
       flashDuration: 0.065,
       flashColorRgb: [1, 1, 1],
@@ -346,7 +350,7 @@ const StandeeStage = (() => {
   }
 
   function resize() {
-    if (!mounted || !glCanvas || !vfxCanvas) return;
+    if (!glCanvas || !vfxCanvas) return;
     viewportW = Math.max(1, window.innerWidth || 1280);
     viewportH = Math.max(1, window.innerHeight || 720);
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -575,7 +579,26 @@ const StandeeStage = (() => {
       );
     }
     if (choreo.hitstopSec > 0 && !isReducedMotion()) {
-      f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      if (choreo.phase === 'hit_attack' && Array.isArray(choreo.frameSequence) && choreo.frameSequence.length > 0 && choreo.holdAtU == null) {
+        // Defer hitstop freeze until exact contact frame (hitstopTriggerU) so startup snaps forward
+        // cleanly and u advances strictly monotonically without rewinding backwards after hitstop!
+        f.pendingHitstopSec = choreo.hitstopSec;
+        f.hitstopTriggerU = choreo.hitstopTriggerU != null ? choreo.hitstopTriggerU : 0.16;
+      } else if (choreo.phase === 'hit_defend' && choreo.holdAtU == null) {
+        // Snap defender cleanly into peak recoil and freeze there, then continue monotonically forward
+        f.pendingHitstopSec = 0;
+        if (choreo.track === 2 && f.additiveChoreo === choreo) {
+          f.additiveElapsed = Math.max(f.additiveElapsed, 0.22 * f.additiveDuration);
+        } else {
+          f.choreoElapsed = Math.max(f.choreoElapsed, 0.22 * f.choreoDuration);
+        }
+        f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      } else {
+        f.pendingHitstopSec = 0;
+        f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      }
+    } else if (choreo.track !== 2) {
+      f.pendingHitstopSec = 0;
     }
     if (choreo.track !== 2 || !f.choreo || f.choreo.track === 2) {
       f.activeFrameKey = getFighterActiveFrameKey(f);
@@ -654,15 +677,26 @@ const StandeeStage = (() => {
     if (!f || !f.active || !vfxSpec) return;
     const opp = fighters[pid === 'p1' ? 'p2' : 'p1'];
     const defaultReach = (opp && opp.active) ? Math.abs(opp.x - f.x) : 0;
+    const isSweepSlideVfx = !!(
+      vfxSpec.followSlide ||
+      vfxSpec.type === 'physical_sweep_dust' ||
+      vfxSpec.type === 'ryu_ashi_barai_ki_sweep' ||
+      vfxSpec.type === 'ken_flare_fire_sweep'
+    );
+    const vfxDuration = vfxSpec.isUltra
+      ? 0.68
+      : (isSweepSlideVfx ? Math.max(0.62, (f.choreoDuration || 0.72) * 0.90) : 0.54);
     stageVfx.push({
       type: vfxSpec.type,
       fallbackType: vfxSpec.fallbackType || null,
       color: vfxSpec.color || '#38bdf8',
       accent: vfxSpec.accent || '#ffffff',
+      style: vfxSpec.style || null,
       isUltra: !!vfxSpec.isUltra,
       isExceeded: !!vfxSpec.isExceeded,
       reachPx: vfxSpec.reachPx != null ? vfxSpec.reachPx : defaultReach,
       followPid: (
+        isSweepSlideVfx ||
         vfxSpec.type === 'cammy_heel_crossup_flash' ||
         vfxSpec.type === 'evasion_shimmer' ||
         vfxSpec.type === 'iron_wall_chains' ||
@@ -674,13 +708,15 @@ const StandeeStage = (() => {
         vfxSpec.type === 'ken_backflip_fire_wheel' ||
         vfxSpec.type === 'ryu_backdash_ki_wake'
       ) ? pid : null,
+      originX: f.x,
+      maxSlideX: f.x,
       x: f.x,
       groundY: f.groundY,
       width: f.width,
       height: f.height,
       facingSign: f.facingSign,
-      elapsed: (vfxSpec.holdAtT != null) ? (vfxSpec.holdAtT * (vfxSpec.isUltra ? 0.56 : 0.42)) : 0,
-      duration: vfxSpec.isUltra ? 0.56 : 0.42,
+      elapsed: (vfxSpec.holdAtT != null) ? (vfxSpec.holdAtT * vfxDuration) : 0,
+      duration: vfxDuration,
       holdAtT: vfxSpec.holdAtT != null ? vfxSpec.holdAtT : null,
     });
   }
@@ -688,9 +724,9 @@ const StandeeStage = (() => {
   function getFighterActiveFrameKey(f) {
     if (!f || !f.choreo) return 'idle';
     const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
-    // During hitstop freeze on impact (hit_attack), lock onto the active impact keyframe (u >= 0.25)
-    // rather than freezing on u=0 startup/windup!
-    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack')
+    // Contact-triggered hitstop freezes f.choreoElapsed right at hitstopTriggerU (peak impact);
+    // only clamp upward for legacy non-deferred hit_attack hitstops so u never jumps backwards!
+    const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && f.choreo.phase === 'hit_attack' && rawU < 0.05)
       ? Math.max(0.25, rawU)
       : rawU;
     if (typeof StandeeRigMath !== 'undefined' && StandeeRigMath.resolveActiveFrameKey) {
@@ -752,7 +788,7 @@ const StandeeStage = (() => {
     // the keyframe artwork is already authored at the 180-deg (-pi) apex of the backflip (t = 0.5),
     // so pitch around the apex (t - 0.5) rather than rotating the inverted drawing 180-deg back upright.
     if (getFighterActiveFrameKey(f) === 'cross_retreat') {
-      return f.choreo.wholeSpinRad * (t - 0.5) * 0.42 * f.facingSign;
+      return f.choreo.wholeSpinRad * (t - 0.5) * 0.52 * f.facingSign;
     }
     return f.choreo.wholeSpinRad * t * f.facingSign;
   }
@@ -770,8 +806,19 @@ const StandeeStage = (() => {
     return { wholeRotRad: rad, horizSpinScaleX: 1 };
   }
 
-  function syncDomMetrics() {
+  function syncDomMetrics(force = true) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const resized = glCanvas && vfxCanvas && (viewportW !== (window.innerWidth || 1280) || viewportH !== (window.innerHeight || 720) || glCanvas.width <= 300);
+    if (resized) {
+      resize();
+      domMetricsDirty = true;
+    }
+    if (!force && !domMetricsDirty && fighters.p1.active && fighters.p2.active) {
+      if (inStrikePlayback || (now - lastDomSyncMs < 250)) return;
+    }
+    domMetricsDirty = false;
+    lastDomSyncMs = now;
     const isPlaying = typeof G !== 'undefined' && G && G.mode !== 'game_over' &&
       (!document.body || !document.body.dataset || document.body.dataset.state === 'playing');
 
@@ -958,7 +1005,8 @@ const StandeeStage = (() => {
   function syncAfterRender() {
     if (!mounted) mount();
     if (!mounted) return;
-    syncDomMetrics();
+    domMetricsDirty = true;
+    syncDomMetrics(true);
   }
 
   function isFighterActive(pid) {
@@ -1121,6 +1169,9 @@ const StandeeStage = (() => {
         startChoreography(att, choreo, { distanceToTargetPx: distPx });
         if (choreo.projectile) spawnProjectile(actorId, defId, side && side.cardKey, choreo);
       } else if (step.phase === 'after' && att && att.active) {
+        const prevActorSpace = actorId === 'p1' ? prevP1 : prevP2;
+        const curActorSpace = strikeSpaces[actorId];
+        const attMovedOnAfter = !!((prevActorSpace != null && curActorSpace != null && prevActorSpace !== curActorSpace) || stepSwapped);
         const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'after', {
           criticalPaid: !!(side && side.criticalPaid),
           isEX: !!(side && side.isEX),
@@ -1128,8 +1179,15 @@ const StandeeStage = (() => {
           sideSwapped: stepSwapped || !!att.lastSideSwapped,
           reducedHitStop: isReducedMotion(),
         });
-        startChoreography(att, choreo);
-        if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        // Only start an after-phase choreography if the card has a dedicated after motion (e.g. Cross Retreat 3)
+        // or actually moved spaces; otherwise let active Sweep / Strike follow-through finish fluently!
+        if (attMovedOnAfter || (choreo && choreo.poseKind && choreo.poseKind !== 'recovery')) {
+          if (att.moving && choreo && choreo.durationSec) {
+            att.moveDuration = Math.max(0.42, choreo.durationSec * 0.90);
+          }
+          startChoreography(att, choreo);
+          if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        }
       } else if (step.phase === 'cleanup') {
         dimmerTarget = 0;
         for (const pid of ['p1', 'p2']) {
@@ -1285,9 +1343,13 @@ const StandeeStage = (() => {
       f.cammyCrossUpFlashTimer = Math.max(0, f.cammyCrossUpFlashTimer - dt);
     }
 
-    // Rig spring pauses during hitstopRemaining > 0
+    // Rig spring pauses during hitstopRemaining > 0; substep at <= 25ms for stability on low-FPS devices
     if (typeof StandeeRigMath !== 'undefined') {
-      StandeeRigMath.stepSpring(f.spring, dt, f.springStiffness, f.springDamping, f.hitstopRemaining);
+      const springSteps = Math.max(1, Math.min(6, Math.ceil(dt / 0.025)));
+      const subDt = dt / springSteps;
+      for (let s = 0; s < springSteps; s++) {
+        StandeeRigMath.stepSpring(f.spring, subDt, f.springStiffness, f.springDamping, f.hitstopRemaining);
+      }
     }
 
     // Horizontal translation (monotone cubic Hermite / quintic ease) + Midpoint X-Crossover Flip
@@ -1362,13 +1424,25 @@ const StandeeStage = (() => {
       if (f.choreo.holdAtU != null) {
         f.choreoElapsed = f.choreo.holdAtU * f.choreoDuration;
       } else {
+        const prevElapsed = f.choreoElapsed;
         f.choreoElapsed += dt;
+        // Contact-triggered hitstop: when startup crosses hitstopTriggerU, lock right at peak contact
+        // and fire the freeze frame without ever rewinding u backwards!
+        if (f.pendingHitstopSec > 0 && f.choreoDuration > 0) {
+          const triggerElapsed = (f.hitstopTriggerU != null ? f.hitstopTriggerU : 0.16) * f.choreoDuration;
+          if (prevElapsed < triggerElapsed && f.choreoElapsed >= triggerElapsed) {
+            f.choreoElapsed = triggerElapsed;
+            f.hitstopRemaining = Math.max(f.hitstopRemaining, f.pendingHitstopSec);
+            f.pendingHitstopSec = 0;
+          }
+        }
         if (f.choreoElapsed >= f.choreoDuration) {
           if (inStrikePlayback && f.choreo.phase === 'reveal') {
             f.choreoElapsed = f.choreoDuration;
           } else {
             f.choreo = null;
             f.choreoElapsed = 0;
+            f.pendingHitstopSec = 0;
             f.desaturateAmount = 0;
             f.wildSwingHazard = false;
           }
@@ -1444,9 +1518,7 @@ const StandeeStage = (() => {
 
     if (f.choreo) {
       const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
-      // During hitstop freeze on impact (hit_attack / hit_defend), evaluate spine & clip envelope
-      // at peak active contact (u >= 0.28) so the fighter freezes in the full strike pose!
-      const u = (f.hitstopRemaining > 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend'))
+      const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend') && rawU < 0.05)
         ? Math.max(0.28, rawU)
         : rawU;
       let env = 1.0;
@@ -1496,11 +1568,24 @@ const StandeeStage = (() => {
   function computeFighterLungeOffsetX(f) {
     if (!f.choreo || !f.choreoDuration || f.choreoDuration <= 0) return 0;
     const rawU = Math.min(1, f.choreoElapsed / f.choreoDuration);
-    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack') ? Math.max(0.28, rawU) : rawU;
+    const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && f.choreo.phase === 'hit_attack' && rawU < 0.05) ? Math.max(0.28, rawU) : rawU;
     if (f.choreo.dynamicLunge && typeof StandeeRigMath !== 'undefined' && StandeeRigMath.computeDynamicLungeOffset) {
       const isProj = !!f.choreo.projectile;
       const isWhiff = f.choreo.clipMode === 'whiff_3clip';
-      const dist = StandeeRigMath.computeDynamicLungeOffset(u, f.choreo.lungePx || 0, f.choreoTargetDistPx || 0, isProj, isWhiff);
+      let slideReach = f.choreo.slideReach || null;
+      if (slideReach && slideReach.enabled) {
+        const sp0 = spaceRects[1] || spaceRects[0];
+        const sp1 = spaceRects[2] || spaceRects[1];
+        const liveSpaceW = (sp0 && sp1 && Math.abs(sp1.cx - sp0.cx) > 30)
+          ? Math.abs(sp1.cx - sp0.cx)
+          : (sp0 && sp0.width > 30 ? sp0.width : 145);
+        slideReach = {
+          ...slideReach,
+          fighterWidthPx: f.width || 148,
+          spaceWidthPx: liveSpaceW,
+        };
+      }
+      const dist = StandeeRigMath.computeDynamicLungeOffset(u, f.choreo.lungePx || 0, f.choreoTargetDistPx || 0, isProj, isWhiff, slideReach);
       return dist * f.facingSign;
     }
     if (f.choreo.lungePx) {
@@ -2663,6 +2748,11 @@ const StandeeStage = (() => {
         v.x = ff.x + computeFighterLungeOffsetX(ff);
         v.groundY = ff.groundY + computeCurrentHopY(ff);
         v.facingSign = ff.facingSign;
+        if (v.originX != null) {
+          const curSpan = (v.x - v.originX) * v.facingSign;
+          const maxSpan = ((v.maxSlideX != null ? v.maxSlideX : v.originX) - v.originX) * v.facingSign;
+          if (curSpan > maxSpan) v.maxSlideX = v.x;
+        }
       }
       c.save();
       c.globalCompositeOperation = 'lighter';
@@ -2842,24 +2932,57 @@ const StandeeStage = (() => {
           c.stroke();
         }
       } else if (v.type === 'physical_sweep_dust') {
-        // Normal-State (VFX-free martial arts) low Sweep: crisp air-shear crescent along the stone floor + flying grit/dust plumes (no magical beams)
+        // Normal-State (VFX-free martial arts) low Sweep: full-span floor skid streaks from originX -> live slide contact + contact air-shear crescent
         c.globalCompositeOperation = 'source-over';
-        const reachRadius = Math.max(v.width * 0.64, Math.min(290, (v.reachPx || 0) * 0.88));
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
         const arcY = v.groundY - 10;
-        const startAng = v.facingSign > 0 ? -0.68 : (Math.PI - 0.52);
-        const endAng = v.facingSign > 0 ? 0.52 : (Math.PI + 0.68);
+        const isBreakdance = v.style === 'breakdance_flare_slide';
 
-        c.strokeStyle = 'rgba(226, 232, 240, 0.58)';
-        c.lineWidth = 3.2 * (1 - t * 0.45);
+        // Floor skid tracks & rolling stone dust puffs across the full 1-3 space slide path
+        if (slideSpan > 24) {
+          c.strokeStyle = isBreakdance ? 'rgba(226, 214, 198, 0.44)' : 'rgba(226, 232, 240, 0.48)';
+          c.lineWidth = isBreakdance ? 4.4 * (1 - t * 0.45) : 3.4 * (1 - t * 0.45);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 4);
+          c.lineTo(farX, v.groundY - 4);
+          c.stroke();
+
+          c.strokeStyle = 'rgba(148, 163, 184, 0.34)';
+          c.lineWidth = 2.0 * (1 - t * 0.5);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 11);
+          c.lineTo(farX, v.groundY - 9);
+          c.stroke();
+
+          const skidPuffs = Math.min(12, Math.max(5, Math.round(slideSpan / 36)));
+          for (let p = 0; p < skidPuffs; p++) {
+            const pf = p / Math.max(1, skidPuffs - 1);
+            const px = originX + (farX - originX) * pf;
+            const py = v.groundY - 4 - Math.sin(pf * Math.PI * 2 + t * 5) * 4 - t * (8 + (p % 3) * 5);
+            const pr = (3.4 + (p % 3) * 1.5) * (1 - t * 0.6);
+            c.fillStyle = p % 2 === 0 ? (v.color || '#cbd5e1') : '#94a3b8';
+            c.beginPath();
+            c.arc(px, py, Math.max(0.9, pr), 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+
+        // Crisp air-shear crescent & heel-dust splash anchored at the live sliding contact zone
+        const localRadius = Math.max(v.width * 0.68, Math.min(v.width * 1.12, 128));
+        const startAng = v.facingSign > 0 ? -0.72 : (Math.PI - 0.56);
+        const endAng = v.facingSign > 0 ? 0.56 : (Math.PI + 0.72);
+        c.strokeStyle = 'rgba(241, 245, 249, 0.66)';
+        c.lineWidth = 3.4 * (1 - t * 0.42);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 18, arcY, reachRadius, 16, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 20, arcY, localRadius, isBreakdance ? 20 : 15, 0, isBreakdance ? 0 : startAng, isBreakdance ? Math.PI * 2 : endAng);
         c.stroke();
 
-        // Low floor-skimming stone dust puffs kicked up by the sweeping heel
-        for (let d = 0; d < 7; d++) {
-          const df = d / 6;
-          const dx = v.x + v.facingSign * (20 + df * reachRadius * (0.45 + 0.55 * t));
-          const dy = v.groundY - 3 - Math.sin(df * Math.PI) * (8 + t * 14);
+        for (let d = 0; d < 6; d++) {
+          const df = d / 5;
+          const dx = v.x + v.facingSign * (14 + df * localRadius * (0.45 + 0.55 * t));
+          const dy = v.groundY - 3 - Math.sin(df * Math.PI) * (9 + t * 14);
           const dr = (3.2 + (d % 3) * 1.4) * (1 - t * 0.65);
           c.fillStyle = d % 2 === 0 ? (v.color || '#cbd5e1') : '#94a3b8';
           c.beginPath();
@@ -2890,55 +3013,103 @@ const StandeeStage = (() => {
         c.ellipse(fistX, fistY, 7 + t * 14, 16 + t * 22, 0, 0, Math.PI * 2);
         c.stroke();
       } else if (v.type === 'ryu_ashi_barai_ki_sweep') {
-        // Exceeded Ryu Sweep (Ashi Barai): white-hot & cobalt floor-skimming Ki crescent blade + Denjin ground lightning
-        const reachRadius = Math.max(v.width * 0.72, Math.min(320, (v.reachPx || 110) * 0.96));
+        // Exceeded Ryu Sweep (Ashi Barai): full 3-space Denjin ground-wake lightning + contact Ki crescent blade
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
+        const localRadius = Math.max(v.width * 0.74, Math.min(v.width * 1.18, 148));
         const arcY = v.groundY - 12;
-        const startAng = v.facingSign > 0 ? -0.86 : (Math.PI - 0.68);
-        const endAng = v.facingSign > 0 ? 0.68 : (Math.PI + 0.86);
+        const startAng = v.facingSign > 0 ? -0.88 : (Math.PI - 0.70);
+        const endAng = v.facingSign > 0 ? 0.70 : (Math.PI + 0.88);
 
+        // Full-span cobalt Denjin skid wake across traversed spaces
+        if (slideSpan > 20) {
+          c.strokeStyle = v.color || '#38bdf8';
+          c.lineWidth = 5.2 * (1 - t * 0.38);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 6);
+          c.lineTo(farX, v.groundY - 6);
+          c.stroke();
+
+          c.strokeStyle = '#38bdf8';
+          c.lineWidth = 2.8;
+          drawLightningArc(c, originX, arcY + 4, farX, arcY, 7, 10, stageClockSec * 24);
+          c.strokeStyle = '#ffffff';
+          c.lineWidth = 1.5;
+          drawLightningArc(c, originX, arcY + 4, farX, arcY, 7, 10, stageClockSec * 24 + 2.7);
+        }
+
+        // Luminous contact Ki crescent anchored at live sliding Ryu
         c.strokeStyle = v.color || '#38bdf8';
         c.lineWidth = 8.0 * (1 - t * 0.3);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 20, arcY, reachRadius, 26, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 22, arcY, localRadius, 24, 0, startAng, endAng);
         c.stroke();
 
         c.strokeStyle = '#ffffff';
         c.lineWidth = 3.2;
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 20, arcY, reachRadius * 0.96, 19, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 22, arcY, localRadius * 0.94, 17, 0, startAng, endAng);
         c.stroke();
 
-        // Crackling Denjin lightning arcs snapping along the sweeping ankle & stone floor
-        const tipX = v.x + v.facingSign * (20 + reachRadius * 0.94);
+        const tipX = v.x + v.facingSign * (22 + localRadius * 0.95);
         c.strokeStyle = '#38bdf8';
-        c.lineWidth = 2.8;
-        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 6, 9, stageClockSec * 24);
-        c.strokeStyle = '#ffffff';
-        c.lineWidth = 1.4;
-        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 6, 9, stageClockSec * 24 + 3.1);
+        c.lineWidth = 2.6;
+        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 5, 8, stageClockSec * 26);
       } else if (v.type === 'ken_flare_fire_sweep') {
-        // Exceeded Ken Sweep: 360° blazing crimson-and-gold breakdance floor-flare fire whip + orbiting ember sparks
-        const reachRadius = Math.max(v.width * 0.76, Math.min(330, (v.reachPx || 120) * 0.98));
+        // Exceeded Ken Sweep: scorching 3-space ember skid ribbon + 360° breakdance fire flare ring at live contact zone
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
+        const localRadius = Math.max(v.width * 0.78, Math.min(v.width * 1.24, 156));
         const arcY = v.groundY - 11;
 
-        // Full 360° floor-flare fire vortex ellipse
+        // Scorching crimson-and-gold skid fire ribbon from origin tile to contact zone
+        if (slideSpan > 20) {
+          c.strokeStyle = v.color || '#ff5f38';
+          c.lineWidth = 7.2 * (1 - t * 0.35);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 5);
+          c.lineTo(farX, v.groundY - 5);
+          c.stroke();
+
+          c.strokeStyle = v.accent || '#fde047';
+          c.lineWidth = 2.8 * (1 - t * 0.4);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 6);
+          c.lineTo(farX, v.groundY - 6);
+          c.stroke();
+
+          const trailEmbers = Math.min(12, Math.max(5, Math.round(slideSpan / 38)));
+          for (let te = 0; te < trailEmbers; te++) {
+            const ef = te / Math.max(1, trailEmbers - 1);
+            const ex = originX + (farX - originX) * ef;
+            const ey = v.groundY - 6 - t * (16 + (te % 4) * 9) - Math.sin(ef * Math.PI * 3 + t * 8) * 5;
+            c.fillStyle = te % 2 === 0 ? '#fde047' : '#ff4d2e';
+            c.beginPath();
+            c.arc(ex, ey, Math.max(1.2, 3.6 * (1 - t * 0.55)), 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+
+        // Full 360° floor-flare fire vortex ellipse tracking Ken's spinning body at contact
         c.strokeStyle = v.color || '#ff5f38';
         c.lineWidth = 8.5 * (1 - t * 0.28);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 22, arcY, reachRadius, 28, 0, 0, Math.PI * 2);
+        c.ellipse(v.x + v.facingSign * 18, arcY, localRadius, 26, 0, 0, Math.PI * 2);
         c.stroke();
 
         c.strokeStyle = v.accent || '#fde047';
         c.lineWidth = 3.6;
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 22, arcY, reachRadius * 0.92, 20, 0, 0, Math.PI * 2);
+        c.ellipse(v.x + v.facingSign * 18, arcY, localRadius * 0.90, 18, 0, 0, Math.PI * 2);
         c.stroke();
 
-        // Orbiting flame tongues & flying cinders along the sweep arc
+        // Orbiting flame tongues & flying cinders around Ken's flare spin
         for (let e = 0; e < 10; e++) {
-          const ang = (e / 10) * Math.PI * 2 + t * 5.2 * v.facingSign;
-          const ex = v.x + v.facingSign * 22 + Math.cos(ang) * reachRadius * (0.65 + 0.35 * t);
-          const ey = arcY + Math.sin(ang) * 24 - t * 18;
+          const ang = (e / 10) * Math.PI * 2 + t * 5.6 * v.facingSign;
+          const ex = v.x + v.facingSign * 18 + Math.cos(ang) * localRadius * (0.68 + 0.32 * t);
+          const ey = arcY + Math.sin(ang) * 22 - t * 18;
           c.fillStyle = e % 2 === 0 ? '#fde047' : '#ff4d2e';
           c.beginPath();
           c.arc(ex, ey, 3.8 * (1 - t * 0.5), 0, Math.PI * 2);
@@ -3102,11 +3273,12 @@ const StandeeStage = (() => {
       return;
     }
 
-    const dt = lastTimeMs > 0 ? Math.min(0.05, Math.max(0.001, (nowMs - lastTimeMs) / 1000)) : (1 / 60);
+    const rawDt = lastTimeMs > 0 ? Math.max(0.001, (nowMs - lastTimeMs) / 1000) : (1 / 60);
+    const dt = Math.min(0.16, rawDt);
     lastTimeMs = nowMs;
     stageClockSec += dt;
 
-    syncDomMetrics();
+    syncDomMetrics(false);
 
     // Update decaying afterimages
     for (let i = afterimages.length - 1; i >= 0; i--) {
@@ -3170,8 +3342,11 @@ const StandeeStage = (() => {
     if (!f || !f.active || typeof resolveStandeeChoreography !== 'function') return null;
     const opp = fighters[pid === 'p1' ? 'p2' : 'p1'];
     const distPx = (opp && opp.active) ? Math.abs(opp.x - f.x) : 0;
+    const distSpaces = (opp && opp.active) ? Math.max(1, Math.abs((f.space || 0) - (opp.space || 0))) : 1;
     const mergedCtx = {
       exceeded: !!f.exceeded,
+      rangeSpaces: distSpaces,
+      distanceToTargetPx: distPx,
       ...ctx,
     };
     const choreo = resolveStandeeChoreography(f.charKey, cardKey, stepKind, mergedCtx);
@@ -3220,6 +3395,7 @@ const StandeeStage = (() => {
         activeBoostCount: fighters.p1.activeBoostCount,
         auraFlare: fighters.p1.auraFlare,
         x: fighters.p1.x,
+        lungeOffsetX: computeFighterLungeOffsetX(fighters.p1),
         groundY: fighters.p1.groundY,
         pose: fighters.p1.choreo && fighters.p1.choreo.poseKind,
         additivePose: fighters.p1.additiveChoreo && fighters.p1.additiveChoreo.poseKind,
@@ -3232,6 +3408,7 @@ const StandeeStage = (() => {
         activeBoostCount: fighters.p2.activeBoostCount,
         auraFlare: fighters.p2.auraFlare,
         x: fighters.p2.x,
+        lungeOffsetX: computeFighterLungeOffsetX(fighters.p2),
         groundY: fighters.p2.groundY,
         pose: fighters.p2.choreo && fighters.p2.choreo.poseKind,
         additivePose: fighters.p2.additiveChoreo && fighters.p2.additiveChoreo.poseKind,

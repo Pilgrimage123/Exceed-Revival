@@ -198,17 +198,19 @@ const StrikePlaybackController = (() => {
       activeStepIdx++;
       if (activeStepIdx < tl.length) {
         const reduced = typeof UXSettings !== 'undefined' && UXSettings.get && UXSettings.get('reducedHitStop');
-        let delay = 280;
+        let delay = 260;
         if (step.confirmedLethal && !reduced) {
-          delay = 850;
+          delay = 900;
         } else if (!reduced) {
           const prevStep = activeStepIdx >= 2 ? tl[activeStepIdx - 2] : null;
           const moved = prevStep && (prevStep.p1Pos !== step.p1Pos || prevStep.p2Pos !== step.p2Pos);
-          if (step.phase === 'reveal') delay = 400;
-          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 440 : 280;
-          else if (step.phase === 'range' && step.hitLanded === false) delay = 400;
-          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 460 : 380;
-          else if (step.phase === 'stunned') delay = 440;
+          const stepDist = (step.p1Pos != null && step.p2Pos != null) ? Math.abs(step.p1Pos - step.p2Pos) : 1;
+          if (step.phase === 'reveal') delay = 420;
+          else if (step.phase === 'before') delay = moved ? 480 : 140;
+          else if (step.phase === 'after') delay = moved ? 740 : 180;
+          else if (step.phase === 'range') delay = step.hitLanded === false ? 720 : 120;
+          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? (stepDist >= 3 ? 960 : 840) : 660;
+          else if (step.phase === 'stunned') delay = 480;
         }
         timer = setTimeout(advance, delay);
       } else {
@@ -220,7 +222,7 @@ const StrikePlaybackController = (() => {
             EventBus.emit('OnStrikePlaybackEnd', { skipped: false });
           }
           if (cb) cb();
-        }, 350);
+        }, 420);
       }
     };
 

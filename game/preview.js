@@ -462,6 +462,9 @@ const SimulateStrikePreview = (() => {
 
     const ultraCost = (card.type === 'ultra' && !gaugeCostsAreFree(simMe)) ? (card.gaugeCost || 0) : 0;
     const availableGaugeForCrit = Math.max(0, simMe.gauge.length - ultraCost);
+    const rawHandCount = Array.isArray(mePub.handKeys) ? mePub.handKeys.filter(k => k === rawCard.key).length : 0;
+    const invalidStrikeCard = !!(char && char.invalidStrikeCard && char.invalidStrikeCard(simMe, rawCard));
+    const canPreviewEX = !invalidStrikeCard && rawHandCount >= 2 && (rawCard.type !== 'ultra' || simMe.gauge.length >= ultraCost);
     const criticalFree = hasFreeCriticalBoost(simMe);
     const hasCritEffect = !!(
       card.critical ||
@@ -986,6 +989,7 @@ const SimulateStrikePreview = (() => {
       cardName: card.name || card.key,
       cardType: card.type || 'normal',
       isEX,
+      canPreviewEX,
       isInitiator,
       criticalActive,
       criticalFree,
@@ -1068,9 +1072,11 @@ const PreviewMemo = (() => {
     for (const c of (handCards || [])) counts[c.key] = (counts[c.key] || 0) + 1;
 
     for (const c of (handCards || [])) {
-      const canPlay = !engine || !player || (typeof engine.canPayUltra !== 'function' || c.type !== 'ultra' || engine.canPayUltra(player, c));
+      const validStrike = !engine || !player || typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(player, c);
+      const canPayUltra = !engine || !player || (typeof engine.canPayUltra !== 'function' || c.type !== 'ultra' || engine.canPayUltra(player, c));
+      const canPlay = validStrike && canPayUltra;
       const base = canPlay ? SimulateStrikePreview.run(infoSet, c, { isEX: false, isInitiator }) : null;
-      const exPlayable = counts[c.key] >= 2 && (!engine || !player || c.type !== 'ultra' || (typeof engine.canPayUltra === 'function' ? engine.canPayUltra(player, c) : true));
+      const exPlayable = validStrike && counts[c.key] >= 2 && canPayUltra;
       const ex = exPlayable ? SimulateStrikePreview.run(infoSet, c, { isEX: true, isInitiator }) : null;
       next.set(c.uid || c.key, { base, ex, canPlay, exPlayable });
     }
@@ -1140,7 +1146,18 @@ const StrikePreviewController = (() => {
     });
     EventBus.on('OnToggleEXMode', (payload) => {
       if (!activeHover) return;
-      activeHover.isEX = payload && typeof payload.isEX === 'boolean' ? payload.isEX : !activeHover.isEX;
+      const desired = payload && typeof payload.isEX === 'boolean' ? payload.isEX : !activeHover.isEX;
+      if (desired && typeof G !== 'undefined' && G && G.engine && typeof G.human === 'function') {
+        const human = G.human();
+        const card = activeHover.card;
+        if (human && card) {
+          const hasDup = human.hand.filter(c => c.key === card.key).length >= 2;
+          const valid = typeof G.engine.isValidStrikeCard !== 'function' || G.engine.isValidStrikeCard(human, card);
+          const canPayUltra = card.type !== 'ultra' || typeof G.engine.canPayUltra !== 'function' || G.engine.canPayUltra(human, card);
+          if (!hasDup || !valid || !canPayUltra) return;
+        }
+      }
+      activeHover.isEX = desired;
       refresh();
     });
     EventBus.on('OnToggleOptionalBranch', (payload) => {

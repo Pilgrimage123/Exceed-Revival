@@ -1980,7 +1980,7 @@ class Engine {
       const avail = this.gaugeCount(player);
       if (avail < cost) {
         this.logMsg(`${player.name}'s ${card.name} is INVALID (can't pay ${cost} Gauge) \u2014 must Wild Swing.`, 'immune', player.id);
-        player.discard.push(card);
+        player.discard.push(card._baseCard || card);
         const rs = this.resolveStrikeCardSelection(player, { type: 'wildswing' });
         if (!rs) return false;
         if (player.id === A.id) { aCard = rs.card; attackerSel.card = rs.card; attackerSel.fromWildSwing = true; }
@@ -2791,7 +2791,7 @@ class Engine {
               effectiveGuard: grd,
             });
             engine.logMsg(`${defender.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${defCard.name} is discarded.`, 'stun', defender.id);
-            defender.discard.push(defCard);
+            defender.discard.push(defCard._baseCard || defCard);
           } else if (dmg > grd && stunImmune) {
             engine.logMsg(`${defender.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', defender.id);
           }
@@ -2849,7 +2849,7 @@ class Engine {
         if (attCard.boost.nowDraw) engine.draw(attacker, attCard.boost.nowDraw);
         if (attCard.boost.nowClose) engine.closeSelf(attacker, defender, attCard.boost.nowClose);
         if (attCard.boost.resolve) attCard.boost.resolve(boostCtx);
-        attacker.boostsInPlay.push({ card: attCard, ownerId: attacker.id, sustainedForever: true });
+        attacker.boostsInPlay.push({ card: attCard._baseCard || attCard, ownerId: attacker.id, sustainedForever: true });
         engine.logMsg(`${attacker.name}'s ${attCard.name} is played as its own Boost and sustained.`, 'boost', attacker.id);
         ctx.attackGoesToGauge = false; // stays in boostsInPlay, not gauge/discard
       }
@@ -2887,10 +2887,11 @@ class Engine {
       const recordDest = (dest) => recordStrikeEvent({
         type: 'cleanup', playerId: player.id, cardName: card.name, dest,
       });
+      const baseCard = card._baseCard || card;
       // Happy Chaos's "After: Seal this" cards go to his sealed area instead of the
       // discard/Gauge — the whole point of his deck is that they come back in bulk later.
       if (card.sealAfterUse) {
-        player.sealedCards.push(card);
+        player.sealedCards.push(baseCard);
         this.logMsg(`${player.name}'s ${card.name} is sealed.`, 'seal', player.id);
         recordDest('sealed');
         return;
@@ -2898,17 +2899,17 @@ class Engine {
       // Deus Ex Machina "never leaves play and cannot be added to your Gauge" — it is
       // not a deck card at all, so it simply ceases to exist after the Strike it was set in.
       if (card.neverLeavesPlay) { recordDest('inplay'); return; }
-      if (card.hooks && card.hooks.goesToGaugeEvenOnMiss) { player.gauge.push(card); recordDest('gauge'); return; }
-      if (ctx && ctx.hitLanded && ctx.attackGoesToGauge !== false) { player.gauge.push(card); recordDest('gauge'); }
+      if (card.hooks && card.hooks.goesToGaugeEvenOnMiss) { player.gauge.push(baseCard); recordDest('gauge'); return; }
+      if (ctx && ctx.hitLanded && ctx.attackGoesToGauge !== false) { player.gauge.push(baseCard); recordDest('gauge'); }
       else if (ctx && ctx.hitLanded && ctx.attackGoesToGauge === false) {
         // Two different cards clear attackGoesToGauge for two different reasons —
         // Hadoken recycles itself to the top of the deck, while a
         // selfBoostAndSustainAfterHit card stays on the table as its own Boost — so
         // the destination is read off where the card actually is now, not assumed.
-        recordDest(player.boostsInPlay.some(b => b.card === card) ? 'inplay' : 'deck');
+        recordDest(player.boostsInPlay.some(b => b.card === baseCard || b.card === card) ? 'inplay' : 'deck');
       }
       else {
-        player.discard.push(card);
+        player.discard.push(baseCard);
         this.logMsg(`${player.name}'s ${card.name} is discarded (missed).`, 'discard', player.id);
         recordDest('discard');
       }

@@ -2101,9 +2101,7 @@ class GameController {
         aSel.faceUp = chooseFaceUp({ card: aSel.card, myExceeded: player.exceeded, myCharacterKey: player.characterKey, rng: Math.random, randomness: this.randomness });
       }
       this.pendingAiAttack = aSel;
-      const rc = this.engine.readingConstraintFor(opp);
-      const forced = rc ? opp.hand.find(c => c.key === rc.namedKey) : null;
-      this.sel = forced ? { forcedUid: forced.uid, forcedName: forced.name } : {};
+      this.setupDefendConstraints(player, opp);
       this.mode = 'defend_select';
       render();
       return;
@@ -2216,6 +2214,12 @@ class GameController {
     }
     this.pendingAiAttack = aSel;
 
+    this.setupDefendConstraints(player, human);
+    this.mode = 'defend_select';
+    render();
+  }
+
+  setupDefendConstraints(attacker, defender) {
     // Reading constraint on the HUMAN (defender) if the AI boosted Focus naming a card
     const reading = this.engine.consumeReading();
     this.sel = {};
@@ -2224,30 +2228,39 @@ class GameController {
     // active, this OVERRIDES the Reading branch below entirely: Reading forces
     // a specific HAND card, which is meaningless if hand cards aren't a legal
     // choice at all right now.
-    if (this.engine.mustWildSwing(player, human)) {
+    if (this.engine.mustWildSwing(attacker, defender)) {
       this.log(`CPU's Focus forces you to respond with a Wild Swing.`);
       this.sel = { forcedWildSwingOnly: true };
     } else if (reading && reading.boosterId === this.aiId) {
-      const human2 = this.human();
-      const forced = human2.hand.find(c => c.key === reading.cardKey);
-      if (forced) {
+      const matches = defender.hand.filter(c => c.key === reading.cardKey);
+      if (matches.length > 0) {
+        const forced = matches[0];
         this.log(`CPU's Reading names ${cardNameForKey(reading.cardKey)} — you must defend with it if you have it.`);
-        this.sel = { forcedUid: forced.uid, forcedName: forced.name };
+        this.sel = { forcedKey: reading.cardKey, forcedUid: forced.uid, forcedName: forced.name };
       } else {
         this.log(`CPU's Reading names ${cardNameForKey(reading.cardKey)} — you don't have it, your hand is revealed but you may defend freely.`);
-        this.engine.recordHandReveal(human2);
+        this.engine.recordHandReveal(defender);
       }
     }
-    this.mode = 'defend_select';
-    render();
   }
 
   humanDefend(choice) {
     const human = this.human(), aiP = this.ai();
     if (this.sel && this.sel.forcedWildSwingOnly) {
       if (choice.type !== 'wildswing') return; // ignore illegal picks while forced
-    } else if (this.sel && this.sel.forcedUid) {
-      if (!(choice.type === 'hand' && choice.uid === this.sel.forcedUid)) return; // ignore illegal picks while forced
+    } else if (this.sel && (this.sel.forcedKey || this.sel.forcedUid)) {
+      const forcedCard = this.sel.forcedUid ? human.hand.find(c => c.uid === this.sel.forcedUid) : null;
+      const forcedKey = this.sel.forcedKey || (forcedCard && forcedCard.key) || null;
+      if (choice.type === 'hand') {
+        const picked = human.hand.find(c => c.uid === choice.uid);
+        if (!picked || (forcedKey ? picked.key !== forcedKey : picked.uid !== this.sel.forcedUid)) return;
+      } else if (choice.type === 'ex') {
+        const c1 = human.hand.find(c => c.uid === choice.uid1);
+        const c2 = human.hand.find(c => c.uid === choice.uid2 && c.uid !== choice.uid1);
+        if (!forcedKey || !c1 || !c2 || c1.key !== forcedKey || c2.key !== forcedKey) return;
+      } else {
+        return; // ignore illegal picks (e.g. Wild Swing) while forced
+      }
     }
     const dSel = this.engine.resolveStrikeCardSelection(human, choice);
     if (!dSel) {
@@ -2385,7 +2398,8 @@ class GameController {
     const isHumanTurn = !!(this.engine && this.engine.active === this.humanId && !this.engine.gameOver);
     const canQuickPlay = !!(inHand && isHumanTurn && this.mode === 'awaiting_action');
     const canPayUltra = !!(baseCard.type !== 'ultra' || (this.engine && human && this.engine.canPayUltra(human, baseCard)));
-    const hasExPair = !!(inHand && human && human.hand.filter(c => c.key === baseCard.key).length >= 2 && canPayUltra);
+    const isValidStrike = !!(this.engine && human && (typeof this.engine.isValidStrikeCard !== 'function' || this.engine.isValidStrikeCard(human, baseCard)));
+    const hasExPair = !!(inHand && human && human.hand.filter(c => c.key === baseCard.key).length >= 2 && canPayUltra && isValidStrike);
     const boostForce = (baseCard.boost && baseCard.boost.force) || 0;
     const canPayBoost = !!(baseCard.boost && (boostForce === 0 || (this.engine && human && this.engine.canPayForce(human, boostForce, baseCard.uid))));
     this.cardModal = {
@@ -2396,6 +2410,7 @@ class GameController {
       sourceLabel: opts.sourceLabel || (inHand ? 'In Hand' : 'Card Reference'),
       canQuickPlay,
       canPayUltra,
+      isValidStrike,
       hasExPair,
       canPayBoost,
     };
@@ -2613,6 +2628,7 @@ class GameController {
     const card = p.hand.find(c => c.uid === uid);
     if (!card) return;
     if (actionType === 'strike') {
+      if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, card)) { render(); return; }
       this.mode = 'strike_select';
       this.pickStrikeCard(uid);
     } else if (actionType === 'boost') {
@@ -2620,6 +2636,8 @@ class GameController {
       this.mode = 'boost_select';
       this.pickBoostCard(uid);
     } else if (actionType === 'ex') {
+      if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, card)) { render(); return; }
+      if (card.type === 'ultra' && typeof this.engine.canPayUltra === 'function' && !this.engine.canPayUltra(p, card)) { render(); return; }
       const other = p.hand.find(c => c.key === card.key && c.uid !== uid);
       if (other) {
         this.mode = 'strike_select';
@@ -2649,6 +2667,7 @@ class GameController {
     const c1 = p.hand.find(c => c.uid === uid1);
     const c2 = uid2 ? p.hand.find(c => c.uid === uid2 && c.uid !== uid1) : p.hand.find(c => c.key === (c1 && c.key) && c.uid !== uid1);
     if (!c1 || !c2 || c1.key !== c2.key) return;
+    if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, c1)) return;
     if (c1.type === 'ultra' && typeof this.engine.canPayUltra === 'function' && !this.engine.canPayUltra(p, c1)) return;
     this.selectedActionCardUid = null;
     this.mode = 'strike_select';

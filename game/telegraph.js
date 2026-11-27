@@ -374,6 +374,7 @@ const ClashSummaryBanner = (() => {
     const hasOpt = Array.isArray(preview.optionalBranches) && preview.optionalBranches.length > 0;
     const optActive = !!(hoverMeta && hoverMeta.useOptionalBranch);
     const exActive = !!(preview.isEX || (hoverMeta && hoverMeta.isEX));
+    const canPreviewEX = !!preview.canPreviewEX;
     const critActive = !!preview.criticalActive;
     const critFree = !!preview.criticalFree;
     const canPreviewCrit = !!preview.canPreviewCritical;
@@ -418,6 +419,9 @@ const ClashSummaryBanner = (() => {
     }
 
     const exPill = exActive ? '<span class="clash-pill ex">EX +1</span>' : '';
+    const exToggle = canPreviewEX
+      ? `<button type="button" class="clash-toggle ex-toggle ${exActive ? 'active' : ''}" onclick="EventBus.emit('OnToggleEXMode', {})" title="Toggle EX preview (E)">[E] EX +1</button>`
+      : '';
     const critPill = critFree
       ? '<span class="clash-pill crit" title="Free Critical from active Boost">CRIT (Free)</span>'
       : (critActive ? '<span class="clash-pill crit">CRIT</span>' : '');
@@ -465,11 +469,11 @@ const ClashSummaryBanner = (() => {
       ? '<span class="clash-pill guard-break">Breaks GRD</span>'
       : '';
 
-    const hasDetailRow = !preview.hasStochasticVariance || moveBits.length > 0 || canPreviewCrit || hasOpt;
+    const hasDetailRow = !preview.hasStochasticVariance || moveBits.length > 0 || canPreviewEX || canPreviewCrit || hasOpt;
     const detailRow = hasDetailRow
       ? `<div class="clash-detail-row">
           <div class="clash-detail-left">${!preview.hasStochasticVariance ? distPart : ''}${movePart}${effectsPart}</div>
-          ${(critToggle || optPill) ? `<div class="clash-detail-right">${critToggle}${optPill}</div>` : ''}
+          ${(exToggle || critToggle || optPill) ? `<div class="clash-detail-right">${exToggle}${critToggle}${optPill}</div>` : ''}
         </div>`
       : '';
 

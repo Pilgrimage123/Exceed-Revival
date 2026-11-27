@@ -1040,6 +1040,8 @@
   .clash-toggle.active{background:var(--you);color:#0f1218;}
   .clash-toggle.crit-toggle{border-color:#f7c65a;background:rgba(247,198,90,.12);color:#f7c65a;}
   .clash-toggle.crit-toggle.active{background:#f7c65a;color:#0f1218;}
+  .clash-toggle.ex-toggle{border-color:#ff9f43;background:rgba(255,159,67,.14);color:#ffd180;}
+  .clash-toggle.ex-toggle.active{background:#ff9f43;color:#0f1218;}
   .tag-ignore{font-style:normal;font-size:10px;font-weight:800;color:#f7c65a;margin-left:4px;}
 
   .life-bar-track{position:relative;overflow:hidden;}
@@ -12350,7 +12352,7 @@ class Engine {
       const avail = this.gaugeCount(player);
       if (avail < cost) {
         this.logMsg(`${player.name}'s ${card.name} is INVALID (can't pay ${cost} Gauge) \u2014 must Wild Swing.`, 'immune', player.id);
-        player.discard.push(card);
+        player.discard.push(card._baseCard || card);
         const rs = this.resolveStrikeCardSelection(player, { type: 'wildswing' });
         if (!rs) return false;
         if (player.id === A.id) { aCard = rs.card; attackerSel.card = rs.card; attackerSel.fromWildSwing = true; }
@@ -13161,7 +13163,7 @@ class Engine {
               effectiveGuard: grd,
             });
             engine.logMsg(`${defender.name} is STUNNED (took ${dmg} > Guard ${grd}) \u2014 their ${defCard.name} is discarded.`, 'stun', defender.id);
-            defender.discard.push(defCard);
+            defender.discard.push(defCard._baseCard || defCard);
           } else if (dmg > grd && stunImmune) {
             engine.logMsg(`${defender.name} would be Stunned (took ${dmg} > Guard ${grd}) but is immune this Strike.`, 'immune', defender.id);
           }
@@ -13219,7 +13221,7 @@ class Engine {
         if (attCard.boost.nowDraw) engine.draw(attacker, attCard.boost.nowDraw);
         if (attCard.boost.nowClose) engine.closeSelf(attacker, defender, attCard.boost.nowClose);
         if (attCard.boost.resolve) attCard.boost.resolve(boostCtx);
-        attacker.boostsInPlay.push({ card: attCard, ownerId: attacker.id, sustainedForever: true });
+        attacker.boostsInPlay.push({ card: attCard._baseCard || attCard, ownerId: attacker.id, sustainedForever: true });
         engine.logMsg(`${attacker.name}'s ${attCard.name} is played as its own Boost and sustained.`, 'boost', attacker.id);
         ctx.attackGoesToGauge = false; // stays in boostsInPlay, not gauge/discard
       }
@@ -13257,10 +13259,11 @@ class Engine {
       const recordDest = (dest) => recordStrikeEvent({
         type: 'cleanup', playerId: player.id, cardName: card.name, dest,
       });
+      const baseCard = card._baseCard || card;
       // Happy Chaos's "After: Seal this" cards go to his sealed area instead of the
       // discard/Gauge — the whole point of his deck is that they come back in bulk later.
       if (card.sealAfterUse) {
-        player.sealedCards.push(card);
+        player.sealedCards.push(baseCard);
         this.logMsg(`${player.name}'s ${card.name} is sealed.`, 'seal', player.id);
         recordDest('sealed');
         return;
@@ -13268,17 +13271,17 @@ class Engine {
       // Deus Ex Machina "never leaves play and cannot be added to your Gauge" — it is
       // not a deck card at all, so it simply ceases to exist after the Strike it was set in.
       if (card.neverLeavesPlay) { recordDest('inplay'); return; }
-      if (card.hooks && card.hooks.goesToGaugeEvenOnMiss) { player.gauge.push(card); recordDest('gauge'); return; }
-      if (ctx && ctx.hitLanded && ctx.attackGoesToGauge !== false) { player.gauge.push(card); recordDest('gauge'); }
+      if (card.hooks && card.hooks.goesToGaugeEvenOnMiss) { player.gauge.push(baseCard); recordDest('gauge'); return; }
+      if (ctx && ctx.hitLanded && ctx.attackGoesToGauge !== false) { player.gauge.push(baseCard); recordDest('gauge'); }
       else if (ctx && ctx.hitLanded && ctx.attackGoesToGauge === false) {
         // Two different cards clear attackGoesToGauge for two different reasons —
         // Hadoken recycles itself to the top of the deck, while a
         // selfBoostAndSustainAfterHit card stays on the table as its own Boost — so
         // the destination is read off where the card actually is now, not assumed.
-        recordDest(player.boostsInPlay.some(b => b.card === card) ? 'inplay' : 'deck');
+        recordDest(player.boostsInPlay.some(b => b.card === baseCard || b.card === card) ? 'inplay' : 'deck');
       }
       else {
-        player.discard.push(card);
+        player.discard.push(baseCard);
         this.logMsg(`${player.name}'s ${card.name} is discarded (missed).`, 'discard', player.id);
         recordDest('discard');
       }
@@ -13999,6 +14002,9 @@ const SimulateStrikePreview = (() => {
 
     const ultraCost = (card.type === 'ultra' && !gaugeCostsAreFree(simMe)) ? (card.gaugeCost || 0) : 0;
     const availableGaugeForCrit = Math.max(0, simMe.gauge.length - ultraCost);
+    const rawHandCount = Array.isArray(mePub.handKeys) ? mePub.handKeys.filter(k => k === rawCard.key).length : 0;
+    const invalidStrikeCard = !!(char && char.invalidStrikeCard && char.invalidStrikeCard(simMe, rawCard));
+    const canPreviewEX = !invalidStrikeCard && rawHandCount >= 2 && (rawCard.type !== 'ultra' || simMe.gauge.length >= ultraCost);
     const criticalFree = hasFreeCriticalBoost(simMe);
     const hasCritEffect = !!(
       card.critical ||
@@ -14523,6 +14529,7 @@ const SimulateStrikePreview = (() => {
       cardName: card.name || card.key,
       cardType: card.type || 'normal',
       isEX,
+      canPreviewEX,
       isInitiator,
       criticalActive,
       criticalFree,
@@ -14605,9 +14612,11 @@ const PreviewMemo = (() => {
     for (const c of (handCards || [])) counts[c.key] = (counts[c.key] || 0) + 1;
 
     for (const c of (handCards || [])) {
-      const canPlay = !engine || !player || (typeof engine.canPayUltra !== 'function' || c.type !== 'ultra' || engine.canPayUltra(player, c));
+      const validStrike = !engine || !player || typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(player, c);
+      const canPayUltra = !engine || !player || (typeof engine.canPayUltra !== 'function' || c.type !== 'ultra' || engine.canPayUltra(player, c));
+      const canPlay = validStrike && canPayUltra;
       const base = canPlay ? SimulateStrikePreview.run(infoSet, c, { isEX: false, isInitiator }) : null;
-      const exPlayable = counts[c.key] >= 2 && (!engine || !player || c.type !== 'ultra' || (typeof engine.canPayUltra === 'function' ? engine.canPayUltra(player, c) : true));
+      const exPlayable = validStrike && counts[c.key] >= 2 && canPayUltra;
       const ex = exPlayable ? SimulateStrikePreview.run(infoSet, c, { isEX: true, isInitiator }) : null;
       next.set(c.uid || c.key, { base, ex, canPlay, exPlayable });
     }
@@ -14677,7 +14686,18 @@ const StrikePreviewController = (() => {
     });
     EventBus.on('OnToggleEXMode', (payload) => {
       if (!activeHover) return;
-      activeHover.isEX = payload && typeof payload.isEX === 'boolean' ? payload.isEX : !activeHover.isEX;
+      const desired = payload && typeof payload.isEX === 'boolean' ? payload.isEX : !activeHover.isEX;
+      if (desired && typeof G !== 'undefined' && G && G.engine && typeof G.human === 'function') {
+        const human = G.human();
+        const card = activeHover.card;
+        if (human && card) {
+          const hasDup = human.hand.filter(c => c.key === card.key).length >= 2;
+          const valid = typeof G.engine.isValidStrikeCard !== 'function' || G.engine.isValidStrikeCard(human, card);
+          const canPayUltra = card.type !== 'ultra' || typeof G.engine.canPayUltra !== 'function' || G.engine.canPayUltra(human, card);
+          if (!hasDup || !valid || !canPayUltra) return;
+        }
+      }
+      activeHover.isEX = desired;
       refresh();
     });
     EventBus.on('OnToggleOptionalBranch', (payload) => {
@@ -19841,9 +19861,7 @@ class GameController {
         aSel.faceUp = chooseFaceUp({ card: aSel.card, myExceeded: player.exceeded, myCharacterKey: player.characterKey, rng: Math.random, randomness: this.randomness });
       }
       this.pendingAiAttack = aSel;
-      const rc = this.engine.readingConstraintFor(opp);
-      const forced = rc ? opp.hand.find(c => c.key === rc.namedKey) : null;
-      this.sel = forced ? { forcedUid: forced.uid, forcedName: forced.name } : {};
+      this.setupDefendConstraints(player, opp);
       this.mode = 'defend_select';
       render();
       return;
@@ -19956,6 +19974,12 @@ class GameController {
     }
     this.pendingAiAttack = aSel;
 
+    this.setupDefendConstraints(player, human);
+    this.mode = 'defend_select';
+    render();
+  }
+
+  setupDefendConstraints(attacker, defender) {
     // Reading constraint on the HUMAN (defender) if the AI boosted Focus naming a card
     const reading = this.engine.consumeReading();
     this.sel = {};
@@ -19964,30 +19988,39 @@ class GameController {
     // active, this OVERRIDES the Reading branch below entirely: Reading forces
     // a specific HAND card, which is meaningless if hand cards aren't a legal
     // choice at all right now.
-    if (this.engine.mustWildSwing(player, human)) {
+    if (this.engine.mustWildSwing(attacker, defender)) {
       this.log(`CPU's Focus forces you to respond with a Wild Swing.`);
       this.sel = { forcedWildSwingOnly: true };
     } else if (reading && reading.boosterId === this.aiId) {
-      const human2 = this.human();
-      const forced = human2.hand.find(c => c.key === reading.cardKey);
-      if (forced) {
+      const matches = defender.hand.filter(c => c.key === reading.cardKey);
+      if (matches.length > 0) {
+        const forced = matches[0];
         this.log(`CPU's Reading names ${cardNameForKey(reading.cardKey)} — you must defend with it if you have it.`);
-        this.sel = { forcedUid: forced.uid, forcedName: forced.name };
+        this.sel = { forcedKey: reading.cardKey, forcedUid: forced.uid, forcedName: forced.name };
       } else {
         this.log(`CPU's Reading names ${cardNameForKey(reading.cardKey)} — you don't have it, your hand is revealed but you may defend freely.`);
-        this.engine.recordHandReveal(human2);
+        this.engine.recordHandReveal(defender);
       }
     }
-    this.mode = 'defend_select';
-    render();
   }
 
   humanDefend(choice) {
     const human = this.human(), aiP = this.ai();
     if (this.sel && this.sel.forcedWildSwingOnly) {
       if (choice.type !== 'wildswing') return; // ignore illegal picks while forced
-    } else if (this.sel && this.sel.forcedUid) {
-      if (!(choice.type === 'hand' && choice.uid === this.sel.forcedUid)) return; // ignore illegal picks while forced
+    } else if (this.sel && (this.sel.forcedKey || this.sel.forcedUid)) {
+      const forcedCard = this.sel.forcedUid ? human.hand.find(c => c.uid === this.sel.forcedUid) : null;
+      const forcedKey = this.sel.forcedKey || (forcedCard && forcedCard.key) || null;
+      if (choice.type === 'hand') {
+        const picked = human.hand.find(c => c.uid === choice.uid);
+        if (!picked || (forcedKey ? picked.key !== forcedKey : picked.uid !== this.sel.forcedUid)) return;
+      } else if (choice.type === 'ex') {
+        const c1 = human.hand.find(c => c.uid === choice.uid1);
+        const c2 = human.hand.find(c => c.uid === choice.uid2 && c.uid !== choice.uid1);
+        if (!forcedKey || !c1 || !c2 || c1.key !== forcedKey || c2.key !== forcedKey) return;
+      } else {
+        return; // ignore illegal picks (e.g. Wild Swing) while forced
+      }
     }
     const dSel = this.engine.resolveStrikeCardSelection(human, choice);
     if (!dSel) {
@@ -20125,7 +20158,8 @@ class GameController {
     const isHumanTurn = !!(this.engine && this.engine.active === this.humanId && !this.engine.gameOver);
     const canQuickPlay = !!(inHand && isHumanTurn && this.mode === 'awaiting_action');
     const canPayUltra = !!(baseCard.type !== 'ultra' || (this.engine && human && this.engine.canPayUltra(human, baseCard)));
-    const hasExPair = !!(inHand && human && human.hand.filter(c => c.key === baseCard.key).length >= 2 && canPayUltra);
+    const isValidStrike = !!(this.engine && human && (typeof this.engine.isValidStrikeCard !== 'function' || this.engine.isValidStrikeCard(human, baseCard)));
+    const hasExPair = !!(inHand && human && human.hand.filter(c => c.key === baseCard.key).length >= 2 && canPayUltra && isValidStrike);
     const boostForce = (baseCard.boost && baseCard.boost.force) || 0;
     const canPayBoost = !!(baseCard.boost && (boostForce === 0 || (this.engine && human && this.engine.canPayForce(human, boostForce, baseCard.uid))));
     this.cardModal = {
@@ -20136,6 +20170,7 @@ class GameController {
       sourceLabel: opts.sourceLabel || (inHand ? 'In Hand' : 'Card Reference'),
       canQuickPlay,
       canPayUltra,
+      isValidStrike,
       hasExPair,
       canPayBoost,
     };
@@ -20353,6 +20388,7 @@ class GameController {
     const card = p.hand.find(c => c.uid === uid);
     if (!card) return;
     if (actionType === 'strike') {
+      if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, card)) { render(); return; }
       this.mode = 'strike_select';
       this.pickStrikeCard(uid);
     } else if (actionType === 'boost') {
@@ -20360,6 +20396,8 @@ class GameController {
       this.mode = 'boost_select';
       this.pickBoostCard(uid);
     } else if (actionType === 'ex') {
+      if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, card)) { render(); return; }
+      if (card.type === 'ultra' && typeof this.engine.canPayUltra === 'function' && !this.engine.canPayUltra(p, card)) { render(); return; }
       const other = p.hand.find(c => c.key === card.key && c.uid !== uid);
       if (other) {
         this.mode = 'strike_select';
@@ -20389,6 +20427,7 @@ class GameController {
     const c1 = p.hand.find(c => c.uid === uid1);
     const c2 = uid2 ? p.hand.find(c => c.uid === uid2 && c.uid !== uid1) : p.hand.find(c => c.key === (c1 && c.key) && c.uid !== uid1);
     if (!c1 || !c2 || c1.key !== c2.key) return;
+    if (typeof this.engine.isValidStrikeCard === 'function' && !this.engine.isValidStrikeCard(p, c1)) return;
     if (c1.type === 'ultra' && typeof this.engine.canPayUltra === 'function' && !this.engine.canPayUltra(p, c1)) return;
     this.selectedActionCardUid = null;
     this.mode = 'strike_select';
@@ -20849,6 +20888,7 @@ const ClashSummaryBanner = (() => {
     const hasOpt = Array.isArray(preview.optionalBranches) && preview.optionalBranches.length > 0;
     const optActive = !!(hoverMeta && hoverMeta.useOptionalBranch);
     const exActive = !!(preview.isEX || (hoverMeta && hoverMeta.isEX));
+    const canPreviewEX = !!preview.canPreviewEX;
     const critActive = !!preview.criticalActive;
     const critFree = !!preview.criticalFree;
     const canPreviewCrit = !!preview.canPreviewCritical;
@@ -20893,6 +20933,9 @@ const ClashSummaryBanner = (() => {
     }
 
     const exPill = exActive ? '<span class="clash-pill ex">EX +1</span>' : '';
+    const exToggle = canPreviewEX
+      ? `<button type="button" class="clash-toggle ex-toggle ${exActive ? 'active' : ''}" onclick="EventBus.emit('OnToggleEXMode', {})" title="Toggle EX preview (E)">[E] EX +1</button>`
+      : '';
     const critPill = critFree
       ? '<span class="clash-pill crit" title="Free Critical from active Boost">CRIT (Free)</span>'
       : (critActive ? '<span class="clash-pill crit">CRIT</span>' : '');
@@ -20940,11 +20983,11 @@ const ClashSummaryBanner = (() => {
       ? '<span class="clash-pill guard-break">Breaks GRD</span>'
       : '';
 
-    const hasDetailRow = !preview.hasStochasticVariance || moveBits.length > 0 || canPreviewCrit || hasOpt;
+    const hasDetailRow = !preview.hasStochasticVariance || moveBits.length > 0 || canPreviewEX || canPreviewCrit || hasOpt;
     const detailRow = hasDetailRow
       ? `<div class="clash-detail-row">
           <div class="clash-detail-left">${!preview.hasStochasticVariance ? distPart : ''}${movePart}${effectsPart}</div>
-          ${(critToggle || optPill) ? `<div class="clash-detail-right">${critToggle}${optPill}</div>` : ''}
+          ${(exToggle || critToggle || optPill) ? `<div class="clash-detail-right">${exToggle}${critToggle}${optPill}</div>` : ''}
         </div>`
       : '';
 
@@ -21177,17 +21220,19 @@ const StrikePlaybackController = (() => {
       activeStepIdx++;
       if (activeStepIdx < tl.length) {
         const reduced = typeof UXSettings !== 'undefined' && UXSettings.get && UXSettings.get('reducedHitStop');
-        let delay = 280;
+        let delay = 260;
         if (step.confirmedLethal && !reduced) {
-          delay = 850;
+          delay = 900;
         } else if (!reduced) {
           const prevStep = activeStepIdx >= 2 ? tl[activeStepIdx - 2] : null;
           const moved = prevStep && (prevStep.p1Pos !== step.p1Pos || prevStep.p2Pos !== step.p2Pos);
-          if (step.phase === 'reveal') delay = 400;
-          else if (step.phase === 'before' || step.phase === 'after') delay = moved ? 440 : 280;
-          else if (step.phase === 'range' && step.hitLanded === false) delay = 400;
-          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? 460 : 380;
-          else if (step.phase === 'stunned') delay = 440;
+          const stepDist = (step.p1Pos != null && step.p2Pos != null) ? Math.abs(step.p1Pos - step.p2Pos) : 1;
+          if (step.phase === 'reveal') delay = 420;
+          else if (step.phase === 'before') delay = moved ? 480 : 140;
+          else if (step.phase === 'after') delay = moved ? 740 : 180;
+          else if (step.phase === 'range') delay = step.hitLanded === false ? 720 : 120;
+          else if (step.phase === 'hit') delay = (step.damageDealt || 0) >= 5 ? (stepDist >= 3 ? 960 : 840) : 660;
+          else if (step.phase === 'stunned') delay = 480;
         }
         timer = setTimeout(advance, delay);
       } else {
@@ -21199,7 +21244,7 @@ const StrikePlaybackController = (() => {
             EventBus.emit('OnStrikePlaybackEnd', { skipped: false });
           }
           if (cb) cb();
-        }, 350);
+        }, 420);
       }
     };
 
@@ -25063,6 +25108,17 @@ const FIGHTER_STANDEES = {
           head: { normX: 0.37, h: 0.76 },
         },
       },
+      cross_windup: {
+        src: '/assets/aistudio/ryu_cross_windup.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.90, h: 0.58 },
+          rearHand: { normX: 0.42, h: 0.60 },
+          leadFoot: { normX: 0.74, h: 0.08 },
+          rearFoot: { normX: 0.11, h: 0.07 },
+          chest: { normX: 0.52, h: 0.69 },
+          head: { normX: 0.66, h: 0.85 },
+        },
+      },
       cross_strike: {
         src: '/assets/aistudio/ryu_cross.jpg',
         uvSockets: {
@@ -25077,12 +25133,12 @@ const FIGHTER_STANDEES = {
       cross_retreat: {
         src: '/assets/aistudio/ryu_backdash.jpg',
         uvSockets: {
-          leadHand: { normX: 0.86, h: 0.78 },
-          rearHand: { normX: 0.54, h: 0.78 },
-          leadFoot: { normX: 0.65, h: 0.10 },
-          rearFoot: { normX: 0.14, h: 0.07 },
-          chest: { normX: 0.48, h: 0.72 },
-          head: { normX: 0.53, h: 0.90 },
+          leadHand: { normX: 0.69, h: 0.78 },
+          rearHand: { normX: 0.52, h: 0.78 },
+          leadFoot: { normX: 0.63, h: 0.22 },
+          rearFoot: { normX: 0.12, h: 0.08 },
+          chest: { normX: 0.51, h: 0.72 },
+          head: { normX: 0.54, h: 0.90 },
         },
       },
     },
@@ -25130,6 +25186,28 @@ const FIGHTER_STANDEES = {
           rearFoot: { normX: 0.49, h: 0.28 },
           chest: { normX: 0.32, h: 0.63 },
           head: { normX: 0.18, h: 0.73 },
+        },
+      },
+      sweep_flare: {
+        src: '/assets/aistudio/ken_sweep_flare.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.58, h: 0.16 },
+          rearHand: { normX: 0.58, h: 0.81 },
+          leadFoot: { normX: 0.86, h: 0.20 },
+          rearFoot: { normX: 0.10, h: 0.26 },
+          chest: { normX: 0.55, h: 0.57 },
+          head: { normX: 0.71, h: 0.66 },
+        },
+      },
+      cross_windup: {
+        src: '/assets/aistudio/ken_cross_windup.jpg',
+        uvSockets: {
+          leadHand: { normX: 0.83, h: 0.54 },
+          rearHand: { normX: 0.20, h: 0.52 },
+          leadFoot: { normX: 0.82, h: 0.08 },
+          rearFoot: { normX: 0.14, h: 0.07 },
+          chest: { normX: 0.49, h: 0.70 },
+          head: { normX: 0.50, h: 0.89 },
         },
       },
       cross_strike: {
@@ -26110,12 +26188,49 @@ const StandeeRigMath = (() => {
   // Given distanceToTargetPx > 0, computes the forward lunge translation so the fighter's
   // attacking limb closes the physical gap across Range 1..3 during Startup->Active,
   // then returns smoothly to their grid space during Recovery.
-  function computeDynamicLungeOffset(u, baseLungePx, distanceToTargetPx = 0, isProjectile = false, isWhiff = false) {
+  function computeDynamicLungeOffset(u, baseLungePx, distanceToTargetPx = 0, isProjectile = false, isWhiff = false, slideReach = null) {
     const t = clamp(u, 0, 1);
     const base = baseLungePx || 0;
     if (base <= 0 && (isProjectile || distanceToTargetPx <= 0)) {
       return base * Math.sin(Math.min(1, t * 1.35) * Math.PI);
     }
+
+    // Opt-in uncapped low-slide contact profile (exclusively Ryu & Ken Sweep so Range 1-3 reaches opponent's ankles)
+    if (!isProjectile && slideReach && slideReach.enabled) {
+      const fighterW = Math.max(84, slideReach.fighterWidthPx || 148);
+      const clearanceRatio = slideReach.clearanceRatio != null ? slideReach.clearanceRatio : 0.58;
+      const clearancePx = Math.max(62, fighterW * clearanceRatio);
+      const spacePx = Math.max(76, slideReach.spaceWidthPx || 145);
+      const maxContactPx = Math.max(520, spacePx * 3.45);
+      let peakLunge = Math.max(0, base);
+      if (distanceToTargetPx > 0) {
+        const contactGap = Math.max(0, distanceToTargetPx - clearancePx);
+        if (isWhiff) {
+          const whiffMaxSpaces = slideReach.whiffMaxSpaces != null ? slideReach.whiffMaxSpaces : 2.55;
+          const safeShortGap = Math.max(0, distanceToTargetPx - fighterW * 0.92);
+          peakLunge = Math.max(peakLunge, Math.min(safeShortGap, spacePx * whiffMaxSpaces));
+        } else {
+          peakLunge = Math.max(peakLunge, Math.min(maxContactPx, contactGap));
+        }
+      }
+      const peakU = clamp(slideReach.peakU != null ? slideReach.peakU : 0.18, 0.08, 0.40);
+      const holdEndU = clamp(slideReach.holdEndU != null ? slideReach.holdEndU : 0.52, peakU + 0.05, 0.85);
+      const returnEndU = clamp(slideReach.returnEndU != null ? slideReach.returnEndU : 0.95, holdEndU + 0.08, 1.0);
+      const holdDrift = slideReach.holdDrift != null ? slideReach.holdDrift : 0.04;
+      if (t < peakU) {
+        return peakLunge * quinticEase(t / peakU);
+      }
+      if (t < holdEndU) {
+        const holdT = (t - peakU) / (holdEndU - peakU);
+        return peakLunge * (1 - holdDrift * holdT);
+      }
+      if (t < returnEndU) {
+        const rec = (t - holdEndU) / (returnEndU - holdEndU);
+        return peakLunge * (1 - holdDrift) * (1 - quinticEase(rec));
+      }
+      return 0;
+    }
+
     let peakLunge = base;
     if (!isProjectile && distanceToTargetPx > 0) {
       const contactGap = Math.max(0, distanceToTargetPx - 64);
@@ -26336,22 +26451,24 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
           poseKind: 'backflip',
           frameKey: 'cross_retreat',
           frameSequence: [
-            { at: 0.0, frameKey: 'cross_retreat' },
-            { at: 0.86, frameKey: 'idle' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.10, frameKey: 'cross_retreat' },
+            { at: 0.82, frameKey: 'sweep_flare' },
+            { at: 0.93, frameKey: 'idle' },
           ],
-          durationSec: 0.44,
-          hopHeight: 34,
-          airWindow: [0.15, 0.85],
+          durationSec: 0.68,
+          hopHeight: 48,
+          airWindow: [0.10, 0.84],
           wholeSpinRad: -Math.PI * 2,
           spinPlane: 'xy',
-          spinWindow: [0.15, 0.82],
-          pelvis: { dx: -6, dy: 2, rotRad: -0.1, scaleX: 0.94 },
-          waist: { dx: -8, dy: 4, rotRad: -0.16, scaleX: 0.9 },
-          head: { dx: -10, dy: 4, rotRad: -0.22, scaleX: 0.9 },
-          springPreset: { scaleX: 0.88, scaleY: 0.86, stiffness: 340, damping: 18, landingScaleX: 1.20, landingScaleY: 0.82 },
+          spinWindow: [0.10, 0.84],
+          pelvis: { dx: -8, dy: 2, rotRad: -0.10, scaleX: 0.95 },
+          waist: { dx: -10, dy: 4, rotRad: -0.16, scaleX: 0.92 },
+          head: { dx: -10, dy: 4, rotRad: -0.20, scaleX: 0.94 },
+          springPreset: { scaleX: 0.88, scaleY: 1.14, stiffness: 350, damping: 20, landingScaleX: 1.20, landingScaleY: 0.82 },
           afterimage: isExceeded
-            ? { count: 4, spacingMs: 20, alpha: 0.42, color: '#ff5f38' }
-            : { count: 3, spacingMs: 24, alpha: 0.28, color: '#cbd5e1' },
+            ? { count: 6, spacingMs: 28, alpha: 0.46, color: '#ff5f38' }
+            : { count: 4, spacingMs: 32, alpha: 0.28, color: '#cbd5e1' },
           vfx: isExceeded
             ? { type: 'ken_backflip_fire_wheel', color: '#ff5f38', accent: '#fde047', isExceeded: true }
             : { type: 'dust', color: '#fbbf24', isExceeded: false },
@@ -26364,20 +26481,21 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         frameKey: isRyu ? 'cross_retreat' : 'idle',
         frameSequence: isRyu
           ? [
-            { at: 0.0, frameKey: 'cross_retreat' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.09, frameKey: 'cross_retreat' },
             { at: 0.84, frameKey: 'idle' },
           ]
           : null,
-        durationSec: 0.34,
-        hopHeight: reduced ? 12 : 10,
-        airWindow: [0.18, 0.82],
-        pelvis: { dx: -6, dy: 2, rotRad: 0.04, scaleX: 1 },
-        waist: { dx: 8, dy: 1, rotRad: 0.06, scaleX: 1 },
-        head: { dx: 10, dy: 0, rotRad: 0.04, scaleX: 1 },
-        springPreset: { scaleX: 1.06, scaleY: 0.94, stiffness: 420, damping: 26 },
+        durationSec: 0.60,
+        hopHeight: reduced ? 14 : 28,
+        airWindow: [0.09, 0.84],
+        pelvis: { dx: -8, dy: 2, rotRad: 0.05, scaleX: 1 },
+        waist: { dx: 8, dy: 2, rotRad: 0.07, scaleX: 1 },
+        head: { dx: 10, dy: 0, rotRad: 0.05, scaleX: 1 },
+        springPreset: { scaleX: 0.92, scaleY: 1.10, stiffness: 390, damping: 24, landingScaleX: 1.14, landingScaleY: 0.88 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 24, alpha: 0.36, color: primaryTrailColor }
-          : { count: 2, spacingMs: 32, alpha: 0.20, color: '#94a3b8' },
+          ? { count: 5, spacingMs: 28, alpha: 0.40, color: primaryTrailColor }
+          : { count: 3, spacingMs: 36, alpha: 0.24, color: '#94a3b8' },
         vfx: (isRyu && isExceeded)
           ? { type: 'ryu_backdash_ki_wake', color: '#38bdf8', accent: '#ffffff', isExceeded: true }
           : { type: 'dust', color: '#94a3b8', isExceeded: false },
@@ -26555,19 +26673,13 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
       poseKind: fromWildSwing
         ? 'wild_swing_gamble'
         : (isZangiefIronWallCard ? 'zangief_iron_wall_lock' : (isZangief && criticalPaid ? 'zangief_red_armor_coil' : 'windup')),
-      frameKey: isRyuOrKenSweep ? 'sweep_windup' : (isRyuOrKenCross ? 'cross_strike' : 'idle'),
+      frameKey: isRyuOrKenSweep ? 'sweep_windup' : (isRyuOrKenCross ? 'cross_windup' : 'idle'),
       frameSequence: isRyuOrKenSweep
-        ? [
-          { at: 0.0, frameKey: 'idle' },
-          { at: 0.14, frameKey: 'sweep_windup' },
-        ]
+        ? [{ at: 0.0, frameKey: 'sweep_windup' }]
         : (isRyuOrKenCross
-          ? [
-            { at: 0.0, frameKey: 'idle' },
-            { at: 0.24, frameKey: 'cross_strike' },
-          ]
+          ? [{ at: 0.0, frameKey: 'cross_windup' }]
           : null),
-      durationSec: 0.40,
+      durationSec: 0.44,
       ironWallChains: isZangiefIronWallCard,
       pelvis: { dx: isFaster ? -5 : -3, dy: isRyuOrKenSweep ? 11 : (isFaster ? 9 : 6), rotRad: fromWildSwing ? 0.08 : -0.05, scaleX: isZangief ? 1.07 : 1.03 },
       waist: { dx: isFaster ? -8 : -4, dy: isRyuOrKenSweep ? 9 : (isFaster ? 7 : 5), rotRad: fromWildSwing ? 0.14 : -0.09, scaleX: isZangief ? 1.09 : 1.04 },
@@ -26954,33 +27066,64 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
     }
     const isRyuOrKenSweepWhiff = (isRyu || isKen) && cKey === 'sweep';
     const isRyuOrKenCrossWhiff = (isRyu || isKen) && cKey === 'cross';
+    const sweepWhiffSlide = isRyuOrKenSweepWhiff
+      ? {
+        enabled: true,
+        style: isKen ? 'breakdance_flare_slide' : 'karate_heel_slide',
+        peakU: isKen ? 0.20 : 0.21,
+        holdEndU: isKen ? 0.56 : 0.46,
+        returnEndU: 0.94,
+        holdDrift: 0.06,
+        clearanceRatio: isKen ? 0.56 : 0.58,
+        whiffMaxSpaces: isKen ? 2.60 : 2.55,
+      }
+      : null;
     return {
       ...base,
       clipMode: 'whiff_3clip',
       poseKind: 'whiff_overextend',
       frameKey: isRyuOrKenSweepWhiff ? 'sweep_active' : (isRyuOrKenCrossWhiff ? 'cross_strike' : 'idle'),
       frameSequence: isRyuOrKenSweepWhiff
-        ? [
-          { at: 0.0, frameKey: 'sweep_windup' },
-          { at: 0.16, frameKey: 'sweep_active' },
-          { at: 0.56, frameKey: 'sweep_windup' },
-          { at: 0.84, frameKey: 'idle' },
-        ]
+        ? (isKen
+          ? [
+            { at: 0.0, frameKey: 'sweep_windup' },
+            { at: 0.10, frameKey: 'sweep_active' },
+            { at: 0.50, frameKey: 'sweep_flare' },
+            { at: 0.76, frameKey: 'sweep_windup' },
+            { at: 0.90, frameKey: 'idle' },
+          ]
+          : [
+            { at: 0.0, frameKey: 'sweep_windup' },
+            { at: 0.11, frameKey: 'sweep_active' },
+            { at: 0.58, frameKey: 'sweep_windup' },
+            { at: 0.86, frameKey: 'idle' },
+          ])
         : (isRyuOrKenCrossWhiff
           ? [
-            { at: 0.0, frameKey: 'cross_strike' },
-            { at: 0.62, frameKey: 'idle' },
+            { at: 0.0, frameKey: 'cross_windup' },
+            { at: 0.15, frameKey: 'cross_strike' },
+            { at: 0.62, frameKey: 'cross_windup' },
+            { at: 0.86, frameKey: 'idle' },
           ]
           : null),
-      durationSec: 0.36,
-      lungePx: 36,
+      durationSec: isRyuOrKenSweepWhiff ? (isKen ? 0.76 : 0.70) : (isRyuOrKenCrossWhiff ? 0.58 : 0.44),
+      lungePx: isRyuOrKenSweepWhiff ? 44 : 38,
       dynamicLunge: true,
-      ikReachPx: StandeeRigMath.computeIkReachPx(distanceToTargetPx, rangeSpaces, 24),
-      pelvis: { dx: 12, dy: isRyuOrKenSweepWhiff ? 12 : 5, rotRad: 0.08, scaleX: 1.02 },
-      waist: { dx: 22, dy: isRyuOrKenSweepWhiff ? 10 : 5, rotRad: 0.14, scaleX: 1.06 },
-      head: { dx: 26, dy: isRyuOrKenSweepWhiff ? 8 : 6, rotRad: 0.18, scaleX: 1 },
-      springPreset: { scaleX: 1.08, scaleY: 0.92, stiffness: 320, damping: 18 },
-      vfx: { type: 'whiff_dust', color: '#94a3b8' },
+      slideReach: sweepWhiffSlide,
+      wholeSpinRad: (isRyuOrKenSweepWhiff && isKen && !reduced) ? Math.PI * 2 : 0,
+      spinPlane: (isRyuOrKenSweepWhiff && isKen) ? 'horizontal_flare' : 'xy',
+      spinWindow: [0.50, 0.78],
+      ikReachPx: StandeeRigMath.computeIkReachPx(distanceToTargetPx, rangeSpaces, 26),
+      pelvis: { dx: 12, dy: isRyuOrKenSweepWhiff ? 14 : 5, rotRad: 0.08, scaleX: 1.04 },
+      waist: { dx: 22, dy: isRyuOrKenSweepWhiff ? 11 : 5, rotRad: 0.14, scaleX: 1.06 },
+      head: { dx: 26, dy: isRyuOrKenSweepWhiff ? 9 : 6, rotRad: 0.18, scaleX: 1 },
+      springPreset: { scaleX: 1.12, scaleY: 0.88, stiffness: 320, damping: 18 },
+      afterimage: isRyuOrKenSweepWhiff
+        ? { count: isKen ? 4 : 3, spacingMs: 32, alpha: 0.22, color: '#cbd5e1' }
+        : null,
+      vfx: isRyuOrKenSweepWhiff
+        ? { type: 'physical_sweep_dust', color: '#cbd5e1', accent: '#f8fafc', isExceeded: false, followSlide: true, style: isKen ? 'breakdance_flare_slide' : 'karate_heel_slide' }
+        : { type: 'whiff_dust', color: '#94a3b8' },
     };
   }
 
@@ -27523,28 +27666,41 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         };
       }
       if (isKen) {
+        const rangeExtraSec = Math.min(2, Math.max(0, rangeSpaces - 1)) * 0.08;
         return {
           ...attackBase,
           poseKind: 'ken_flare_sweep',
           frameKey: 'sweep_active',
           frameSequence: [
             { at: 0.0, frameKey: 'sweep_windup' },
-            { at: 0.16, frameKey: 'sweep_active' },
-            { at: 0.72, frameKey: 'sweep_windup' },
-            { at: 0.90, frameKey: 'idle' },
+            { at: 0.09, frameKey: 'sweep_active' },
+            { at: 0.48, frameKey: 'sweep_flare' },
+            { at: 0.78, frameKey: 'sweep_windup' },
+            { at: 0.92, frameKey: 'idle' },
           ],
-          durationSec: 0.44,
-          lungePx: 42,
+          hitstopTriggerU: 0.17,
+          durationSec: +(0.78 + rangeExtraSec).toFixed(2),
+          lungePx: 46,
+          slideReach: {
+            enabled: true,
+            style: 'breakdance_flare_slide',
+            peakU: 0.17,
+            holdEndU: 0.68,
+            returnEndU: 0.96,
+            holdDrift: 0.06,
+            clearanceRatio: 0.56,
+            whiffMaxSpaces: 2.60,
+          },
           wholeSpinRad: reduced ? 0 : Math.PI * 2,
           spinPlane: 'horizontal_flare',
-          spinWindow: [0.68, 0.94],
+          spinWindow: [0.48, 0.78],
           pelvis: { dx: 14 + ikReach * 0.65, dy: 14, rotRad: -0.14, scaleX: 1.18 },
           waist: { dx: 6 + ikReach * 0.3, dy: 12, rotRad: -0.22, scaleX: 1.12 },
           head: { dx: -8, dy: 12, rotRad: -0.18, scaleX: 1 },
-          springPreset: { scaleX: 1.20, scaleY: 0.80, stiffness: 360, damping: 18 },
+          springPreset: { scaleX: 1.22, scaleY: 0.78, stiffness: 340, damping: 18 },
           afterimage: isExceeded
-            ? { count: 4, spacingMs: 18, alpha: 0.42, color: '#ff5f38' }
-            : { count: 2, spacingMs: 24, alpha: 0.22, color: '#cbd5e1' },
+            ? { count: rangeSpaces >= 2 ? 7 : 5, spacingMs: 24, alpha: 0.44, color: '#ff5f38' }
+            : { count: rangeSpaces >= 2 ? 5 : 3, spacingMs: 28, alpha: 0.24, color: '#cbd5e1' },
           vfx: isExceeded
             ? {
               type: 'ken_flare_fire_sweep',
@@ -27553,6 +27709,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
               accent: '#fde047',
               reachPx: smearReach,
               isExceeded: true,
+              followSlide: true,
+              style: 'breakdance_flare_slide',
             }
             : {
               type: 'physical_sweep_dust',
@@ -27561,30 +27719,44 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
               accent: '#f8fafc',
               reachPx: smearReach,
               isExceeded: false,
+              followSlide: true,
+              style: 'breakdance_flare_slide',
             },
           hitstopSec: hitstop,
           shake,
         };
       }
+      const ryuRangeExtraSec = Math.min(2, Math.max(0, rangeSpaces - 1)) * 0.08;
       return {
         ...attackBase,
         poseKind: 'ryu_cr_hk_sweep',
         frameKey: 'sweep_active',
         frameSequence: [
           { at: 0.0, frameKey: 'sweep_windup' },
-          { at: 0.16, frameKey: 'sweep_active' },
-          { at: 0.74, frameKey: 'sweep_windup' },
-          { at: 0.92, frameKey: 'idle' },
+          { at: 0.10, frameKey: 'sweep_active' },
+          { at: 0.62, frameKey: 'sweep_windup' },
+          { at: 0.88, frameKey: 'idle' },
         ],
-        durationSec: 0.40,
-        lungePx: 28,
+        hitstopTriggerU: 0.18,
+        durationSec: +(0.68 + ryuRangeExtraSec).toFixed(2),
+        lungePx: 34,
+        slideReach: {
+          enabled: true,
+          style: 'karate_heel_slide',
+          peakU: 0.18,
+          holdEndU: 0.50,
+          returnEndU: 0.94,
+          holdDrift: 0.03,
+          clearanceRatio: 0.58,
+          whiffMaxSpaces: 2.55,
+        },
         pelvis: { dx: 12 + ikReach * 0.65, dy: 14, rotRad: -0.05, scaleX: 1.18 },
         waist: { dx: 8 + ikReach * 0.3, dy: 10, rotRad: -0.07, scaleX: 1.08 },
         head: { dx: 4, dy: 8, rotRad: 0.02, scaleX: 1 },
-        springPreset: { scaleX: 1.16, scaleY: 0.85, stiffness: 360, damping: 20 },
+        springPreset: { scaleX: 1.18, scaleY: 0.83, stiffness: 340, damping: 19 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 20, alpha: 0.36, color: '#38bdf8' }
-          : null,
+          ? { count: rangeSpaces >= 2 ? 6 : 4, spacingMs: 26, alpha: 0.38, color: '#38bdf8' }
+          : { count: rangeSpaces >= 2 ? 4 : 2, spacingMs: 32, alpha: 0.20, color: '#cbd5e1' },
         vfx: isExceeded
           ? {
             type: 'ryu_ashi_barai_ki_sweep',
@@ -27593,6 +27765,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
             accent: '#ffffff',
             reachPx: smearReach,
             isExceeded: true,
+            followSlide: true,
+            style: 'karate_heel_slide',
           }
           : {
             type: 'physical_sweep_dust',
@@ -27601,6 +27775,8 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
             accent: '#ffffff',
             reachPx: smearReach,
             isExceeded: false,
+            followSlide: true,
+            style: 'karate_heel_slide',
           },
         hitstopSec: hitstop,
         shake,
@@ -27613,7 +27789,7 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         return {
           ...attackBase,
           poseKind: 'cammy_spin_knuckle_backfist',
-          durationSec: 0.30,
+          durationSec: 0.36,
           lungePx: 26,
           pelvis: { dx: 8 + ikReach * 0.3, dy: 3, rotRad: 0.08, scaleX: 1.06 },
           waist: { dx: 20 + ikReach * 0.55, dy: 2, rotRad: 0.16, scaleX: 1.10 },
@@ -27629,7 +27805,7 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         return {
           ...attackBase,
           poseKind: 'zangief_heavy_chest_chop',
-          durationSec: 0.34,
+          durationSec: 0.40,
           lungePx: 22,
           pelvis: { dx: 8 + ikReach * 0.3, dy: 6, rotRad: 0.06, scaleX: 1.12 },
           waist: { dx: 22 + ikReach * 0.55, dy: 4, rotRad: 0.18, scaleX: 1.18 },
@@ -27645,19 +27821,20 @@ function resolveStandeeChoreography(characterKey, cardKey, phase, ctx = {}) {
         poseKind: isKen ? 'ken_backfist_tag' : 'ryu_cr_mk_poke',
         frameKey: 'cross_strike',
         frameSequence: [
-          { at: 0.0, frameKey: 'idle' },
-          { at: 0.12, frameKey: 'cross_strike' },
-          { at: 0.80, frameKey: 'cross_retreat' },
+          { at: 0.0, frameKey: 'cross_windup' },
+          { at: 0.15, frameKey: 'cross_strike' },
+          { at: 0.76, frameKey: 'cross_windup' },
         ],
-        durationSec: 0.32,
-        lungePx: isKen ? 22 : 18,
-        pelvis: { dx: 8 + ikReach * 0.35, dy: isKen ? 2 : 5, rotRad: 0.05, scaleX: 1.06 },
-        waist: { dx: (isKen ? 20 : 16) + ikReach * 0.55, dy: isKen ? 2 : 3, rotRad: 0.14, scaleX: 1.08 },
+        hitstopTriggerU: 0.17,
+        durationSec: isKen ? 0.58 : 0.56,
+        lungePx: isKen ? 28 : 24,
+        pelvis: { dx: 8 + ikReach * 0.35, dy: isKen ? 2 : 5, rotRad: 0.06, scaleX: 1.07 },
+        waist: { dx: (isKen ? 22 : 18) + ikReach * 0.55, dy: isKen ? 2 : 3, rotRad: 0.15, scaleX: 1.09 },
         head: { dx: 18, dy: 2, rotRad: 0.08, scaleX: 1 },
-        springPreset: { scaleX: 1.14, scaleY: 0.90, stiffness: 410, damping: 24 },
+        springPreset: { scaleX: 1.15, scaleY: 0.89, stiffness: 380, damping: 22 },
         afterimage: isExceeded
-          ? { count: 3, spacingMs: 18, alpha: 0.38, color: isKen ? '#ff5f38' : '#38bdf8' }
-          : (isKen ? { count: 2, spacingMs: 22, alpha: 0.22, color: '#cbd5e1' } : null),
+          ? { count: 4, spacingMs: 24, alpha: 0.38, color: isKen ? '#ff5f38' : '#38bdf8' }
+          : (isKen ? { count: 2, spacingMs: 30, alpha: 0.22, color: '#cbd5e1' } : null),
         vfx: isExceeded
           ? {
             type: isKen ? 'ken_crimson_cross_whip' : 'ryu_denjin_cross_lance',
@@ -28252,6 +28429,8 @@ const StandeeStage = (() => {
   let dimmerTarget = 0;
   let boardBounds = null;
   let spaceRects = []; // index 0..8 -> { left, top, width, height, cx, groundY }
+  let domMetricsDirty = true;
+  let lastDomSyncMs = 0;
   let inStrikePlayback = false;
   let strikeSpaces = { p1: null, p2: null };
   let lastKnownActors = new Set();
@@ -28338,6 +28517,8 @@ const StandeeStage = (() => {
       additiveElapsed: 0,
       additiveDuration: 0,
       hitstopRemaining: 0,
+      pendingHitstopSec: 0,
+      hitstopTriggerU: 0.16,
       flashRemaining: 0,
       flashDuration: 0.065,
       flashColorRgb: [1, 1, 1],
@@ -28551,7 +28732,7 @@ const StandeeStage = (() => {
   }
 
   function resize() {
-    if (!mounted || !glCanvas || !vfxCanvas) return;
+    if (!glCanvas || !vfxCanvas) return;
     viewportW = Math.max(1, window.innerWidth || 1280);
     viewportH = Math.max(1, window.innerHeight || 720);
     dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -28780,7 +28961,26 @@ const StandeeStage = (() => {
       );
     }
     if (choreo.hitstopSec > 0 && !isReducedMotion()) {
-      f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      if (choreo.phase === 'hit_attack' && Array.isArray(choreo.frameSequence) && choreo.frameSequence.length > 0 && choreo.holdAtU == null) {
+        // Defer hitstop freeze until exact contact frame (hitstopTriggerU) so startup snaps forward
+        // cleanly and u advances strictly monotonically without rewinding backwards after hitstop!
+        f.pendingHitstopSec = choreo.hitstopSec;
+        f.hitstopTriggerU = choreo.hitstopTriggerU != null ? choreo.hitstopTriggerU : 0.16;
+      } else if (choreo.phase === 'hit_defend' && choreo.holdAtU == null) {
+        // Snap defender cleanly into peak recoil and freeze there, then continue monotonically forward
+        f.pendingHitstopSec = 0;
+        if (choreo.track === 2 && f.additiveChoreo === choreo) {
+          f.additiveElapsed = Math.max(f.additiveElapsed, 0.22 * f.additiveDuration);
+        } else {
+          f.choreoElapsed = Math.max(f.choreoElapsed, 0.22 * f.choreoDuration);
+        }
+        f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      } else {
+        f.pendingHitstopSec = 0;
+        f.hitstopRemaining = Math.max(f.hitstopRemaining, choreo.hitstopSec);
+      }
+    } else if (choreo.track !== 2) {
+      f.pendingHitstopSec = 0;
     }
     if (choreo.track !== 2 || !f.choreo || f.choreo.track === 2) {
       f.activeFrameKey = getFighterActiveFrameKey(f);
@@ -28859,15 +29059,26 @@ const StandeeStage = (() => {
     if (!f || !f.active || !vfxSpec) return;
     const opp = fighters[pid === 'p1' ? 'p2' : 'p1'];
     const defaultReach = (opp && opp.active) ? Math.abs(opp.x - f.x) : 0;
+    const isSweepSlideVfx = !!(
+      vfxSpec.followSlide ||
+      vfxSpec.type === 'physical_sweep_dust' ||
+      vfxSpec.type === 'ryu_ashi_barai_ki_sweep' ||
+      vfxSpec.type === 'ken_flare_fire_sweep'
+    );
+    const vfxDuration = vfxSpec.isUltra
+      ? 0.68
+      : (isSweepSlideVfx ? Math.max(0.62, (f.choreoDuration || 0.72) * 0.90) : 0.54);
     stageVfx.push({
       type: vfxSpec.type,
       fallbackType: vfxSpec.fallbackType || null,
       color: vfxSpec.color || '#38bdf8',
       accent: vfxSpec.accent || '#ffffff',
+      style: vfxSpec.style || null,
       isUltra: !!vfxSpec.isUltra,
       isExceeded: !!vfxSpec.isExceeded,
       reachPx: vfxSpec.reachPx != null ? vfxSpec.reachPx : defaultReach,
       followPid: (
+        isSweepSlideVfx ||
         vfxSpec.type === 'cammy_heel_crossup_flash' ||
         vfxSpec.type === 'evasion_shimmer' ||
         vfxSpec.type === 'iron_wall_chains' ||
@@ -28879,13 +29090,15 @@ const StandeeStage = (() => {
         vfxSpec.type === 'ken_backflip_fire_wheel' ||
         vfxSpec.type === 'ryu_backdash_ki_wake'
       ) ? pid : null,
+      originX: f.x,
+      maxSlideX: f.x,
       x: f.x,
       groundY: f.groundY,
       width: f.width,
       height: f.height,
       facingSign: f.facingSign,
-      elapsed: (vfxSpec.holdAtT != null) ? (vfxSpec.holdAtT * (vfxSpec.isUltra ? 0.56 : 0.42)) : 0,
-      duration: vfxSpec.isUltra ? 0.56 : 0.42,
+      elapsed: (vfxSpec.holdAtT != null) ? (vfxSpec.holdAtT * vfxDuration) : 0,
+      duration: vfxDuration,
       holdAtT: vfxSpec.holdAtT != null ? vfxSpec.holdAtT : null,
     });
   }
@@ -28893,9 +29106,9 @@ const StandeeStage = (() => {
   function getFighterActiveFrameKey(f) {
     if (!f || !f.choreo) return 'idle';
     const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
-    // During hitstop freeze on impact (hit_attack), lock onto the active impact keyframe (u >= 0.25)
-    // rather than freezing on u=0 startup/windup!
-    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack')
+    // Contact-triggered hitstop freezes f.choreoElapsed right at hitstopTriggerU (peak impact);
+    // only clamp upward for legacy non-deferred hit_attack hitstops so u never jumps backwards!
+    const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && f.choreo.phase === 'hit_attack' && rawU < 0.05)
       ? Math.max(0.25, rawU)
       : rawU;
     if (typeof StandeeRigMath !== 'undefined' && StandeeRigMath.resolveActiveFrameKey) {
@@ -28957,7 +29170,7 @@ const StandeeStage = (() => {
     // the keyframe artwork is already authored at the 180-deg (-pi) apex of the backflip (t = 0.5),
     // so pitch around the apex (t - 0.5) rather than rotating the inverted drawing 180-deg back upright.
     if (getFighterActiveFrameKey(f) === 'cross_retreat') {
-      return f.choreo.wholeSpinRad * (t - 0.5) * 0.42 * f.facingSign;
+      return f.choreo.wholeSpinRad * (t - 0.5) * 0.52 * f.facingSign;
     }
     return f.choreo.wholeSpinRad * t * f.facingSign;
   }
@@ -28975,8 +29188,19 @@ const StandeeStage = (() => {
     return { wholeRotRad: rad, horizSpinScaleX: 1 };
   }
 
-  function syncDomMetrics() {
+  function syncDomMetrics(force = true) {
     if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const resized = glCanvas && vfxCanvas && (viewportW !== (window.innerWidth || 1280) || viewportH !== (window.innerHeight || 720) || glCanvas.width <= 300);
+    if (resized) {
+      resize();
+      domMetricsDirty = true;
+    }
+    if (!force && !domMetricsDirty && fighters.p1.active && fighters.p2.active) {
+      if (inStrikePlayback || (now - lastDomSyncMs < 250)) return;
+    }
+    domMetricsDirty = false;
+    lastDomSyncMs = now;
     const isPlaying = typeof G !== 'undefined' && G && G.mode !== 'game_over' &&
       (!document.body || !document.body.dataset || document.body.dataset.state === 'playing');
 
@@ -29163,7 +29387,8 @@ const StandeeStage = (() => {
   function syncAfterRender() {
     if (!mounted) mount();
     if (!mounted) return;
-    syncDomMetrics();
+    domMetricsDirty = true;
+    syncDomMetrics(true);
   }
 
   function isFighterActive(pid) {
@@ -29326,6 +29551,9 @@ const StandeeStage = (() => {
         startChoreography(att, choreo, { distanceToTargetPx: distPx });
         if (choreo.projectile) spawnProjectile(actorId, defId, side && side.cardKey, choreo);
       } else if (step.phase === 'after' && att && att.active) {
+        const prevActorSpace = actorId === 'p1' ? prevP1 : prevP2;
+        const curActorSpace = strikeSpaces[actorId];
+        const attMovedOnAfter = !!((prevActorSpace != null && curActorSpace != null && prevActorSpace !== curActorSpace) || stepSwapped);
         const choreo = resolveStandeeChoreography(att.charKey, side && side.cardKey, 'after', {
           criticalPaid: !!(side && side.criticalPaid),
           isEX: !!(side && side.isEX),
@@ -29333,8 +29561,15 @@ const StandeeStage = (() => {
           sideSwapped: stepSwapped || !!att.lastSideSwapped,
           reducedHitStop: isReducedMotion(),
         });
-        startChoreography(att, choreo);
-        if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        // Only start an after-phase choreography if the card has a dedicated after motion (e.g. Cross Retreat 3)
+        // or actually moved spaces; otherwise let active Sweep / Strike follow-through finish fluently!
+        if (attMovedOnAfter || (choreo && choreo.poseKind && choreo.poseKind !== 'recovery')) {
+          if (att.moving && choreo && choreo.durationSec) {
+            att.moveDuration = Math.max(0.42, choreo.durationSec * 0.90);
+          }
+          startChoreography(att, choreo);
+          if (choreo.vfx) spawnStageVfx(actorId, choreo.vfx);
+        }
       } else if (step.phase === 'cleanup') {
         dimmerTarget = 0;
         for (const pid of ['p1', 'p2']) {
@@ -29490,9 +29725,13 @@ const StandeeStage = (() => {
       f.cammyCrossUpFlashTimer = Math.max(0, f.cammyCrossUpFlashTimer - dt);
     }
 
-    // Rig spring pauses during hitstopRemaining > 0
+    // Rig spring pauses during hitstopRemaining > 0; substep at <= 25ms for stability on low-FPS devices
     if (typeof StandeeRigMath !== 'undefined') {
-      StandeeRigMath.stepSpring(f.spring, dt, f.springStiffness, f.springDamping, f.hitstopRemaining);
+      const springSteps = Math.max(1, Math.min(6, Math.ceil(dt / 0.025)));
+      const subDt = dt / springSteps;
+      for (let s = 0; s < springSteps; s++) {
+        StandeeRigMath.stepSpring(f.spring, subDt, f.springStiffness, f.springDamping, f.hitstopRemaining);
+      }
     }
 
     // Horizontal translation (monotone cubic Hermite / quintic ease) + Midpoint X-Crossover Flip
@@ -29567,13 +29806,25 @@ const StandeeStage = (() => {
       if (f.choreo.holdAtU != null) {
         f.choreoElapsed = f.choreo.holdAtU * f.choreoDuration;
       } else {
+        const prevElapsed = f.choreoElapsed;
         f.choreoElapsed += dt;
+        // Contact-triggered hitstop: when startup crosses hitstopTriggerU, lock right at peak contact
+        // and fire the freeze frame without ever rewinding u backwards!
+        if (f.pendingHitstopSec > 0 && f.choreoDuration > 0) {
+          const triggerElapsed = (f.hitstopTriggerU != null ? f.hitstopTriggerU : 0.16) * f.choreoDuration;
+          if (prevElapsed < triggerElapsed && f.choreoElapsed >= triggerElapsed) {
+            f.choreoElapsed = triggerElapsed;
+            f.hitstopRemaining = Math.max(f.hitstopRemaining, f.pendingHitstopSec);
+            f.pendingHitstopSec = 0;
+          }
+        }
         if (f.choreoElapsed >= f.choreoDuration) {
           if (inStrikePlayback && f.choreo.phase === 'reveal') {
             f.choreoElapsed = f.choreoDuration;
           } else {
             f.choreo = null;
             f.choreoElapsed = 0;
+            f.pendingHitstopSec = 0;
             f.desaturateAmount = 0;
             f.wildSwingHazard = false;
           }
@@ -29649,9 +29900,7 @@ const StandeeStage = (() => {
 
     if (f.choreo) {
       const rawU = f.choreoDuration > 0 ? Math.min(1, f.choreoElapsed / f.choreoDuration) : 1;
-      // During hitstop freeze on impact (hit_attack / hit_defend), evaluate spine & clip envelope
-      // at peak active contact (u >= 0.28) so the fighter freezes in the full strike pose!
-      const u = (f.hitstopRemaining > 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend'))
+      const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && (f.choreo.phase === 'hit_attack' || f.choreo.phase === 'hit_defend') && rawU < 0.05)
         ? Math.max(0.28, rawU)
         : rawU;
       let env = 1.0;
@@ -29701,11 +29950,24 @@ const StandeeStage = (() => {
   function computeFighterLungeOffsetX(f) {
     if (!f.choreo || !f.choreoDuration || f.choreoDuration <= 0) return 0;
     const rawU = Math.min(1, f.choreoElapsed / f.choreoDuration);
-    const u = (f.hitstopRemaining > 0 && f.choreo.phase === 'hit_attack') ? Math.max(0.28, rawU) : rawU;
+    const u = (f.hitstopRemaining > 0 && f.pendingHitstopSec <= 0 && f.choreo.phase === 'hit_attack' && rawU < 0.05) ? Math.max(0.28, rawU) : rawU;
     if (f.choreo.dynamicLunge && typeof StandeeRigMath !== 'undefined' && StandeeRigMath.computeDynamicLungeOffset) {
       const isProj = !!f.choreo.projectile;
       const isWhiff = f.choreo.clipMode === 'whiff_3clip';
-      const dist = StandeeRigMath.computeDynamicLungeOffset(u, f.choreo.lungePx || 0, f.choreoTargetDistPx || 0, isProj, isWhiff);
+      let slideReach = f.choreo.slideReach || null;
+      if (slideReach && slideReach.enabled) {
+        const sp0 = spaceRects[1] || spaceRects[0];
+        const sp1 = spaceRects[2] || spaceRects[1];
+        const liveSpaceW = (sp0 && sp1 && Math.abs(sp1.cx - sp0.cx) > 30)
+          ? Math.abs(sp1.cx - sp0.cx)
+          : (sp0 && sp0.width > 30 ? sp0.width : 145);
+        slideReach = {
+          ...slideReach,
+          fighterWidthPx: f.width || 148,
+          spaceWidthPx: liveSpaceW,
+        };
+      }
+      const dist = StandeeRigMath.computeDynamicLungeOffset(u, f.choreo.lungePx || 0, f.choreoTargetDistPx || 0, isProj, isWhiff, slideReach);
       return dist * f.facingSign;
     }
     if (f.choreo.lungePx) {
@@ -30868,6 +31130,11 @@ const StandeeStage = (() => {
         v.x = ff.x + computeFighterLungeOffsetX(ff);
         v.groundY = ff.groundY + computeCurrentHopY(ff);
         v.facingSign = ff.facingSign;
+        if (v.originX != null) {
+          const curSpan = (v.x - v.originX) * v.facingSign;
+          const maxSpan = ((v.maxSlideX != null ? v.maxSlideX : v.originX) - v.originX) * v.facingSign;
+          if (curSpan > maxSpan) v.maxSlideX = v.x;
+        }
       }
       c.save();
       c.globalCompositeOperation = 'lighter';
@@ -31047,24 +31314,57 @@ const StandeeStage = (() => {
           c.stroke();
         }
       } else if (v.type === 'physical_sweep_dust') {
-        // Normal-State (VFX-free martial arts) low Sweep: crisp air-shear crescent along the stone floor + flying grit/dust plumes (no magical beams)
+        // Normal-State (VFX-free martial arts) low Sweep: full-span floor skid streaks from originX -> live slide contact + contact air-shear crescent
         c.globalCompositeOperation = 'source-over';
-        const reachRadius = Math.max(v.width * 0.64, Math.min(290, (v.reachPx || 0) * 0.88));
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
         const arcY = v.groundY - 10;
-        const startAng = v.facingSign > 0 ? -0.68 : (Math.PI - 0.52);
-        const endAng = v.facingSign > 0 ? 0.52 : (Math.PI + 0.68);
+        const isBreakdance = v.style === 'breakdance_flare_slide';
 
-        c.strokeStyle = 'rgba(226, 232, 240, 0.58)';
-        c.lineWidth = 3.2 * (1 - t * 0.45);
+        // Floor skid tracks & rolling stone dust puffs across the full 1-3 space slide path
+        if (slideSpan > 24) {
+          c.strokeStyle = isBreakdance ? 'rgba(226, 214, 198, 0.44)' : 'rgba(226, 232, 240, 0.48)';
+          c.lineWidth = isBreakdance ? 4.4 * (1 - t * 0.45) : 3.4 * (1 - t * 0.45);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 4);
+          c.lineTo(farX, v.groundY - 4);
+          c.stroke();
+
+          c.strokeStyle = 'rgba(148, 163, 184, 0.34)';
+          c.lineWidth = 2.0 * (1 - t * 0.5);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 11);
+          c.lineTo(farX, v.groundY - 9);
+          c.stroke();
+
+          const skidPuffs = Math.min(12, Math.max(5, Math.round(slideSpan / 36)));
+          for (let p = 0; p < skidPuffs; p++) {
+            const pf = p / Math.max(1, skidPuffs - 1);
+            const px = originX + (farX - originX) * pf;
+            const py = v.groundY - 4 - Math.sin(pf * Math.PI * 2 + t * 5) * 4 - t * (8 + (p % 3) * 5);
+            const pr = (3.4 + (p % 3) * 1.5) * (1 - t * 0.6);
+            c.fillStyle = p % 2 === 0 ? (v.color || '#cbd5e1') : '#94a3b8';
+            c.beginPath();
+            c.arc(px, py, Math.max(0.9, pr), 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+
+        // Crisp air-shear crescent & heel-dust splash anchored at the live sliding contact zone
+        const localRadius = Math.max(v.width * 0.68, Math.min(v.width * 1.12, 128));
+        const startAng = v.facingSign > 0 ? -0.72 : (Math.PI - 0.56);
+        const endAng = v.facingSign > 0 ? 0.56 : (Math.PI + 0.72);
+        c.strokeStyle = 'rgba(241, 245, 249, 0.66)';
+        c.lineWidth = 3.4 * (1 - t * 0.42);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 18, arcY, reachRadius, 16, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 20, arcY, localRadius, isBreakdance ? 20 : 15, 0, isBreakdance ? 0 : startAng, isBreakdance ? Math.PI * 2 : endAng);
         c.stroke();
 
-        // Low floor-skimming stone dust puffs kicked up by the sweeping heel
-        for (let d = 0; d < 7; d++) {
-          const df = d / 6;
-          const dx = v.x + v.facingSign * (20 + df * reachRadius * (0.45 + 0.55 * t));
-          const dy = v.groundY - 3 - Math.sin(df * Math.PI) * (8 + t * 14);
+        for (let d = 0; d < 6; d++) {
+          const df = d / 5;
+          const dx = v.x + v.facingSign * (14 + df * localRadius * (0.45 + 0.55 * t));
+          const dy = v.groundY - 3 - Math.sin(df * Math.PI) * (9 + t * 14);
           const dr = (3.2 + (d % 3) * 1.4) * (1 - t * 0.65);
           c.fillStyle = d % 2 === 0 ? (v.color || '#cbd5e1') : '#94a3b8';
           c.beginPath();
@@ -31095,55 +31395,103 @@ const StandeeStage = (() => {
         c.ellipse(fistX, fistY, 7 + t * 14, 16 + t * 22, 0, 0, Math.PI * 2);
         c.stroke();
       } else if (v.type === 'ryu_ashi_barai_ki_sweep') {
-        // Exceeded Ryu Sweep (Ashi Barai): white-hot & cobalt floor-skimming Ki crescent blade + Denjin ground lightning
-        const reachRadius = Math.max(v.width * 0.72, Math.min(320, (v.reachPx || 110) * 0.96));
+        // Exceeded Ryu Sweep (Ashi Barai): full 3-space Denjin ground-wake lightning + contact Ki crescent blade
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
+        const localRadius = Math.max(v.width * 0.74, Math.min(v.width * 1.18, 148));
         const arcY = v.groundY - 12;
-        const startAng = v.facingSign > 0 ? -0.86 : (Math.PI - 0.68);
-        const endAng = v.facingSign > 0 ? 0.68 : (Math.PI + 0.86);
+        const startAng = v.facingSign > 0 ? -0.88 : (Math.PI - 0.70);
+        const endAng = v.facingSign > 0 ? 0.70 : (Math.PI + 0.88);
 
+        // Full-span cobalt Denjin skid wake across traversed spaces
+        if (slideSpan > 20) {
+          c.strokeStyle = v.color || '#38bdf8';
+          c.lineWidth = 5.2 * (1 - t * 0.38);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 6);
+          c.lineTo(farX, v.groundY - 6);
+          c.stroke();
+
+          c.strokeStyle = '#38bdf8';
+          c.lineWidth = 2.8;
+          drawLightningArc(c, originX, arcY + 4, farX, arcY, 7, 10, stageClockSec * 24);
+          c.strokeStyle = '#ffffff';
+          c.lineWidth = 1.5;
+          drawLightningArc(c, originX, arcY + 4, farX, arcY, 7, 10, stageClockSec * 24 + 2.7);
+        }
+
+        // Luminous contact Ki crescent anchored at live sliding Ryu
         c.strokeStyle = v.color || '#38bdf8';
         c.lineWidth = 8.0 * (1 - t * 0.3);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 20, arcY, reachRadius, 26, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 22, arcY, localRadius, 24, 0, startAng, endAng);
         c.stroke();
 
         c.strokeStyle = '#ffffff';
         c.lineWidth = 3.2;
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 20, arcY, reachRadius * 0.96, 19, 0, startAng, endAng);
+        c.ellipse(v.x + v.facingSign * 22, arcY, localRadius * 0.94, 17, 0, startAng, endAng);
         c.stroke();
 
-        // Crackling Denjin lightning arcs snapping along the sweeping ankle & stone floor
-        const tipX = v.x + v.facingSign * (20 + reachRadius * 0.94);
+        const tipX = v.x + v.facingSign * (22 + localRadius * 0.95);
         c.strokeStyle = '#38bdf8';
-        c.lineWidth = 2.8;
-        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 6, 9, stageClockSec * 24);
-        c.strokeStyle = '#ffffff';
-        c.lineWidth = 1.4;
-        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 6, 9, stageClockSec * 24 + 3.1);
+        c.lineWidth = 2.6;
+        drawLightningArc(c, v.x, arcY, tipX, arcY - 6, 5, 8, stageClockSec * 26);
       } else if (v.type === 'ken_flare_fire_sweep') {
-        // Exceeded Ken Sweep: 360° blazing crimson-and-gold breakdance floor-flare fire whip + orbiting ember sparks
-        const reachRadius = Math.max(v.width * 0.76, Math.min(330, (v.reachPx || 120) * 0.98));
+        // Exceeded Ken Sweep: scorching 3-space ember skid ribbon + 360° breakdance fire flare ring at live contact zone
+        const originX = v.originX != null ? v.originX : v.x;
+        const farX = v.maxSlideX != null ? v.maxSlideX : v.x;
+        const slideSpan = Math.abs(farX - originX);
+        const localRadius = Math.max(v.width * 0.78, Math.min(v.width * 1.24, 156));
         const arcY = v.groundY - 11;
 
-        // Full 360° floor-flare fire vortex ellipse
+        // Scorching crimson-and-gold skid fire ribbon from origin tile to contact zone
+        if (slideSpan > 20) {
+          c.strokeStyle = v.color || '#ff5f38';
+          c.lineWidth = 7.2 * (1 - t * 0.35);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 5);
+          c.lineTo(farX, v.groundY - 5);
+          c.stroke();
+
+          c.strokeStyle = v.accent || '#fde047';
+          c.lineWidth = 2.8 * (1 - t * 0.4);
+          c.beginPath();
+          c.moveTo(originX, v.groundY - 6);
+          c.lineTo(farX, v.groundY - 6);
+          c.stroke();
+
+          const trailEmbers = Math.min(12, Math.max(5, Math.round(slideSpan / 38)));
+          for (let te = 0; te < trailEmbers; te++) {
+            const ef = te / Math.max(1, trailEmbers - 1);
+            const ex = originX + (farX - originX) * ef;
+            const ey = v.groundY - 6 - t * (16 + (te % 4) * 9) - Math.sin(ef * Math.PI * 3 + t * 8) * 5;
+            c.fillStyle = te % 2 === 0 ? '#fde047' : '#ff4d2e';
+            c.beginPath();
+            c.arc(ex, ey, Math.max(1.2, 3.6 * (1 - t * 0.55)), 0, Math.PI * 2);
+            c.fill();
+          }
+        }
+
+        // Full 360° floor-flare fire vortex ellipse tracking Ken's spinning body at contact
         c.strokeStyle = v.color || '#ff5f38';
         c.lineWidth = 8.5 * (1 - t * 0.28);
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 22, arcY, reachRadius, 28, 0, 0, Math.PI * 2);
+        c.ellipse(v.x + v.facingSign * 18, arcY, localRadius, 26, 0, 0, Math.PI * 2);
         c.stroke();
 
         c.strokeStyle = v.accent || '#fde047';
         c.lineWidth = 3.6;
         c.beginPath();
-        c.ellipse(v.x + v.facingSign * 22, arcY, reachRadius * 0.92, 20, 0, 0, Math.PI * 2);
+        c.ellipse(v.x + v.facingSign * 18, arcY, localRadius * 0.90, 18, 0, 0, Math.PI * 2);
         c.stroke();
 
-        // Orbiting flame tongues & flying cinders along the sweep arc
+        // Orbiting flame tongues & flying cinders around Ken's flare spin
         for (let e = 0; e < 10; e++) {
-          const ang = (e / 10) * Math.PI * 2 + t * 5.2 * v.facingSign;
-          const ex = v.x + v.facingSign * 22 + Math.cos(ang) * reachRadius * (0.65 + 0.35 * t);
-          const ey = arcY + Math.sin(ang) * 24 - t * 18;
+          const ang = (e / 10) * Math.PI * 2 + t * 5.6 * v.facingSign;
+          const ex = v.x + v.facingSign * 18 + Math.cos(ang) * localRadius * (0.68 + 0.32 * t);
+          const ey = arcY + Math.sin(ang) * 22 - t * 18;
           c.fillStyle = e % 2 === 0 ? '#fde047' : '#ff4d2e';
           c.beginPath();
           c.arc(ex, ey, 3.8 * (1 - t * 0.5), 0, Math.PI * 2);
@@ -31307,11 +31655,12 @@ const StandeeStage = (() => {
       return;
     }
 
-    const dt = lastTimeMs > 0 ? Math.min(0.05, Math.max(0.001, (nowMs - lastTimeMs) / 1000)) : (1 / 60);
+    const rawDt = lastTimeMs > 0 ? Math.max(0.001, (nowMs - lastTimeMs) / 1000) : (1 / 60);
+    const dt = Math.min(0.16, rawDt);
     lastTimeMs = nowMs;
     stageClockSec += dt;
 
-    syncDomMetrics();
+    syncDomMetrics(false);
 
     // Update decaying afterimages
     for (let i = afterimages.length - 1; i >= 0; i--) {
@@ -31375,8 +31724,11 @@ const StandeeStage = (() => {
     if (!f || !f.active || typeof resolveStandeeChoreography !== 'function') return null;
     const opp = fighters[pid === 'p1' ? 'p2' : 'p1'];
     const distPx = (opp && opp.active) ? Math.abs(opp.x - f.x) : 0;
+    const distSpaces = (opp && opp.active) ? Math.max(1, Math.abs((f.space || 0) - (opp.space || 0))) : 1;
     const mergedCtx = {
       exceeded: !!f.exceeded,
+      rangeSpaces: distSpaces,
+      distanceToTargetPx: distPx,
       ...ctx,
     };
     const choreo = resolveStandeeChoreography(f.charKey, cardKey, stepKind, mergedCtx);
@@ -31425,6 +31777,7 @@ const StandeeStage = (() => {
         activeBoostCount: fighters.p1.activeBoostCount,
         auraFlare: fighters.p1.auraFlare,
         x: fighters.p1.x,
+        lungeOffsetX: computeFighterLungeOffsetX(fighters.p1),
         groundY: fighters.p1.groundY,
         pose: fighters.p1.choreo && fighters.p1.choreo.poseKind,
         additivePose: fighters.p1.additiveChoreo && fighters.p1.additiveChoreo.poseKind,
@@ -31437,6 +31790,7 @@ const StandeeStage = (() => {
         activeBoostCount: fighters.p2.activeBoostCount,
         auraFlare: fighters.p2.auraFlare,
         x: fighters.p2.x,
+        lungeOffsetX: computeFighterLungeOffsetX(fighters.p2),
         groundY: fighters.p2.groundY,
         pose: fighters.p2.choreo && fighters.p2.choreo.poseKind,
         additivePose: fighters.p2.additiveChoreo && fighters.p2.additiveChoreo.poseKind,
@@ -31894,8 +32248,9 @@ function cardTile(c, opts = {}) {
   const escInspectId = esc(inspectId);
   const escUid = esc(c.uid || '');
   const exBadge = isEX ? '<span class="ex-chip">EX</span>' : '';
-  const exActionBtn = (opts.quickCommit && opts.exOtherUid && !isEX)
-    ? `<button type="button" class="card-ex-btn" title="Pair duplicate cards for EX Strike (+1 All Stats)" aria-label="EX Strike with ${esc(c.name)}" onclick="event.stopPropagation(); G.quickCommitEx('${escUid}', '${esc(opts.exOtherUid)}')">EX</button>`
+  const exClickHandler = opts.exOnClick || `G.quickCommitEx('${escUid}', '${esc(opts.exOtherUid)}')`;
+  const exActionBtn = ((opts.quickCommit || opts.exOnClick) && opts.exOtherUid && !isEX && !opts.disabled)
+    ? `<button type="button" class="card-ex-btn" title="Pair duplicate cards for EX Strike (+1 All Stats)" aria-label="EX Strike with ${esc(c.name)}" onmouseenter="event.stopPropagation(); G && G.onCardHover('${escUid}', true)" onmouseleave="G && G.onCardHover('${escUid}', false)" onclick="event.stopPropagation(); ${exClickHandler}">EX</button>`
     : '';
   const gaugeBadge = opts.fromSource === 'gauge' ? '<span class="card-source-badge gauge-source-badge">GAUGE</span>' : '';
   const dragAttrs = opts.draggable
@@ -31954,11 +32309,16 @@ function exPairTiles(hand, onClickFn, highlight = 'strike', dist = null, engine 
   const infoSet = (engine && typeof engine.getInformationSet === 'function' && player)
     ? engine.getInformationSet(player.id || 'p1')
     : null;
+  const onlyKey = opts.onlyKey || null;
   for (let i = 0; i < hand.length; i++) {
     for (let j = i + 1; j < hand.length; j++) {
       if (hand[i].key === hand[j].key && !seen.has(hand[i].key)) {
+        if (onlyKey && hand[i].key !== onlyKey) continue;
         seen.add(hand[i].key);
         const a = hand[i], b = hand[j];
+        if (engine && player && typeof engine.isValidStrikeCard === 'function' && !engine.isValidStrikeCard(player, a)) {
+          continue;
+        }
         if (engine && player && a.type === 'ultra' && typeof engine.canPayUltra === 'function' && !engine.canPayUltra(player, a)) {
           continue;
         }
@@ -32815,6 +33175,9 @@ function inspectorCardViewHTML(g, card, rawCard, isEX) {
 
       const cleanEffects = (preview.effectsSummary || []).filter((e) => !/^You [+-]\d+ HP$/.test(e));
       const toggles = [];
+      if (preview.canPreviewEX) {
+        toggles.push(`<button type="button" class="clash-toggle ex-toggle${preview.isEX ? ' active' : ''}" onclick="EventBus.emit('OnToggleEXMode', {})">[E] EX +1</button>`);
+      }
       if (preview.criticalFree) {
         toggles.push('<span class="insp-tag crit">CRIT (Free)</span>');
       } else if (preview.canPreviewCritical) {
@@ -33115,6 +33478,11 @@ function promptCardModPreviewHTML(g) {
       if (crit.ignoreArmor) tags.push('Ignores Armor');
       if (crit.ignoreGuard) tags.push('Ignores Guard');
       if (crit.stunImmune) tags.push('Stun Immune');
+      const ultraCost = (card.type === 'ultra' && !(typeof engine.gaugeCostsAreFree === 'function' && engine.gaugeCostsAreFree(p)))
+        ? (card.gaugeCost || 0) : 0;
+      if (ultraCost > 0 && (engine.gaugeCount(p) - 1) < ultraCost) {
+        tags.push('Warning: Paying 1 Gauge leaves too little Gauge for this Ultra (will Wild Swing)');
+      }
       if (card.criticalText) {
         bodyNoteHTML = `<div class="prompt-mod-crit">${boldCardKeywords(esc(card.criticalText))}</div>`;
       }
@@ -33548,12 +33916,14 @@ function actionPromptBarHTML(g) {
     }
     const selCard = g.selectedActionCardUid ? p.hand.find(c => c.uid === g.selectedActionCardUid) : null;
     if (selCard) {
-      const hasEXPair = p.hand.filter(c => c.key === selCard.key).length >= 2 && (selCard.type !== 'ultra' || engine.canPayUltra(p, selCard));
+      const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, selCard);
+      const canPayUltra = selCard.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, selCard);
+      const hasEXPair = validStrike && canPayUltra && p.hand.filter(c => c.key === selCard.key).length >= 2;
       return `<div class="precommit-bar">
         <span>Selected: <b>${esc(selCard.name)}</b></span>
-        <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')">Play as Strike</button>
+        <button type="button" class="big-btn" onclick="G.confirmActionCard('strike')" ${validStrike ? '' : 'disabled'}>Play as Strike</button>
         ${hasEXPair ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('ex')">EX Strike (+1 All)</button>` : ''}
-        <button type="button" class="big-btn" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>
+        ${selCard.boost ? `<button type="button" class="big-btn" onclick="G.confirmActionCard('boost')">Play as Boost (${engine.cardBoostForce(selCard)} Force)</button>` : ''}
         <button type="button" class="cancel-btn" onclick="G.cancelActionCard()">Cancel</button>
       </div>`;
     }
@@ -33599,14 +33969,25 @@ function actionPromptBarHTML(g) {
     </div>`;
   }
   if (g.mode === 'defend_select') {
+    const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
     const forcedUid = g.sel && g.sel.forcedUid;
+    const forcedCard = forcedUid ? p.hand.find(c => c.uid === forcedUid) : null;
+    const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
     const cpuWildSwung = !!(g.pendingAiAttack && g.pendingAiAttack.fromWildSwing);
     const wildSwingNote = cpuWildSwung ? ' (Wild Swing)' : '';
     const faceUpNote = (g.pendingAiAttack && g.pendingAiAttack.faceUp)
       ? ` — face up: <b>${esc(g.pendingAiAttack.card.name)}</b>` : '';
-    if (forcedUid) {
+    if (forcedWildSwing) {
       return `<div class="action-prompt-row">
-        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Must defend with <b>${esc(g.sel.forcedName)}</b>.</span>
+        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! CPU's Focus forces a <b>Wild Swing</b>.</span>
+        <button type="button" class="big-btn wildswing-btn" onclick="G.humanDefend({type:'wildswing'})">Wild Swing</button>
+      </div>`;
+    }
+    if (forcedKey || forcedUid) {
+      const matchCount = forcedKey ? p.hand.filter(c => c.key === forcedKey).length : 1;
+      const exHint = matchCount >= 2 ? ' (or EX with both copies)' : '';
+      return `<div class="action-prompt-row">
+        <span class="prompt-label">CPU struck${wildSwingNote}${faceUpNote}! Must defend with <b>${esc(g.sel.forcedName)}</b>${exHint}.</span>
       </div>`;
     }
     return `<div class="action-prompt-row">
@@ -33803,31 +34184,71 @@ function unifiedHandDockHTML(g) {
   }
 
   if (g.mode === 'strike_select') {
+    const dupMap = new Map();
+    for (const c of p.hand) {
+      if (!dupMap.has(c.key)) dupMap.set(c.key, []);
+      dupMap.get(c.key).push(c.uid);
+    }
     const exTiles = exPairTiles(p.hand, (u1, u2) => `G.pickExStrike('${u1}','${u2}')`, 'strike', dist, engine, p, { isInitiator: true });
     return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-      tileOpts: (c, memo) => ({
-        onclick: `G.pickStrikeCard('${c.uid}')`,
-        highlight: 'strike',
-        band: c.range,
-        hoverPreview: true,
-        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
-      }),
+      tileOpts: (c, memo) => {
+        const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
+        if (!validStrike) return { disabled: true };
+        const canPayUltra = c.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, c);
+        const sameKeyUids = dupMap.get(c.key) || [];
+        const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+        return {
+          onclick: `G.pickStrikeCard('${c.uid}')`,
+          highlight: 'strike',
+          band: c.range,
+          hoverPreview: true,
+          exOtherUid: otherUid,
+          exOnClick: otherUid ? `G.pickExStrike('${c.uid}','${otherUid}')` : null,
+          rangeChip: previewToRangeChip(memo && memo.base, c, dist),
+        };
+      },
       exTiles,
     })}</div>`;
   }
 
   if (g.mode === 'defend_select') {
-    const forcedUid = g.sel && g.sel.forcedUid;
-    const defendTileOpts = (c, memo) => ({
-      onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
-      highlight: 'strike',
-      band: c.range,
-      hoverPreview: true,
-      rangeChip: previewToRangeChip(memo && memo.base, c, dist),
-    });
-    if (forcedUid) {
+    const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
+    if (forcedWildSwing) {
       return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
-        tileOpts: (c, memo) => (c.uid === forcedUid ? defendTileOpts(c, memo) : { disabled: true }),
+        tileOpts: () => ({ disabled: true }),
+      })}</div>`;
+    }
+    const dupMap = new Map();
+    for (const c of p.hand) {
+      if (!dupMap.has(c.key)) dupMap.set(c.key, []);
+      dupMap.get(c.key).push(c.uid);
+    }
+    const forcedUid = g.sel && g.sel.forcedUid;
+    const forcedCard = forcedUid ? p.hand.find(c => c.uid === forcedUid) : null;
+    const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
+    const defendTileOpts = (c, memo) => {
+      const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
+      if (!validStrike) return { disabled: true };
+      const canPayUltra = c.type !== 'ultra' || typeof engine.canPayUltra !== 'function' || engine.canPayUltra(p, c);
+      const sameKeyUids = dupMap.get(c.key) || [];
+      const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+      return {
+        onclick: `G.humanDefend({type:'hand', uid:'${c.uid}'})`,
+        highlight: 'strike',
+        band: c.range,
+        hoverPreview: true,
+        exOtherUid: otherUid,
+        exOnClick: otherUid ? `G.humanDefend({type:'ex', uid1:'${c.uid}', uid2:'${otherUid}'})` : null,
+        rangeChip: previewToRangeChip(memo && memo.base, c, dist),
+      };
+    };
+    if (forcedKey || forcedUid) {
+      const exTiles = forcedKey
+        ? exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false, onlyKey: forcedKey })
+        : '';
+      return `<div id="unified-hand-dock" class="hand-dock-band">${handHTML(g, {
+        tileOpts: (c, memo) => ((forcedKey ? c.key === forcedKey : c.uid === forcedUid) ? defendTileOpts(c, memo) : { disabled: true }),
+        exTiles,
       })}</div>`;
     }
     const exTiles = exPairTiles(p.hand, (u1, u2) => `G.humanDefend({type:'ex', uid1:'${u1}', uid2:'${u2}'})`, 'strike', dist, engine, p, { isInitiator: false });
@@ -33890,15 +34311,16 @@ function unifiedHandDockHTML(g) {
     tileOpts: isMainAction
       ? (c, memo) => {
           const sameKeyUids = dupMap.get(c.key) || [];
+          const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(p, c);
           const canPayUltra = c.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(p, c);
-          const otherUid = (sameKeyUids.length >= 2 && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
+          const otherUid = (sameKeyUids.length >= 2 && validStrike && canPayUltra) ? sameKeyUids.find(u => u !== c.uid) : null;
           return {
             selected: !isQuickCommit && g.selectedActionCardUid === c.uid,
             hoverPreview: true,
             draggable: true,
             quickCommit: isQuickCommit,
             exOtherUid: otherUid,
-            rangeChip: canPayUltra ? previewToRangeChip(memo && memo.base, c, dist) : null,
+            rangeChip: (validStrike && canPayUltra) ? previewToRangeChip(memo && memo.base, c, dist) : null,
             onclick: isQuickCommit ? null : `G.selectActionCard('${c.uid}')`,
           };
         }
@@ -34095,20 +34517,34 @@ function fullCardLightboxHTML(g) {
 
   const actions = [];
   if (inHand && human && engine && !engine.gameOver) {
+    const validStrike = typeof engine.isValidStrikeCard !== 'function' || engine.isValidStrikeCard(human, rawCard);
     const canPayUltra = displayCard.type !== 'ultra' || (typeof engine.canPayUltra !== 'function') || engine.canPayUltra(human, rawCard);
+    const canStrikeCard = validStrike && canPayUltra;
     const hasDup = human.hand.filter(c => c.key === rawCard.key).length >= 2;
     if (g.mode === 'awaiting_action' && isMyTurn) {
-      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canPayUltra ? '' : 'disabled'}>⚔ Play as Strike</button>`);
+      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Play as Strike</button>`);
       if (rawCard.boost) {
         actions.push(`<button type="button" class="full-card-action-btn boost-btn" onclick="G.modalPlayCard('boost')">⬆ Play as Boost</button>`);
       }
-      if (hasDup && canPayUltra) {
+      if (hasDup && canStrikeCard) {
         actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ EX Strike</button>`);
       }
-    } else if (g.mode === 'strike_select' || g.mode === 'defend_select') {
-      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canPayUltra ? '' : 'disabled'}>⚔ Select Strike</button>`);
-      if (hasDup && canPayUltra) {
+    } else if (g.mode === 'strike_select') {
+      actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Select Strike</button>`);
+      if (hasDup && canStrikeCard) {
         actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ Select EX</button>`);
+      }
+    } else if (g.mode === 'defend_select') {
+      const forcedWildSwing = !!(g.sel && g.sel.forcedWildSwingOnly);
+      const forcedUid = g.sel && g.sel.forcedUid;
+      const forcedCard = forcedUid ? human.hand.find(c => c.uid === forcedUid) : null;
+      const forcedKey = (g.sel && g.sel.forcedKey) || (forcedCard && forcedCard.key) || null;
+      const allowedByConstraint = !forcedWildSwing && (!forcedKey || rawCard.key === forcedKey);
+      if (allowedByConstraint) {
+        actions.push(`<button type="button" class="full-card-action-btn strike-btn" onclick="G.modalPlayCard('strike')" ${canStrikeCard ? '' : 'disabled'}>⚔ Select Strike</button>`);
+        if (hasDup && canStrikeCard) {
+          actions.push(`<button type="button" class="full-card-action-btn ex-btn" onclick="G.modalPlayCard('ex')">★ Select EX</button>`);
+        }
       }
     } else if (g.mode === 'boost_select' && rawCard.boost) {
       actions.push(`<button type="button" class="full-card-action-btn boost-btn" onclick="G.modalPlayCard('boost')">⬆ Select Boost</button>`);
