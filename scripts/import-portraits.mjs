@@ -404,6 +404,12 @@ function removeBackdrop(imgData) {
         (darkInkFrac >= 0.22 ||
          (satEdgeFrac >= 0.68 && avgBorderLum <= 194) ||
          (pureFrac >= 0.80 && softNeutralFrac <= 0.02 && satEdgeFrac >= 0.55 && avgBorderLum <= 232));
+      const isFlatMatteInteriorPocket =
+        !hasSubtleCheckerBorder &&
+        compArea >= 140 &&
+        pureFrac >= 0.85 &&
+        softNeutralFrac <= 0.11 &&
+        (darkInkFrac >= 0.18 || satEdgeFrac >= 0.28 || (pureFrac >= 0.90 && softNeutralFrac <= 0.09));
       const isHairGapPocket =
         !hasSubtleCheckerBorder &&
         maxCompY < h * 0.24 &&
@@ -412,7 +418,7 @@ function removeBackdrop(imgData) {
         ((compArea >= 85 && compArea < 1400 && darkInkFrac >= 0.41 && avgBorderLum <= 160 && (pureFrac >= 0.45 || avgBorderLum <= 130)) ||
          (compArea >= 25 && compArea < 85 && darkInkFrac >= 0.55 && avgBorderLum <= 135));
 
-      if (isSubtleCheckerPocket || isPureBackdropPocket || isHairGapPocket) {
+      if (isSubtleCheckerPocket || isPureBackdropPocket || isFlatMatteInteriorPocket || isHairGapPocket) {
         for (let k = 0; k < ct; k++) bg[compQ[k]] = 1;
       }
     }
@@ -461,7 +467,7 @@ function removeBackdrop(imgData) {
     if (mode === 'white-matte') {
       if (dist[p] === 1) {
         if (sat <= 28 && lum >= 135) {
-          const alpha = Math.max(0.06, Math.min(1, (234 - lum) / 99));
+          const alpha = Math.max(0.05, Math.min(1, (234 - lum) / 99));
           data[i] = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
           data[i + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * 255) / Math.max(alpha, 0.2))));
@@ -475,8 +481,8 @@ function removeBackdrop(imgData) {
           data[i + 3] = Math.round(alpha * 255);
         }
       } else if (dist[p] === 2) {
-        if (sat <= 22 && lum >= 195) {
-          const alpha = Math.max(0.25, Math.min(1, (242 - lum) / 52));
+        if (sat <= 22 && lum >= 190) {
+          const alpha = Math.max(0.22, Math.min(1, (242 - lum) / 54));
           data[i] = Math.max(0, Math.min(255, Math.round((r - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
           data[i + 1] = Math.max(0, Math.min(255, Math.round((g - (1 - alpha) * 255) / Math.max(alpha, 0.35))));
           data[i + 2] = Math.max(0, Math.min(255, Math.round((b - (1 - alpha) * 255) / Math.max(alpha, 0.35))));

@@ -38,7 +38,7 @@ This document is an **operational playbook for the AI** when processing future r
 | `guile` | Guile | `image_26d39d3a.png` | `1083×1453` baked grey/white checkerboard + green-swirl interior pockets | 191 KB JPEG | 152 KB JPEG |
 | `chipp` | Chipp Zanuff | `chipp_portrait_1795614440142.jpg` | `848×1264` solid white matte + hair headroom crop | 146 KB JPEG | 116 KB JPEG |
 | `anji` | Anji Mito | `anji_portrait_1795614274179.jpg` | `848×1264` solid white matte | 152 KB JPEG | 107 KB JPEG |
-| `may` | May | `may_portrait_1795614275059.jpg` | `848×1264` solid white matte | 155 KB JPEG | 104 KB JPEG |
+| `may` | May | `image_24bae0fe.png` | `1026×1533` subtle off-white checkerboard + anchor/water interior pockets | 194 KB JPEG | 147 KB JPEG |
 | `ramlethal` | Ramlethal Valentine | `ramlethal_portrait_1795614275235.jpg` | `848×1264` solid white matte + white cloak protection + hat crop | 153 KB JPEG | 138 KB JPEG |
 | `nagoriyuki` | Nagoriyuki | `nagoriyuki_portrait_1795614441329.jpg` | `848×1264` solid white matte + horns/dreads headroom crop | 119 KB JPEG | 114 KB JPEG |
 | `baiken` | Baiken | `baiken_portrait_1795614273977.jpg` | `848×1264` solid white matte + white haori protection | 152 KB JPEG | 109 KB JPEG |
@@ -64,12 +64,15 @@ This document is an **operational playbook for the AI** when processing future r
 1. **Baked checkerboards + white mattes break naive keying:**
    - 6 of 7 uploads had a flattened RGB checkerboard; `ryu` had an opaque white backdrop.
    - Global brightness keying eats white shirts, belts, gi fabric, and aura lightning. Even border flood-fill must validate **local neutral alternating checkerboard periodicity** (`isCheckerPixel` in `scripts/import-portraits.mjs`) rather than keying smooth `lum >= 170` cloth folds — otherwise white sleeves touching the frame edge (e.g., `giovanna`) erode.
-2. **One asset must work cleanly across 4 UI aspect ratios:**
-   - `fighterSilhouette()` -> `fighterPhotoSrc()` feeds `3:4` Select cards (bottom half darkened by `.fighter-card-scrim`), `5:6` Board tokens (mirrored via `scaleX(-1)`), `1:1` HUD thumbnails (`22–30px`), and `80px` Fighter Info modal busts.
-   - `object-position: top center` keeps heads inside `1:1` HUD crops on full art, while `4:5` (`480×600`) headshots must anchor `cropY` to the **detected face center** (`bestCy - 0.34 * cropH`, so eyes sit ~42% down inside the top `480×480` `1:1` slice) rather than raw top-of-alpha (`y = 0`), because aura flames touching `y = 0` (e.g., `chunli`) pull top-anchored crops upward and clip the chin.
-3. **Literal `"NaN"` / `"undefined"` substrings inside Base64 JPEGs:**
+2. **Enclosed flat white-matte interior pockets (`isFlatMatteInteriorPocket`):**
+   - Outer-edge flood fill misses `#ffffff` background islands sealed off by raised arms, fans, guitars, wings, or halo rings (`anji`, `ino`, `dan`, `faust`, `hakumen`, `happychaos`, `jacko`, `noel`, `nu13`, `potemkin`).
+   - `removeBackdrop` (`scripts/import-portraits.mjs`) flood-fills strict near-white components (`min(R,G,B) >= 244, sat <= 7`) and classifies them as trapped backdrop when `pureFrac >= 0.85` (`rgb >= 250`) and the 2px outward boundary has low soft-neutral shading (`softNeutralFrac <= 0.11`), preserving shaded white garments (`ryu`, `ky`, `baiken`, `faust`, `vega`, `may`).
+3. **One asset must work cleanly across 4 UI aspect ratios (whole-face centering):**
+   - `fighterSilhouette()` -> `fighterPhotoSrc()` feeds `3:4` Select cards (bottom ~23% darkened by `.fighter-card-scrim`), `5:6` Board tokens (mirrored via `scaleX(-1)`), `1:1` HUD thumbnails (`22–30px`, taking the top `480×480` slice of `480×600`), and `80px` Fighter Info modal busts.
+   - Over-tight crops (`w < 300px`) clip chins/mouths in the `1:1` HUD square or hide chins behind `.fighter-card-scrim`, while tall hats/halos (`may`, `ino`, `ramlethal`, `testament`) push faces down if the whole hat tip is included. Calibrated headshots (`w ≈ 344–456px` on `848w`/`1024w` sources) crop tall hat tips and center the whole face (forehead through full chin + neck transition) inside the top `75%` of the `4:5` canvas (`y = 0..450` of `480×600`).
+4. **Literal `"NaN"` / `"undefined"` substrings inside Base64 JPEGs:**
    - `tests/howtoplay.test.ts` and `tests/strike-preview.test.ts` assert zero `'NaN'` or `'undefined'` strings in rendered output. At ~120–160 KB per JPEG, Base64 randomly hits `"NaN"` occasionally; stepping JPEG quality (`[0.87, 0.86, 0.88, 0.85, ...]`) eliminates it deterministically.
-4. **In-file portrait bloat slows inspection:**
+5. **In-file portrait bloat slows inspection:**
    - Keeping ~5.3 MB of Base64 inline inside `game/render.js` stalled `grep` and truncated `view_file` reads. Extracting `FIGHTER_PHOTOS` and `FIGHTER_HEADSHOTS` into `game/portraits.js` (bundled before `render.js` in `scripts/build-game.mjs`) shrank `game/render.js` from `5.47 MB` to `126 KB`.
 
 ---
