@@ -1,6 +1,6 @@
 # AI Portrait Pipeline Playbook & Fighter Portrait Inventory
 
-This document is an **operational playbook for the AI** when processing **Source Art** into **Fighter Portraits** (`FIGHTER_PHOTOS` **Full Portraits** and `480×600` `FIGHTER_HEADSHOTS` **Headshots** in `game/portraits.js`). See `docs/adr/0010-manifest-locked-fighter-portrait-pipeline.md` for the architecture and `GLOSSARY.md` for canonical terminology.
+This document is an **operational playbook for the AI** when processing **Source Art** into **Fighter Portraits** (`FIGHTER_PHOTOS` **Full Portraits** and `480×600` `FIGHTER_HEADSHOTS` **Headshots** in `game/portraits.js`). For creating new or replacement **Source Art** (art direction, Cammy benchmark proportions, archetype scaling, AI prompt templates, and pre-ingestion QA), see [`docs/character-portrait-creation-guide.md`](./character-portrait-creation-guide.md). See `docs/adr/0010-manifest-locked-fighter-portrait-pipeline.md` for the architecture and `GLOSSARY.md` for canonical terminology.
 
 ---
 

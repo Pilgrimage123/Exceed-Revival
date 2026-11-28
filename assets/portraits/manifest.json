@@ -590,9 +590,14 @@
         "protectRects": []
       },
       "fullCrop": null,
-      "crop": null,
-      "fullHash": "d65fdb8666f9d93fa78efb7c626a735b4cad8e6fdde696670aa9348ab9df625c",
-      "headshotHash": "6942022f671ef51793de0353c759c20c86cf8b254fde79d0999f5fb25b1fcf44",
+      "crop": {
+        "x": 182,
+        "y": 4,
+        "w": 484,
+        "h": 605
+      },
+      "fullHash": "cd6eac56fafeef2debe28dce20f6b998d4e4983651f57823d5b4f948c1dc1f88",
+      "headshotHash": "7d424133ddc7dae9520956245abe0196d55f7c24411e0c216235ea720a660e7c",
       "notes": ""
     },
     "nagoriyuki": {

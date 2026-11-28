@@ -12,7 +12,7 @@ const gameDir = path.join(rootDir, 'game');
 const PLACEHOLDER = '<!-- EXCEED_BUNDLE_SCRIPTS -->';
 
 const CORE_MODULES = ['events.js', 'cards.js', 'engine.js', 'preview.js', 'native-ai.js', 'ai.js'];
-const UI_MODULES = ['ui.js', 'telegraph.js', 'playback.js', 'audio.js', 'input.js', 'howtoplay.js', 'portraits.js', 'standees.js', 'standee-stage.js', 'render.js', 'fighter-preview.js'];
+const UI_MODULES = ['ui.js', 'telegraph.js', 'playback.js', 'audio.js', 'input.js', 'howtoplay.js', 'portraits.js', 'standees.js', 'standee-stage.js', 'render.js', 'fighter-preview.js', 'portrait-tester.js'];
 
 function readGameFile(name) {
   const fullPath = path.join(gameDir, name);
